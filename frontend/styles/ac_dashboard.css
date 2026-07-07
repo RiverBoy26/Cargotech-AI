@@ -1,0 +1,211 @@
+body {
+  margin: 0;
+  background: #F4F6F8;
+  font-family: 'Anonymous Pro', monospace;
+  color: #2E3440;
+}
+
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+}
+
+/* хэдер */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #F26522;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+.notif_btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FCEADF;
+  border: 25px;
+  border-radius: 25px;
+  padding: 14px 20px;
+  font-family: inherit;
+  color: #8A93A0;
+  cursor: pointer;
+}
+
+.topbar_user {
+  font-size: 16px;
+  color: #1B2A4A; 
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+/* поиск+фильтр */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+.search_box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FCEADF;
+  border-radius: 25px;
+  padding: 14px 20px;
+  flex: 1;
+  max-width: 620px;
+  max-height: 50px;
+}
+
+.search-box__input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: inherit;
+  color: #1a1a1a;
+  width: 100%;
+}
+
+.search-box__input::placeholder {
+  color: #555;
+}
+
+.status_filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #d6d6d6;
+  border-radius: 25px;
+  padding: 10px 20px;
+  width: 220px;
+  cursor: pointer;
+}
+
+/* таблица */
+
+.overdues_table {
+  background: #d6d6d6;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.overdues_table_head {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 0.8fr 0.9fr 0.9fr 1.1fr 1.3fr;
+  background: #c4c4c4;
+}
+
+.overdues_table_head_t {
+  padding: 16px 20px;
+  font-size: 14px;
+}
+
+/* строки */
+
+.overdue_row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 0.8fr 0.9fr 0.9fr 1.1fr 1.3fr;
+  align-items: center;
+  border-bottom: 1px solid #b9b9b9;
+  font-size: 14px;
+}
+
+.overdue_row:last-child {
+  border-bottom: none;
+}
+
+.overdue_row_client,
+.overdue_row_carrier,
+.overdue_row_trip,
+.overdue_row_amount,
+.overdue_row_days {
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.overdue_row_status_cell,
+.overdue_row_action_cell {
+  display: flex;
+  justify-content: center;
+  padding: 16px 20px;
+}
+
+/* статус */
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 170px;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
+
+.status-pill--waiting {
+  background: #f6e07a;
+  color: #5c4a06;
+}
+
+.status-pill--sent {
+  background: #d3c4f0;
+  color: #3d2768;
+}
+
+.status-pill--partial {
+  background: #f4a8a3;
+  color: #6b1f1a;
+}
+
+.status-pill--paid {
+  background: #a9e0a0;
+  color: #1f5c14;
+}
+
+/* кнопки действия */
+
+.action_btn {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 16px;
+  border: 25px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action_btn_confirm {
+  background: #c4c4c4;
+  color: #1a1a1a;
+}
+
+.action_btn_confirm:hover {
+  background: #b6b6b6;
+}
+
+.action_btn_paid {
+  background: #a9e0a0;
+  color: #1f5c14;
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+.action_btn_paid:hover {
+  background: #93d488;
+}
+
+.action_btn_done {
+  color: #888;
+  font-size: 14px;
+}

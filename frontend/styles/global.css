@@ -1,0 +1,196 @@
+body {
+  background: #F4F6F8;
+  font-family: 'Anonymous Pro', monospace;
+  color: #2E3440;
+  margin: 0;
+}
+
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 24px 50px;
+}
+
+/* Шапка */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #F26522;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+.notif_btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FCEADF;
+  border: 25px;
+  border-radius: 25px;
+  padding: 14px 20px;
+  font-family: inherit;
+  color: #8A93A0;
+  cursor: pointer;
+}
+
+.topbar_user {
+  font-size: 16px;
+  color: #1B2A4A; 
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+/* Toolbar */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+.search_box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 25px;
+  padding: 14px 20px;
+  flex: 1;
+  max-width: 620px;
+  max-height: 50px;
+}
+
+.search-box__input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: inherit;
+  color: #1a1a1a;
+  width: 100%;
+}
+
+.search-box__input::placeholder {
+  color: #555;
+}
+
+.status_filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 25px;
+  padding: 10px 20px;
+  width: 220px;
+  cursor: pointer;
+}
+
+/* Таблица претензий */
+
+.claims_table {
+  background: #FFFFFF;
+  border: 2px solid #E6E9ED;
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.claims_table_head {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr 0.9fr 1.2fr 1fr 0.9fr 1fr;
+
+  background: #FCEADF;
+}
+
+.claims_table_head_t {
+  padding: 16px 20px;
+  font-size: 14px;
+  color: #8A93A0;
+  text-align: center;
+}
+
+.claims_list {
+  display: block;
+}
+
+/* строки */
+
+.claim_row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr 0.9fr 1.2fr 1fr 0.9fr 1fr;
+  align-items: center;
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.claim_row:last-child {
+  border-bottom: none;
+}
+
+.claim_row:hover {
+  background: #cacaca;
+}
+
+.claim_row_client,
+.claim_row_carrier,
+.claim_row_trip {
+  padding: 18px 20px;
+  text-align: center;
+}
+
+.claim_row_overdue_cell {
+  padding: 18px 20px;
+  text-align: center;
+}
+
+.claim_row_overdue {
+  font-weight: 400;
+}
+
+.claim_row_overdue_sub {
+  font-size: 14px;
+}
+
+.claim_row_amount,
+.claim_row_penalty {
+  padding: 18px 20px;
+  text-align: center;
+}
+
+/*  Статус */
+
+.status-pill {
+  padding: 6px 18px;
+  border-radius: 20px;
+  border: 1px solid #DDE1E6;
+}
+
+.status-pill-success {
+  background: #E6F0EA;
+  color: #2E7D5B;
+}
+
+.status-pill-danger {
+  background: #F5E5E2; 
+  color: #B23A2F;
+}
+
+.status-pill-warning {
+  background: #F6EEDD;
+  color: #C0832B;
+}
+
+.status-pill-info {
+  background: #E7ECF3;
+  color: #3D5A80;
+}

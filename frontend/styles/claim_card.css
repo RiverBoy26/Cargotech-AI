@@ -1,0 +1,308 @@
+body {
+  margin: 0;
+  background: #F4F6F8;
+  font-family: 'Anonymous Pro', monospace;
+  color: #2E3440;
+}
+
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+}
+
+/* шапка */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #F26522;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+.notif_btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FCEADF;
+  border: 25px;
+  border-radius: 25px;
+  padding: 14px 20px;
+  font-family: inherit;
+  color: #8A93A0;
+  cursor: pointer;
+}
+
+.topbar_user {
+  display: flex;
+  font-size: 16px;
+  color: #1B2A4A; 
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+/* Кнопка назад */
+
+.back_link_row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.back_link {
+  background: #F26522;
+  border: 25px;
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-family: inherit;
+  font-size: 14px;
+  color: #1B2A4A;
+  cursor: pointer;
+}
+
+.back_link:hover {
+  background: #D9531A;
+}
+
+/* карточка - внешний контейнер */
+
+.claim_card {
+  background: #FFFFFF;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid #DDE1E6;
+}
+
+.claim_card_stripe {
+  height: 14px;
+  background: #F5E5E2;
+  border-bottom: 1px solid #E6E9ED;
+}
+
+.claim_card_body {
+  padding: 28px 36px 36px;
+}
+
+/* Заголовок карточки */
+
+.claim_card_header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.claim_card_title {
+  font-size: 20px;
+  margin-bottom: 4px;
+  color: #1B2A4A;
+}
+
+.claim_card_subtitle {
+  font-size: 14px;
+  color: #8A93A0;
+}
+
+.claim_card_header_right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.claim_card_badge {
+  background: #FCEADF;
+  color: #8A93A0;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.claim_card_status_badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 130px;
+  background: #F5E5E2;
+  border-radius: 20px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #B23A2F;
+}
+
+/* Инфополя */
+
+.claim_card_info_grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.info_box {
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
+.info_box_label {
+  font-size: 13px;
+  color: #8A93A0;
+  margin-bottom: 8px;
+}
+
+.info_box_value {
+  font-size: 18px;
+  color: #2E3440;
+}
+
+/* кнопки */
+
+.template_row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.template_label {
+  font-size: 17px;
+}
+
+.template_select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  color: #8A93A0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  width: 140px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.template_select_arrow {
+  font-size: 12px;
+}
+
+.action_buttons_grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.action_btn {
+  background: #F26522;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.action_btn:hover {
+  background: #D9531A;
+}
+
+.action_btn_disabled {
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  cursor: not-allowed;
+}
+
+.action_btn_disabled:hover {
+  background: #C0C0C0;
+  border: 1px solid #DDE1E6;
+}
+
+/* Комментарий */
+
+.comment_input {
+  width: 100%;
+  border: 25px;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.comment_input::placeholder {
+  color: #8A93A0;
+}
+
+.history_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.history_title {
+  font-size: 15px;
+}
+
+.add_comment_btn {
+  background: #F26522;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.add_comment_btn:hover {
+  background: #D9531A;
+}
+
+/* история изменений */
+
+.history_list {
+  background: #c4c4c4;
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.history_item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #b0b0b0;
+  font-size: 13px;
+}
+
+.history_item:last-child {
+  border-bottom: none;
+}
+
+.history_item_text {
+  flex: 1;
+}
+
+.history_item_author {
+  margin-bottom: 2px;
+}
+
+.history_item_action {
+  color: #444;
+}
+
+.history_item_date {
+  white-space: nowrap;
+  color: #444;
+}

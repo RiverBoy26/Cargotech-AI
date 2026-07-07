@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Дашборд претензий</title>
+    <link rel="stylesheet" href="/styles/global.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <button class="notif_btn">
+        <span class="notif_btn_icon">
+            <img src="/assets/notifications1.svg" alt="notifications">
+        </span>
+        3 уведомления
+      </button>
+
+      <div class="topbar_user">
+        <div class="topbar_usename">Иванов Иван Иванович</div>
+        <div class="topbar_user_role">юрист</div>
+      </div>
+    </div>
+    </header>
+    <main>
+        <div class="toolbar">
+            <div class="search_box">
+                <span class="search-box__icon">
+                    <img src="/assets/Search.svg" alt="Search">
+                </span>
+                <input
+                class="search-box__input"
+                type="text"
+                placeholder="Поиск по перевозчику, клиенту, рейсу...">
+            </div>
+            <div class="status_filter">
+                Все
+                <span class="status-select__arrow">
+                    <img src="/assets/down.svg" alt="down">
+                </span>
+            </div>
+        </div>
+        <div class="claims_table">
+            <div class="claims_table_head">
+                <div class="claims_table_head_t">Клиент</div>
+                <div class="claims_table_head_t">Перевозчик</div>
+                <div class="claims_table_head_t">Рейс</div>
+                <div class="claims_table_head_t">Просрочка</div>
+                <div class="claims_table_head_t">Сумма долга</div>
+                <div class="claims_table_head_t">Неустойка</div>
+                <div class="claims_table_head_t">Статус</div>
+            </div>
+            <div class="claims_list" id="claims_list"></div>
+        </div>
+    </main>
+    <script src="/mocks/mock.js"></script>
+    <script src="/scripts/script.js"></script>
+</body>
