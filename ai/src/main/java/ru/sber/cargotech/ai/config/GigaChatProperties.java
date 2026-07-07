@@ -14,6 +14,8 @@ public class GigaChatProperties {
     private Double temperature = 0.1;
     private Integer maxTokens = 1000;
     private long tokenRefreshSkewSeconds = 60;
+    private String embeddingsUrl;
+    private String embeddingsModel;
 
     public String getAuthUrl() {
         return authUrl;
@@ -85,5 +87,21 @@ public class GigaChatProperties {
 
     public void setTokenRefreshSkewSeconds(long tokenRefreshSkewSeconds) {
         this.tokenRefreshSkewSeconds = tokenRefreshSkewSeconds;
+    }
+    
+    public String getEmbeddingsUrl() {
+        return embeddingsUrl;
+    }
+
+    public void setEmbeddingsUrl(String embeddingsUrl) {
+        this.embeddingsUrl = embeddingsUrl;
+    }
+
+    public String getEmbeddingsModel() {
+        return embeddingsModel;
+    }
+
+    public void setEmbeddingsModel(String embeddingsModel) {
+        this.embeddingsModel = embeddingsModel;
     }
 }
