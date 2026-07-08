@@ -1,0 +1,608 @@
+openapi: 3.1.0
+info:
+  title: OpenAPI definition
+  version: v0
+servers:
+- url: http://localhost:8082
+  description: Generated server url
+paths:
+  /api/v1/payments/{paymentId}/matches:
+    post:
+      tags:
+      - payment-controller
+      operationId: matchPayment
+      parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentMatchRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PaymentMatchResponse"
+  /api/v1/payments/reconcile:
+    post:
+      tags:
+      - payment-controller
+      operationId: reconcile
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReconciliationResponse"
+  /api/v1/payments/import/bank-statement:
+    post:
+      tags:
+      - payment-controller
+      operationId: importBankStatement
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PaymentImportResponse"
+  /api/v1/payments/import/1c:
+    post:
+      tags:
+      - payment-controller
+      operationId: importFromOneC
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PaymentImportResponse"
+  /api/v1/payments/claims/{claimId}/preflight-check:
+    post:
+      tags:
+      - claim-payment-controller
+      operationId: preflightCheck
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: comment
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PreflightCheckResponse"
+  /api/v1/payments/claims/{claimId}/mark-paid:
+    post:
+      tags:
+      - claim-payment-controller
+      operationId: markPaid
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkPaidRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MarkPaidResponse"
+  /api/v1/payments:
+    get:
+      tags:
+      - payment-controller
+      operationId: getPayments
+      parameters:
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PagePaymentResponse"
+  /api/v1/payments/{paymentId}:
+    get:
+      tags:
+      - payment-controller
+      operationId: getPayment
+      parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PaymentDetailsResponse"
+  /api/v1/payments/reconciliations/{runId}:
+    get:
+      tags:
+      - payment-controller
+      operationId: getReconciliationRun
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReconciliationResponse"
+  /api/v1/payments/claims/{claimId}:
+    get:
+      tags:
+      - claim-payment-controller
+      operationId: getClaimPayments
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimPaymentsResponse"
+  /api/v1/payments/{paymentId}/matches/{matchId}:
+    delete:
+      tags:
+      - payment-controller
+      operationId: unmatchPayment
+      parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: matchId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: reason
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PaymentDetailsResponse"
+components:
+  schemas:
+    CreatePaymentMatchRequest:
+      type: object
+      properties:
+        targetType:
+          type: string
+          enum:
+          - SHIPMENT
+          - ACT
+          - INVOICE
+          - CLAIM
+        targetId:
+          type: string
+          format: uuid
+        matchedAmount:
+          type: number
+          minimum: 0.01
+        comment:
+          type: string
+          maxLength: 2000
+          minLength: 0
+      required:
+      - matchedAmount
+      - targetId
+      - targetType
+    PaymentMatchResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        paymentId:
+          type: string
+          format: uuid
+        targetType:
+          type: string
+          enum:
+          - SHIPMENT
+          - ACT
+          - INVOICE
+          - CLAIM
+        targetId:
+          type: string
+          format: uuid
+        matchedAmount:
+          type: number
+        matchType:
+          type: string
+          enum:
+          - AUTOMATIC
+          - MANUAL
+        confidence:
+          type: number
+        active:
+          type: boolean
+        matchedBy:
+          type: string
+          format: uuid
+        matchedAt:
+          type: string
+          format: date-time
+        unmatchedBy:
+          type: string
+          format: uuid
+        unmatchedAt:
+          type: string
+          format: date-time
+        unmatchReason:
+          type: string
+    ReconciliationResponse:
+      type: object
+      properties:
+        runId:
+          type: string
+          format: uuid
+        paymentsChecked:
+          type: integer
+          format: int32
+        matchesCreated:
+          type: integer
+          format: int32
+        unmatchedCount:
+          type: integer
+          format: int32
+    PaymentImportResponse:
+      type: object
+      properties:
+        importId:
+          type: string
+          format: uuid
+        sourceSystem:
+          type: string
+          enum:
+          - ONE_C
+          - BANK_STATEMENT
+          - MANUAL_EXCEL
+        status:
+          type: string
+          enum:
+          - CREATED
+          - PROCESSING
+          - COMPLETED
+          - PARTIALLY_COMPLETED
+          - FAILED
+        totalRows:
+          type: integer
+          format: int32
+        importedRows:
+          type: integer
+          format: int32
+        duplicateRows:
+          type: integer
+          format: int32
+        failedRows:
+          type: integer
+          format: int32
+        errors:
+          type: array
+          items:
+            type: string
+        completedAt:
+          type: string
+          format: date-time
+    PreflightCheckResponse:
+      type: object
+      properties:
+        checkId:
+          type: string
+          format: uuid
+        claimId:
+          type: string
+          format: uuid
+        shipmentId:
+          type: string
+          format: uuid
+        serviceAmount:
+          type: number
+        paidAmount:
+          type: number
+        remainingAmount:
+          type: number
+        paymentStatus:
+          type: string
+          enum:
+          - NOT_PAID
+          - PARTIALLY_PAID
+          - FULLY_PAID
+          - OVERPAID
+          - UNKNOWN
+        lastPaymentDate:
+          type: string
+          format: date
+        paymentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        canSend:
+          type: boolean
+        recommendedAction:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+    MarkPaidRequest:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        comment:
+          type: string
+          maxLength: 2000
+          minLength: 0
+      required:
+      - paymentId
+    MarkPaidResponse:
+      type: object
+      properties:
+        claimId:
+          type: string
+          format: uuid
+        paymentId:
+          type: string
+          format: uuid
+        paymentCheckId:
+          type: string
+          format: uuid
+        outboxEventId:
+          type: string
+          format: uuid
+        paidAmount:
+          type: number
+        remainingAmount:
+          type: number
+        paymentStatus:
+          type: string
+          enum:
+          - NOT_PAID
+          - PARTIALLY_PAID
+          - FULLY_PAID
+          - OVERPAID
+          - UNKNOWN
+    Pageable:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+        sort:
+          type: array
+          items:
+            type: string
+    PagePaymentResponse:
+      type: object
+      properties:
+        totalPages:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentResponse"
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: "#/components/schemas/SortObject"
+        first:
+          type: boolean
+        last:
+          type: boolean
+        numberOfElements:
+          type: integer
+          format: int32
+        pageable:
+          $ref: "#/components/schemas/PageableObject"
+        empty:
+          type: boolean
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+        sort:
+          $ref: "#/components/schemas/SortObject"
+        paged:
+          type: boolean
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        unpaged:
+          type: boolean
+    PaymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceSystem:
+          type: string
+          enum:
+          - ONE_C
+          - BANK_STATEMENT
+          - MANUAL_EXCEL
+        externalPaymentId:
+          type: string
+        paymentNumber:
+          type: string
+        paymentDate:
+          type: string
+          format: date
+        payerInn:
+          type: string
+        payerName:
+          type: string
+        recipientInn:
+          type: string
+        recipientName:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        purpose:
+          type: string
+        status:
+          type: string
+          enum:
+          - IMPORTED
+          - PARTIALLY_MATCHED
+          - MATCHED
+          - REJECTED
+        matchedAmount:
+          type: number
+        availableAmount:
+          type: number
+    SortObject:
+      type: object
+      properties:
+        empty:
+          type: boolean
+        sorted:
+          type: boolean
+        unsorted:
+          type: boolean
+    PaymentDetailsResponse:
+      type: object
+      properties:
+        payment:
+          $ref: "#/components/schemas/PaymentResponse"
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentMatchResponse"
+    ClaimPaymentsResponse:
+      type: object
+      properties:
+        claimId:
+          type: string
+          format: uuid
+        shipmentId:
+          type: string
+          format: uuid
+        claimNumber:
+          type: string
+        serviceAmount:
+          type: number
+        paidAmount:
+          type: number
+        remainingAmount:
+          type: number
+        paymentStatus:
+          type: string
+          enum:
+          - NOT_PAID
+          - PARTIALLY_PAID
+          - FULLY_PAID
+          - OVERPAID
+          - UNKNOWN
+        lastPaymentDate:
+          type: string
+          format: date
+        payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentResponse"

@@ -1,3 +1,49 @@
+server:
+  port: ${SERVER_PORT:8081}
+
 spring:
-  application:
-    name: auth
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/cargotech}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:admin}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: cargotech
+        jdbc:
+          time_zone: UTC
+  jackson:
+    default-property-inclusion: non_null
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+    try-it-out-enabled: true
+
+auth:
+  jwt:
+    issuer: ${JWT_ISSUER:cargotech-auth}
+    secret-base64: ${JWT_SECRET_BASE64}
+    access-token-ttl: ${ACCESS_TOKEN_TTL:PT15M}
+    refresh-token-ttl: ${REFRESH_TOKEN_TTL:P30D}
+  password:
+    bcrypt-strength: ${BCRYPT_STRENGTH:12}
+  bootstrap:
+    enabled: ${AUTH_BOOTSTRAP_ENABLED:false}
+    email: ${AUTH_BOOTSTRAP_EMAIL:admin@cargotech.local}
+    password: ${AUTH_BOOTSTRAP_PASSWORD:ChangeMe123!}
+    full-name: ${AUTH_BOOTSTRAP_FULL_NAME:CargoTech Super Admin}
+    organization-name: ${AUTH_BOOTSTRAP_ORGANIZATION_NAME:CargoTech}
+    organization-inn: ${AUTH_BOOTSTRAP_ORGANIZATION_INN:7700000000}
