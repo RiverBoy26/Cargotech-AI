@@ -54,12 +54,11 @@ public class RuleBasedGuardrailService {
             return;
         }
 
-        if (request.caseFacts().claimType() == null) {
-            errors.add("case_facts.claim_type is required");
-        }
+        GenerateClaimRequest.ClaimType claimType = request.caseFacts().claimType();
 
-        if (request.caseFacts().claimType() != GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
-            errors.add("Only PAYMENT_DELAY is supported");
+        if (claimType == null) {
+            errors.add("case_facts.claim_type is required");
+            return;
         }
 
         if (request.caseFacts().creditor() == null) {
@@ -70,37 +69,15 @@ public class RuleBasedGuardrailService {
             errors.add("case_facts.debtor is required");
         }
 
-        if (request.caseFacts().payment() == null) {
-            errors.add("case_facts.payment is required");
+        if (claimType == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
+            validatePaymentDelayRequest(request, errors);
+        } else if (claimType == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
+            validateLoadingFailureRequest(request, errors, warnings);
         } else {
-            if (request.caseFacts().payment().paymentStatus() != GenerateClaimRequest.PaymentStatus.UNPAID) {
-                errors.add("payment_status must be UNPAID for PAYMENT_DELAY claim");
-            }
-
-            if (!Boolean.TRUE.equals(request.caseFacts().payment().paymentConfirmedByAccountant())) {
-                errors.add("payment_confirmed_by_accountant must be true");
-            }
+            errors.add("Unsupported claim_type: " + claimType);
         }
 
-        if (request.backendCalculation() == null) {
-            errors.add("backend_calculation is required");
-        } else {
-            if (request.backendCalculation().principalDebt() == null || request.backendCalculation().principalDebt().compareTo(BigDecimal.ZERO) <= 0) {
-                errors.add("backend_calculation.principal_debt must be positive");
-            }
-
-            if (request.backendCalculation().totalAmount() == null || request.backendCalculation().totalAmount().compareTo(BigDecimal.ZERO) <= 0) {
-                errors.add("backend_calculation.total_amount must be positive");
-            }
-
-            if (isBlank(request.backendCalculation().currency())) {
-                errors.add("backend_calculation.currency is required");
-            }
-
-            if (request.backendCalculation().overdueDays() == null || request.backendCalculation().overdueDays() < 0) {
-                errors.add("backend_calculation.overdue_days must be zero or positive");
-            }
-        }
+        validateBackendCalculation(request, errors, claimType);
 
         if (request.contractContext() == null || request.contractContext().isEmpty()) {
             warnings.add("contract_context is empty");
@@ -112,6 +89,103 @@ public class RuleBasedGuardrailService {
 
         if (request.templateContext() == null) {
             warnings.add("template_context is empty");
+        }
+    }
+
+    private void validatePaymentDelayRequest(GenerateClaimRequest request, List<String> errors) {
+        if (request.caseFacts().payment() == null) {
+            errors.add("case_facts.payment is required for PAYMENT_DELAY");
+            return;
+        }
+
+        if (request.caseFacts().payment().paymentStatus() != GenerateClaimRequest.PaymentStatus.UNPAID) {
+            errors.add("payment_status must be UNPAID for PAYMENT_DELAY claim");
+        }
+
+        if (!Boolean.TRUE.equals(request.caseFacts().payment().paymentConfirmedByAccountant())) {
+            errors.add("payment_confirmed_by_accountant must be true");
+        }
+    }
+
+    private void validateLoadingFailureRequest(
+            GenerateClaimRequest request,
+            List<String> errors,
+            List<String> warnings
+    ) {
+        if (request.caseFacts().shipment() == null) {
+            errors.add("case_facts.shipment is required for LOADING_FAILURE");
+            return;
+        }
+
+        GenerateClaimRequest.ShipmentFacts shipment = request.caseFacts().shipment();
+
+        if (isBlank(shipment.orderNumber())) {
+            warnings.add("case_facts.shipment.order_number is empty for LOADING_FAILURE");
+        }
+
+        if (isBlank(shipment.loadingDate())) {
+            warnings.add("case_facts.shipment.loading_date is empty for LOADING_FAILURE");
+        }
+
+        if (isBlank(shipment.loadingAddress())) {
+            warnings.add("case_facts.shipment.loading_address is empty for LOADING_FAILURE");
+        }
+
+        if (!Boolean.TRUE.equals(shipment.failureConfirmedByDispatcher())) {
+            warnings.add("loading failure is not confirmed by dispatcher");
+        }
+    }
+
+    private void validateBackendCalculation(
+            GenerateClaimRequest request,
+            List<String> errors,
+            GenerateClaimRequest.ClaimType claimType
+    ) {
+        if (request.backendCalculation() == null) {
+            errors.add("backend_calculation is required");
+            return;
+        }
+
+        GenerateClaimRequest.BackendCalculation calculation = request.backendCalculation();
+
+        if (calculation.penaltyType() == null) {
+            errors.add("backend_calculation.penalty_type is required");
+        }
+
+        if (isBlank(calculation.currency())) {
+            errors.add("backend_calculation.currency is required");
+        }
+
+        if (calculation.totalAmount() == null || calculation.totalAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            errors.add("backend_calculation.total_amount must be positive");
+        }
+
+        if (calculation.penaltyAmount() == null || calculation.penaltyAmount().compareTo(BigDecimal.ZERO) < 0) {
+            errors.add("backend_calculation.penalty_amount must be zero or positive");
+        }
+
+        if (calculation.overdueDays() != null && calculation.overdueDays() < 0) {
+            errors.add("backend_calculation.overdue_days must be zero or positive");
+        }
+
+        if (claimType == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
+            if (calculation.principalDebt() == null || calculation.principalDebt().compareTo(BigDecimal.ZERO) <= 0) {
+                errors.add("backend_calculation.principal_debt must be positive for PAYMENT_DELAY");
+            }
+
+            if (calculation.overdueDays() == null) {
+                errors.add("backend_calculation.overdue_days is required for PAYMENT_DELAY");
+            }
+        }
+
+        if (claimType == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
+            if (calculation.penaltyType() == GenerateClaimRequest.PenaltyType.NONE) {
+                errors.add("backend_calculation.penalty_type must not be NONE for LOADING_FAILURE");
+            }
+
+            if (calculation.penaltyAmount() == null || calculation.penaltyAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                errors.add("backend_calculation.penalty_amount must be positive for LOADING_FAILURE");
+            }
         }
     }
 

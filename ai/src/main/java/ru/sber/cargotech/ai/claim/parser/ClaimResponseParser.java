@@ -18,7 +18,7 @@ public class ClaimResponseParser {
             throw new IllegalArgumentException("Raw model response is empty");
         }
 
-        String json = extractJson(rawModelResponse);
+        String json = normalizeKnownModelAliases(extractJson(rawModelResponse));
 
         try {
             GenerateClaimResponse response = objectMapper.readValue(json, GenerateClaimResponse.class);
@@ -27,6 +27,21 @@ public class ClaimResponseParser {
         } catch (Exception e) {
             throw new IllegalArgumentException("Failed to parse GigaChat response as GenerateClaimResponse. Raw JSON: " + json, e);
         }
+    }
+
+
+    /**
+     * GigaChat иногда возвращает смысловые, но не входящие в наш enum значения document_type.
+     * Нормализуем только заранее известные безопасные синонимы, чтобы не расширять DTO мусорными типами.
+     */
+    private String normalizeKnownModelAliases(String json) {
+        return json
+                .replace("\"document_type\": \"TIR_TRANSPORT_DOCUMENT\"", "\"document_type\": \"TTN\"")
+                .replace("\"document_type\":\"TIR_TRANSPORT_DOCUMENT\"", "\"document_type\":\"TTN\"")
+                .replace("\"document_type\": \"TRANSPORT_WAYBILL\"", "\"document_type\": \"TTN\"")
+                .replace("\"document_type\":\"TRANSPORT_WAYBILL\"", "\"document_type\":\"TTN\"")
+                .replace("\"document_type\": \"WAYBILL\"", "\"document_type\": \"TTN\"")
+                .replace("\"document_type\":\"WAYBILL\"", "\"document_type\":\"TTN\"");
     }
 
     private String extractJson(String raw) {

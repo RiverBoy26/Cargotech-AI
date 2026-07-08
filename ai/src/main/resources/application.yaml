@@ -1,5 +1,10 @@
 server:
   port: 8081
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
 
 spring:
   application:
@@ -16,7 +21,13 @@ gigachat:
   client-id: ${GIGACHAT_CLIENT_ID:}
   auth-key: ${GIGACHAT_AUTH_KEY:}
   chat-model: ${GIGACHAT_CHAT_MODEL:GigaChat-2-Pro}
-  embeddings-model: ${GIGACHAT_EMBEDDINGS_MODEL:Embeddings}
+  embeddings-model: ${GIGACHAT_EMBEDDINGS_MODEL:EmbeddingsGigaR}
   temperature: ${GIGACHAT_TEMPERATURE:0.1}
   max-tokens: ${GIGACHAT_MAX_TOKENS:1000}
   token-refresh-skew-seconds: ${GIGACHAT_TOKEN_REFRESH_SKEW_SECONDS:60}
+
+qdrant:
+  url: ${QDRANT_URL:http://localhost:6333}
+  collection-name: ${QDRANT_COLLECTION_NAME:cargotech_rag_chunks}
+  vector-size: ${QDRANT_VECTOR_SIZE:2560}
+  distance: ${QDRANT_DISTANCE:Cosine}

@@ -139,6 +139,8 @@ public class PaymentDelayPromptBuilder {
                 1. Не выдумывай документы.
                 2. Добавляй только документы, существование которых подтверждается входными данными.
                 3. Если документ упомянут в claim_text как приложение, он должен присутствовать в attachments.
+                4. document_type выбирай только из списка: CONTRACT, ACT, TTN, INVOICE, CALCULATION, PAYMENT_EXTRACT, TRANSPORT_ORDER, LOADING_FAILURE_ACT, NOTIFICATION, OTHER.
+                5. Для товарно-транспортной накладной / ТТН всегда используй document_type = TTN. Не используй TIR_TRANSPORT_DOCUMENT, WAYBILL или TRANSPORT_WAYBILL.
                 """.replace("{INPUT_JSON}", inputJson);
     }
 

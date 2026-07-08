@@ -89,6 +89,9 @@ public record GenerateClaimResponse(
         INVOICE,
         CALCULATION,
         PAYMENT_EXTRACT,
+        TRANSPORT_ORDER,
+        LOADING_FAILURE_ACT,
+        NOTIFICATION,
         OTHER
     }
 }

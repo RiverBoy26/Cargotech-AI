@@ -1,0 +1,17 @@
+package ru.sber.cargotech.ai.rag;
+
+public enum RagChunkType {
+    PAYMENT_TERM,
+    CONTRACT_PENALTY,
+    PRETRIAL_ORDER,
+
+    LEGAL_ARTICLE,
+
+    CLAIM_TEMPLATE,
+    STYLE_EXAMPLE,
+
+    VEHICLE_SUPPLY_DUTY,
+    LOADING_FAILURE_PENALTY,
+    NOTIFICATION_STRUCTURE,
+    ACT_STRUCTURE
+}

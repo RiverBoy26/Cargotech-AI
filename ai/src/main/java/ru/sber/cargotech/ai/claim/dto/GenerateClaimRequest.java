@@ -43,7 +43,8 @@ public record GenerateClaimRequest(
     }
 
     public enum ClaimType {
-        PAYMENT_DELAY
+        PAYMENT_DELAY,
+        LOADING_FAILURE
     }
 
     public record Party(
@@ -80,8 +81,49 @@ public record GenerateClaimRequest(
             String ttnNumber,
 
             @JsonProperty("invoice_number")
-            String invoiceNumber
+            String invoiceNumber,
+
+            @JsonProperty("loading_date")
+            String loadingDate,
+
+            @JsonProperty("loading_address")
+            String loadingAddress,
+
+            @JsonProperty("loading_time_window")
+            String loadingTimeWindow,
+
+            @JsonProperty("vehicle_requirements")
+            String vehicleRequirements,
+
+            @JsonProperty("carrier_name")
+            String carrierName,
+
+            @JsonProperty("failure_confirmed_by_dispatcher")
+            Boolean failureConfirmedByDispatcher
     ) {
+        public ShipmentFacts(
+                String orderNumber,
+                String route,
+                String actNumber,
+                String actDate,
+                String ttnNumber,
+                String invoiceNumber
+        ) {
+            this(
+                    orderNumber,
+                    route,
+                    actNumber,
+                    actDate,
+                    ttnNumber,
+                    invoiceNumber,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+            );
+        }
     }
 
     public record PaymentFacts(
