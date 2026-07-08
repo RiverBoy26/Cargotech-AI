@@ -36,14 +36,14 @@ auth:
   jwt:
     issuer: ${JWT_ISSUER:cargotech-auth}
     secret-base64: ${JWT_SECRET_BASE64}
-    access-token-ttl: ${ACCESS_TOKEN_TTL:PT15M}
-    refresh-token-ttl: ${REFRESH_TOKEN_TTL:P30D}
+    access-token-ttl: ${ACCESS_TOKEN_TTL}
+    refresh-token-ttl: ${REFRESH_TOKEN_TTL}
   password:
-    bcrypt-strength: ${BCRYPT_STRENGTH:12}
+    bcrypt-strength: ${BCRYPT_STRENGTH}
   bootstrap:
     enabled: ${AUTH_BOOTSTRAP_ENABLED:false}
     email: ${AUTH_BOOTSTRAP_EMAIL:admin@cargotech.local}
-    password: ${AUTH_BOOTSTRAP_PASSWORD:ChangeMe123!}
-    full-name: ${AUTH_BOOTSTRAP_FULL_NAME:CargoTech Super Admin}
+    password: ${AUTH_BOOTSTRAP_PASSWORD}
+    full-name: ${AUTH_BOOTSTRAP_FULL_NAME}
     organization-name: ${AUTH_BOOTSTRAP_ORGANIZATION_NAME:CargoTech}
     organization-inn: ${AUTH_BOOTSTRAP_ORGANIZATION_INN:7700000000}
