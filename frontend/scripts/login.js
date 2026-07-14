@@ -1,11 +1,24 @@
-const form = document.getElementById("loginForm");
+const form = document.getElementById('loginForm');
+const errorEl = document.getElementById('error');
+const submitBtn = form.querySelector('button[type="submit"]');
 
-form.addEventListener("submit", async (event) => {
-    event.preventDefault();
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  errorEl.textContent = '';
 
-    const username = document.getElementById("username").value;
-    const password = document.getElementById("password").value;
+  const email = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
 
-    console.log(username);
-    console.log(password);
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Вход...';
+
+  try {
+    const data = await login(email, password);
+    redirectByRole(data.roles);
+  } catch (err) {
+    errorEl.textContent = err.message || 'Неверный email или пароль';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Войти';
+  }
 });

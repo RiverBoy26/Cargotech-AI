@@ -47,12 +47,15 @@
                         <input class="form_input" id="field_email" type="email" placeholder="ivanov@expeditor.ru">
                     </div>
                     <div class="form_field">
+                        <label class="form_label" for="field_password">Пароль</label>
+                        <input class="form_input" id="field_password" type="password" placeholder="мин. 8 символов">
+                    </div>
+                    <div class="form_field">
                         <label class="form_label" for="field_role">Роль</label>
                         <select class="form_input form_select" id="field_role">
                             <option value="">— выберите роль —</option>
                             <option value="LAWYER">Юрист</option>
                             <option value="ACCOUNTANT">Бухгалтер</option>
-                            <option value="ADMIN">Администратор</option>
                         </select>
                     </div>
                 </div>
@@ -89,7 +92,7 @@
 
     </main>
 
-    <script src="/mocks/users_mock.js"></script>
+    <script src="/scripts/api.js"></script>
     <script src="/scripts/admin_script.js"></script>
 </body>
 </html>
