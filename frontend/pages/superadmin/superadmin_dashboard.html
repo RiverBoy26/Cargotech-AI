@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Суперадмин</title>
+    <link rel="stylesheet" href="/styles/superadmin_dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="topbar_user">
+            <div class="topbar_usename">Администратор платформы</div>
+            <div class="topbar_user_role">суперадмин</div>
+        </div>
+    </header>
+
+    <main>
+        <div class="page_title_row">
+            <h1 class="page_title">Управление платформой</h1>
+        </div>
+
+        <div class="tabs_row">
+            <button class="tab_btn tab_btn_active" data-tab="users">Пользователи</button>
+            <button class="tab_btn" data-tab="expeditors">Экспедиторы</button>
+            <button class="tab_btn" data-tab="templates">Шаблоны претензий</button>
+        </div>
+
+        <section class="tab_panel tab_panel_active" id="tab_panel_users">
+            <div class="panel_header_row">
+                <p class="panel_subtitle">Все пользователи платформы, сгруппированные по экспедиторам</p>
+            </div>
+            <div id="all_users_list"></div>
+        </section>
+
+        <section class="tab_panel" id="tab_panel_expeditors">
+            <div class="placeholder_box">
+                <div class="placeholder_box_title">Раздел в разработке</div>
+                <p class="placeholder_box_text">
+                    Здесь появится управление организациями-экспедиторами —
+                    добавление, редактирование и деактивация экспедиторов на платформе.
+                </p>
+            </div>
+        </section>
+
+        <section class="tab_panel" id="tab_panel_templates">
+            <div class="placeholder_box">
+                <div class="placeholder_box_title">Раздел в разработке</div>
+                <p class="placeholder_box_text">
+                    Здесь появится управление глобальными шаблонами претензий —
+                    базовые шаблоны для всех экспедиторов платформы.
+                </p>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="/mocks/users_mock.js"></script>
+    <script src="/scripts/superadmin_script.js"></script>
+</body>
+</html>

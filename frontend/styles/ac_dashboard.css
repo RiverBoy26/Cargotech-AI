@@ -22,19 +22,6 @@ header {
   font-size: 14px;
 }
 
-.notif_btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #FCEADF;
-  border: 25px;
-  border-radius: 25px;
-  padding: 14px 20px;
-  font-family: inherit;
-  color: #8A93A0;
-  cursor: pointer;
-}
-
 .topbar_user {
   font-size: 16px;
   color: #1B2A4A; 
@@ -60,6 +47,7 @@ header {
   align-items: center;
   gap: 10px;
   background: #FCEADF;
+  border: 1px solid #F6C9A6;
   border-radius: 25px;
   padding: 14px 20px;
   flex: 1;
@@ -85,7 +73,8 @@ header {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  background: #d6d6d6;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
   border-radius: 25px;
   padding: 10px 20px;
   width: 220px;
@@ -95,7 +84,8 @@ header {
 /* таблица */
 
 .overdues_table {
-  background: #d6d6d6;
+  background: #FFFFFF;
+  border: 2px solid #E6E9ED;
   border-radius: 10px;
   overflow: hidden;
 }
@@ -103,12 +93,14 @@ header {
 .overdues_table_head {
   display: grid;
   grid-template-columns: 1fr 1.2fr 0.8fr 0.9fr 0.9fr 1.1fr 1.3fr;
-  background: #c4c4c4;
+  background: #FCEADF;
 }
 
 .overdues_table_head_t {
   padding: 16px 20px;
   font-size: 14px;
+  color: #8A93A0;
+  text-align: center;
 }
 
 /* строки */
@@ -117,12 +109,17 @@ header {
   display: grid;
   grid-template-columns: 1fr 1.2fr 0.8fr 0.9fr 0.9fr 1.1fr 1.3fr;
   align-items: center;
-  border-bottom: 1px solid #b9b9b9;
+  border-bottom: 1px solid #E6E9ED;
   font-size: 14px;
+  cursor: pointer;
 }
 
 .overdue_row:last-child {
   border-bottom: none;
+}
+
+.overdue_row:hover {
+  background: #cacaca;
 }
 
 .overdue_row_client,
@@ -151,27 +148,27 @@ header {
   font-size: 13px;
   padding: 6px 12px;
   border-radius: 20px;
-  border: 1px solid rgba(0, 0, 0, 0.25);
+  border: 1px solid #DDE1E6;
 }
 
 .status-pill--waiting {
-  background: #f6e07a;
-  color: #5c4a06;
+  background: #F6EEDD;
+  color: #C0832B;
 }
 
 .status-pill--sent {
-  background: #d3c4f0;
-  color: #3d2768;
+  background: #E7ECF3;
+  color: #3D5A80;
 }
 
 .status-pill--partial {
-  background: #f4a8a3;
-  color: #6b1f1a;
+  background: #F5E5E2; 
+  color: #B23A2F;
 }
 
 .status-pill--paid {
-  background: #a9e0a0;
-  color: #1f5c14;
+  background: #E6F0EA;
+  color: #2E7D5B;
 }
 
 /* кнопки действия */
@@ -187,18 +184,19 @@ header {
 }
 
 .action_btn_confirm {
-  background: #c4c4c4;
-  color: #1a1a1a;
+  background: #ffada9; 
+  color: #d73728;
+  border: 1px solid #DDE1E6;
 }
 
 .action_btn_confirm:hover {
-  background: #b6b6b6;
+  background: #f88d87;
 }
 
 .action_btn_paid {
   background: #a9e0a0;
   color: #1f5c14;
-  border-color: rgba(0, 0, 0, 0.25);
+  border: 1px solid #DDE1E6;
 }
 
 .action_btn_paid:hover {

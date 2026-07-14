@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Администратор экспедитора</title>
+    <link rel="stylesheet" href="/styles/admin_dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="topbar_user">
+            <div class="topbar_usename">Громова Елена Викторовна</div>
+            <div class="topbar_user_role">администратор экспедитора</div>
+        </div>
+    </header>
+
+    <main>
+        <div class="page_title_row">
+            <h1 class="page_title">Настройки экспедитора</h1>
+        </div>
+
+        <div class="tabs_row">
+            <button class="tab_btn tab_btn_active" data-tab="users">Пользователи</button>
+            <button class="tab_btn" data-tab="templates">Шаблоны претензий</button>
+        </div>
+
+        <!-- ===== Вкладка: Пользователи ===== -->
+        <section class="tab_panel tab_panel_active" id="tab_panel_users">
+
+            <div class="panel_header_row">
+                <p class="panel_subtitle">Сотрудники экспедитора и их роли в системе</p>
+                <button class="primary_btn" id="add_user_btn">+ Добавить пользователя</button>
+            </div>
+
+            <!-- Форма добавления пользователя — скрыта по умолчанию -->
+            <div class="add_user_form" id="add_user_form">
+                <div class="add_user_form_title">Новый пользователь</div>
+                <div class="add_user_form_fields">
+                    <div class="form_field">
+                        <label class="form_label" for="field_fullname">ФИО</label>
+                        <input class="form_input" id="field_fullname" type="text" placeholder="Иванов Иван Иванович">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="field_email">Email</label>
+                        <input class="form_input" id="field_email" type="email" placeholder="ivanov@expeditor.ru">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="field_role">Роль</label>
+                        <select class="form_input form_select" id="field_role">
+                            <option value="">— выберите роль —</option>
+                            <option value="LAWYER">Юрист</option>
+                            <option value="ACCOUNTANT">Бухгалтер</option>
+                            <option value="ADMIN">Администратор</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="add_user_form_actions">
+                    <button class="primary_btn" id="save_user_btn">Добавить</button>
+                    <button class="secondary_btn" id="cancel_user_btn">Отмена</button>
+                </div>
+            </div>
+
+            <div class="users_table">
+                <div class="users_table_head">
+                    <div class="users_table_head_t">ФИО</div>
+                    <div class="users_table_head_t">Email</div>
+                    <div class="users_table_head_t">Роль</div>
+                    <div class="users_table_head_t">Статус</div>
+                    <div class="users_table_head_t">Действие</div>
+                </div>
+                <div class="users_list" id="users_list"></div>
+            </div>
+
+        </section>
+
+        <!-- ===== Вкладка: Шаблоны претензий (заглушка) ===== -->
+        <section class="tab_panel" id="tab_panel_templates">
+            <div class="placeholder_box">
+                <div class="placeholder_box_title">Раздел в разработке</div>
+                <p class="placeholder_box_text">
+                    Здесь появится управление шаблонами претензий —
+                    создание и редактирование текстовых заготовок
+                    с подстановкой данных.
+                </p>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="/mocks/users_mock.js"></script>
+    <script src="/scripts/admin_script.js"></script>
+</body>
+</html>

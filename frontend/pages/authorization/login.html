@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Авторизация</title>
+    <link rel="stylesheet" href="/styles/login.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <main>
+        <div class="head">
+            <h1>Авторизация</h1>
+        </div>
+        <form id="loginForm">
+            <h1>Вход</h1>
+            <label>
+                Логин
+                <input type="text" id="username" autocomplete="username" required>
+            </label>
+
+            <label>
+                Пароль
+                <input type="password" id="password" autocomplete="current-password" required>
+            </label>
+
+            <button type="submit">
+                Войти
+            </button>
+
+            <p id="error"></p>
+        </form>
+
+        <script src="/scripts/login.js"></script>
+    </main>
+</body>
+</html>

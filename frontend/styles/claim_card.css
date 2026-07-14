@@ -22,19 +22,6 @@ header {
   font-size: 14px;
 }
 
-.notif_btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #FCEADF;
-  border: 25px;
-  border-radius: 25px;
-  padding: 14px 20px;
-  font-family: inherit;
-  color: #8A93A0;
-  cursor: pointer;
-}
-
 .topbar_user {
   display: flex;
   font-size: 16px;
