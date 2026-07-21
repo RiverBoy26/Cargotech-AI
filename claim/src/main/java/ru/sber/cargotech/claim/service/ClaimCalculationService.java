@@ -1,5 +1,6 @@
 package ru.sber.cargotech.claim.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.ClaimCalculationResponse;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ClaimCalculationService {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final BigDecimal DAYS_IN_YEAR = new BigDecimal("365");
@@ -34,22 +36,6 @@ public class ClaimCalculationService {
     private final ContractService contractService;
     private final ClaimPaymentFactRepository paymentFactRepository;
     private final ClaimOutboxWriter outboxWriter;
-
-    public ClaimCalculationService(
-        ClaimRepository claimRepository,
-        ClaimCalculationRepository calculationRepository,
-        ShipmentService shipmentService,
-        ContractService contractService,
-        ClaimPaymentFactRepository paymentFactRepository,
-        ClaimOutboxWriter outboxWriter
-    ) {
-        this.claimRepository = claimRepository;
-        this.calculationRepository = calculationRepository;
-        this.shipmentService = shipmentService;
-        this.contractService = contractService;
-        this.paymentFactRepository = paymentFactRepository;
-        this.outboxWriter = outboxWriter;
-    }
 
     @Transactional(readOnly = true)
     public ClaimCalculationResponse getLatest(CurrentClaimUser user, UUID claimId) {

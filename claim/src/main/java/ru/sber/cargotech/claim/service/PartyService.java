@@ -1,5 +1,6 @@
 package ru.sber.cargotech.claim.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -17,17 +18,10 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class PartyService {
     private final ClaimPartyRepository partyRepository;
     private final ClaimOutboxWriter outboxWriter;
-
-    public PartyService(
-        ClaimPartyRepository partyRepository,
-        ClaimOutboxWriter outboxWriter
-    ) {
-        this.partyRepository = partyRepository;
-        this.outboxWriter = outboxWriter;
-    }
 
     @Transactional(readOnly = true)
     public Page<PartyResponse> list(CurrentClaimUser user, Pageable pageable) {

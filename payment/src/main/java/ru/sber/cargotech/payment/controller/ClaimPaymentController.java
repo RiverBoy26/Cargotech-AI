@@ -1,6 +1,7 @@
 package ru.sber.cargotech.payment.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,21 +22,12 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/payments/claims/{claimId}")
+@RequiredArgsConstructor
 public class ClaimPaymentController {
 
     private final PaymentService paymentService;
     private final PaymentCheckService checkService;
     private final CurrentPaymentUserProvider userProvider;
-
-    public ClaimPaymentController(
-        PaymentService paymentService,
-        PaymentCheckService checkService,
-        CurrentPaymentUserProvider userProvider
-    ) {
-        this.paymentService = paymentService;
-        this.checkService = checkService;
-        this.userProvider = userProvider;
-    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('PAYMENT_READ')")

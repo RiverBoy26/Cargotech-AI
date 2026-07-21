@@ -1,5 +1,6 @@
 package ru.sber.cargotech.claim.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.ClaimVersionResponse;
@@ -21,20 +22,11 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ClaimVersionService {
     private final ClaimRepository claimRepository;
     private final ClaimVersionRepository versionRepository;
     private final ClaimOutboxWriter outboxWriter;
-
-    public ClaimVersionService(
-        ClaimRepository claimRepository,
-        ClaimVersionRepository versionRepository,
-        ClaimOutboxWriter outboxWriter
-    ) {
-        this.claimRepository = claimRepository;
-        this.versionRepository = versionRepository;
-        this.outboxWriter = outboxWriter;
-    }
 
     @Transactional(readOnly = true)
     public List<ClaimVersionResponse> list(CurrentClaimUser user, UUID claimId) {

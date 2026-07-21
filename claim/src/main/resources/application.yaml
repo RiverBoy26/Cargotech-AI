@@ -6,9 +6,10 @@ spring:
     name: claim
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/cargotech}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:admin}
+    url: ${CLAIM_DB_URL:jdbc:postgresql://localhost:5432/cargotech_claim}
+    username: ${CLAIM_DB_USERNAME:postgres}
+    password: ${CLAIM_DB_PASSWORD:admin}
+    driver-class-name: org.postgresql.Driver
 
   jpa:
     open-in-view: false

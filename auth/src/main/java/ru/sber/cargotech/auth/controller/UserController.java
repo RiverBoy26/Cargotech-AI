@@ -1,6 +1,7 @@
 package ru.sber.cargotech.auth.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -25,18 +26,11 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/users")
+@RequiredArgsConstructor
 public class UserController {
 
     private final UserService userService;
     private final CurrentUserProvider currentUserProvider;
-
-    public UserController(
-        UserService userService,
-        CurrentUserProvider currentUserProvider
-    ) {
-        this.userService = userService;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('USER_READ')")

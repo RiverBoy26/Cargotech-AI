@@ -1,5 +1,6 @@
 package ru.sber.cargotech.claim.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.ClaimCommentResponse;
@@ -19,20 +20,11 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ClaimCommentService {
     private final ClaimRepository claimRepository;
     private final ClaimCommentRepository commentRepository;
     private final ClaimOutboxWriter outboxWriter;
-
-    public ClaimCommentService(
-        ClaimRepository claimRepository,
-        ClaimCommentRepository commentRepository,
-        ClaimOutboxWriter outboxWriter
-    ) {
-        this.claimRepository = claimRepository;
-        this.commentRepository = commentRepository;
-        this.outboxWriter = outboxWriter;
-    }
 
     @Transactional(readOnly = true)
     public List<ClaimCommentResponse> list(CurrentClaimUser user, UUID claimId) {

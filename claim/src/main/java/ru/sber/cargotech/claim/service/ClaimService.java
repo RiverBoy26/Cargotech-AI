@@ -1,10 +1,12 @@
 package ru.sber.cargotech.claim.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.sber.cargotech.claim.client.PaymentClient;
 import ru.sber.cargotech.claim.dto.ClaimDetailsResponse;
 import ru.sber.cargotech.claim.dto.ClaimListItemResponse;
 import ru.sber.cargotech.claim.dto.ClaimVersionResponse;
@@ -35,6 +37,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ClaimService {
     private static final Collection<ClaimStatus> CLOSED_STATUSES = List.of(
         ClaimStatus.PAID,
@@ -46,36 +49,15 @@ public class ClaimService {
     private final ClaimQueryRepository queryRepository;
     private final ClaimStatusHistoryRepository historyRepository;
     private final ShipmentService shipmentService;
+    private final PaymentClient paymentClient;
     private final ContractService contractService;
     private final PartyService partyService;
     private final ClaimCalculationService calculationService;
     private final ClaimVersionService versionService;
     private final ClaimOutboxWriter outboxWriter;
-    private final String numberPrefix;
 
-    public ClaimService(
-        ClaimRepository claimRepository,
-        ClaimQueryRepository queryRepository,
-        ClaimStatusHistoryRepository historyRepository,
-        ShipmentService shipmentService,
-        ContractService contractService,
-        PartyService partyService,
-        ClaimCalculationService calculationService,
-        ClaimVersionService versionService,
-        ClaimOutboxWriter outboxWriter,
-        @Value("${claim.number-prefix:CLM}") String numberPrefix
-    ) {
-        this.claimRepository = claimRepository;
-        this.queryRepository = queryRepository;
-        this.historyRepository = historyRepository;
-        this.shipmentService = shipmentService;
-        this.contractService = contractService;
-        this.partyService = partyService;
-        this.calculationService = calculationService;
-        this.versionService = versionService;
-        this.outboxWriter = outboxWriter;
-        this.numberPrefix = numberPrefix;
-    }
+    @Value("${claim.number-prefix:CLM}")
+    private String numberPrefix;
 
     @Transactional(readOnly = true)
     public Page<ClaimListItemResponse> list(
@@ -225,15 +207,32 @@ public class ClaimService {
     }
 
     @Transactional
-    public ClaimDetailsResponse send(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
-        ClaimEntity claim = getEntity(user.organizationId(), claimId);
+    public ClaimDetailsResponse send(
+            CurrentClaimUser user,
+            UUID claimId,
+            StatusChangeRequest request
+    ) {
+        ClaimEntity claim = getEntity(
+                user.organizationId(),
+                claimId
+        );
+
         if (claim.getStatus() != ClaimStatus.LEGAL_APPROVED) {
-            throw ClaimException.conflict("Отправить можно только утверждённую претензию");
+            throw ClaimException.conflict(
+                    "Отправить можно только утверждённую претензию"
+            );
         }
+
         claim.setSentAt(OffsetDateTime.now());
         claim.setUpdatedBy(user.userId());
         claimRepository.save(claim);
-        return changeStatus(user, claimId, ClaimStatus.SENT, request == null ? null : request.reason());
+
+        return changeStatus(
+                user,
+                claimId,
+                ClaimStatus.SENT,
+                request == null ? null : request.reason()
+        );
     }
 
     @Transactional

@@ -1,9 +1,13 @@
 package ru.sber.cargotech.payment.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientResponseException;
+import ru.sber.cargotech.payment.client.ClaimClient;
+import ru.sber.cargotech.payment.dto.ClaimPaymentContextResponse;
 import ru.sber.cargotech.payment.dto.ClaimPaymentsResponse;
 import ru.sber.cargotech.payment.dto.PaymentDetailsResponse;
 import ru.sber.cargotech.payment.dto.PaymentMatchResponse;
@@ -15,7 +19,6 @@ import ru.sber.cargotech.payment.enums.PaymentStatus;
 import ru.sber.cargotech.payment.enums.PaymentTargetType;
 import ru.sber.cargotech.payment.exception.PaymentException;
 import ru.sber.cargotech.payment.repository.ClaimPaymentData;
-import ru.sber.cargotech.payment.repository.ClaimPaymentRepository;
 import ru.sber.cargotech.payment.repository.PaymentMatchRepository;
 import ru.sber.cargotech.payment.repository.PaymentRepository;
 import ru.sber.cargotech.payment.security.CurrentPaymentUser;
@@ -28,91 +31,149 @@ import java.util.UUID;
 
 @Service
 @Transactional(readOnly = true)
+@RequiredArgsConstructor
 public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final PaymentMatchRepository matchRepository;
-    private final ClaimPaymentRepository claimRepository;
-
-    public PaymentServiceImpl(
-        PaymentRepository paymentRepository,
-        PaymentMatchRepository matchRepository,
-        ClaimPaymentRepository claimRepository
-    ) {
-        this.paymentRepository = paymentRepository;
-        this.matchRepository = matchRepository;
-        this.claimRepository = claimRepository;
-    }
+    private final ClaimClient claimClient;
 
     public Page<PaymentResponse> findAll(
-        Pageable pageable,
-        CurrentPaymentUser user
+            Pageable pageable,
+            CurrentPaymentUser user
     ) {
         return paymentRepository
-            .findAllByOrganizationId(user.organizationId(), pageable)
-            .map(this::toResponse);
+                .findAllByOrganizationId(user.organizationId(), pageable)
+                .map(this::toResponse);
     }
 
     public PaymentDetailsResponse getDetails(
-        UUID paymentId,
-        CurrentPaymentUser user
+            UUID paymentId,
+            CurrentPaymentUser user
     ) {
         Payment payment = getPayment(paymentId, user.organizationId());
+
         return new PaymentDetailsResponse(
-            toResponse(payment),
-            matchRepository.findAllByPaymentIdOrderByMatchedAtAsc(paymentId)
-                .stream()
-                .map(this::toMatchResponse)
-                .toList()
+                toResponse(payment),
+                matchRepository.findAllByPaymentIdOrderByMatchedAtAsc(paymentId)
+                        .stream()
+                        .map(this::toMatchResponse)
+                        .toList()
         );
     }
 
     public ClaimPaymentsResponse findByClaim(
-        UUID claimId,
-        CurrentPaymentUser user
+            UUID claimId,
+            CurrentPaymentUser user
     ) {
         ClaimPaymentData claim = getClaim(claimId, user.organizationId());
+
         List<UUID> paymentIds = paymentIds(claim);
+
         List<PaymentResponse> payments = paymentIds.stream()
-            .map(id -> getPayment(id, user.organizationId()))
-            .map(this::toResponse)
-            .toList();
+                .map(id -> getPayment(id, user.organizationId()))
+                .map(this::toResponse)
+                .toList();
 
         BigDecimal paid = paidAmount(claim);
         BigDecimal remaining = claim.serviceAmount()
-            .subtract(paid)
-            .max(BigDecimal.ZERO);
+                .subtract(paid)
+                .max(BigDecimal.ZERO);
 
         return new ClaimPaymentsResponse(
-            claim.id(),
-            claim.shipmentId(),
-            claim.claimNumber(),
-            claim.serviceAmount(),
-            paid,
-            remaining,
-            resolvePaymentStatus(claim.serviceAmount(), paid),
-            lastPaymentDate(claim, user.organizationId()),
-            payments
+                claim.id(),
+                claim.shipmentId(),
+                claim.claimNumber(),
+                claim.serviceAmount(),
+                paid,
+                remaining,
+                resolvePaymentStatus(claim.serviceAmount(), paid),
+                lastPaymentDate(claim, user.organizationId()),
+                payments
         );
     }
 
-    public Payment getPayment(UUID paymentId, UUID organizationId) {
+    public Payment getPayment(
+            UUID paymentId,
+            UUID organizationId
+    ) {
         return paymentRepository
-            .findByIdAndOrganizationId(paymentId, organizationId)
-            .orElseThrow(() -> PaymentException.notFound(
-                "Платёж %s не найден".formatted(paymentId)
-            ));
+                .findByIdAndOrganizationId(paymentId, organizationId)
+                .orElseThrow(() -> PaymentException.notFound(
+                        "Платёж %s не найден".formatted(paymentId)
+                ));
     }
 
     public ClaimPaymentData getClaim(
-        UUID claimId,
-        UUID organizationId
+            UUID claimId,
+            UUID organizationId
     ) {
-        return claimRepository
-            .findByIdAndOrganizationId(claimId, organizationId)
-            .orElseThrow(() -> PaymentException.notFound(
-                "Претензия %s не найдена".formatted(claimId)
-            ));
+        try {
+            ClaimPaymentContextResponse response =
+                    claimClient.getPaymentContext(claimId);
+
+            if (response == null) {
+                throw PaymentException.notFound(
+                        "Претензия %s не найдена".formatted(claimId)
+                );
+            }
+
+            return toClaimPaymentData(response);
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw PaymentException.notFound(
+                        "Претензия %s не найдена".formatted(claimId)
+                );
+            }
+
+            throw PaymentException.conflict(
+                    "Не удалось получить данные претензии из claim: "
+                            + exception.getMessage()
+            );
+        }
+    }
+
+    public List<ClaimPaymentData> findClaimsMentionedInPurpose(
+            UUID organizationId,
+            String purpose
+    ) {
+        if (purpose == null || purpose.isBlank()) {
+            return List.of();
+        }
+
+        return claimClient.findMentionedInPurpose(purpose)
+                .stream()
+                .map(this::toClaimPaymentData)
+                .toList();
+    }
+
+    public List<ClaimPaymentData> findOpenClaimsByPayerInn(
+            UUID organizationId,
+            String payerInn
+    ) {
+        if (payerInn == null || payerInn.isBlank()) {
+            return List.of();
+        }
+
+        return claimClient.findOpenByPayerInn(payerInn)
+                .stream()
+                .map(this::toClaimPaymentData)
+                .toList();
+    }
+
+    public void updateLastPaymentCheck(
+            UUID claimId,
+            UUID organizationId,
+            UUID checkId
+    ) {
+        try {
+            claimClient.updateLastPaymentCheck(claimId, checkId);
+        } catch (RestClientResponseException exception) {
+            throw PaymentException.conflict(
+                    "Не удалось привязать проверку оплаты к претензии: "
+                            + exception.getMessage()
+            );
+        }
     }
 
     public BigDecimal matchedAmount(UUID paymentId) {
@@ -121,66 +182,74 @@ public class PaymentServiceImpl implements PaymentService {
 
     public BigDecimal availableAmount(Payment payment) {
         return payment.getAmount().abs()
-            .subtract(matchedAmount(payment.getId()))
-            .max(BigDecimal.ZERO);
+                .subtract(matchedAmount(payment.getId()))
+                .max(BigDecimal.ZERO);
     }
 
     public BigDecimal paidAmount(ClaimPaymentData claim) {
         return matchRepository.sumActiveByTarget(
-            PaymentTargetType.CLAIM,
-            claim.id()
+                PaymentTargetType.CLAIM,
+                claim.id()
         ).add(matchRepository.sumActiveByTarget(
-            PaymentTargetType.SHIPMENT,
-            claim.shipmentId()
+                PaymentTargetType.SHIPMENT,
+                claim.shipmentId()
         ));
     }
 
     public List<UUID> paymentIds(ClaimPaymentData claim) {
         LinkedHashSet<UUID> ids = new LinkedHashSet<>();
+
         ids.addAll(matchRepository.findPaymentIdsByTarget(
-            PaymentTargetType.CLAIM,
-            claim.id()
+                PaymentTargetType.CLAIM,
+                claim.id()
         ));
+
         ids.addAll(matchRepository.findPaymentIdsByTarget(
-            PaymentTargetType.SHIPMENT,
-            claim.shipmentId()
+                PaymentTargetType.SHIPMENT,
+                claim.shipmentId()
         ));
+
         return List.copyOf(ids);
     }
 
     public LocalDate lastPaymentDate(
-        ClaimPaymentData claim,
-        UUID organizationId
+            ClaimPaymentData claim,
+            UUID organizationId
     ) {
         return paymentRepository.findLastPaymentDateForClaim(
-            organizationId,
-            PaymentTargetType.CLAIM,
-            claim.id(),
-            PaymentTargetType.SHIPMENT,
-            claim.shipmentId()
+                organizationId,
+                PaymentTargetType.CLAIM,
+                claim.id(),
+                PaymentTargetType.SHIPMENT,
+                claim.shipmentId()
         );
     }
 
     public PaymentCheckStatus resolvePaymentStatus(
-        BigDecimal expectedAmount,
-        BigDecimal paidAmount
+            BigDecimal expectedAmount,
+            BigDecimal paidAmount
     ) {
         if (paidAmount.signum() == 0) {
             return PaymentCheckStatus.NOT_PAID;
         }
+
         int comparison = paidAmount.compareTo(expectedAmount);
+
         if (comparison < 0) {
             return PaymentCheckStatus.PARTIALLY_PAID;
         }
+
         if (comparison == 0) {
             return PaymentCheckStatus.FULLY_PAID;
         }
+
         return PaymentCheckStatus.OVERPAID;
     }
 
     @Transactional
     public void refreshStatus(Payment payment) {
         BigDecimal matched = matchedAmount(payment.getId());
+
         if (matched.signum() == 0) {
             payment.setStatus(PaymentStatus.IMPORTED);
         } else if (matched.compareTo(payment.getAmount().abs()) < 0) {
@@ -188,45 +257,63 @@ public class PaymentServiceImpl implements PaymentService {
         } else {
             payment.setStatus(PaymentStatus.MATCHED);
         }
+
         paymentRepository.save(payment);
     }
 
     public PaymentResponse toResponse(Payment payment) {
         BigDecimal matched = matchedAmount(payment.getId());
+
         return new PaymentResponse(
-            payment.getId(),
-            payment.getSourceSystem(),
-            payment.getExternalPaymentId(),
-            payment.getPaymentNumber(),
-            payment.getPaymentDate(),
-            payment.getPayerInn(),
-            payment.getPayerName(),
-            payment.getRecipientInn(),
-            payment.getRecipientName(),
-            payment.getAmount(),
-            payment.getCurrency(),
-            payment.getPurpose(),
-            payment.getStatus(),
-            matched,
-            payment.getAmount().abs().subtract(matched).max(BigDecimal.ZERO)
+                payment.getId(),
+                payment.getSourceSystem(),
+                payment.getExternalPaymentId(),
+                payment.getPaymentNumber(),
+                payment.getPaymentDate(),
+                payment.getPayerInn(),
+                payment.getPayerName(),
+                payment.getRecipientInn(),
+                payment.getRecipientName(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                payment.getPurpose(),
+                payment.getStatus(),
+                matched,
+                payment.getAmount().abs()
+                        .subtract(matched)
+                        .max(BigDecimal.ZERO)
         );
     }
 
     public PaymentMatchResponse toMatchResponse(PaymentMatch match) {
         return new PaymentMatchResponse(
-            match.getId(),
-            match.getPaymentId(),
-            match.getTargetType(),
-            match.getTargetId(),
-            match.getMatchedAmount(),
-            match.getMatchType(),
-            match.getConfidence(),
-            match.isActive(),
-            match.getMatchedBy(),
-            match.getMatchedAt(),
-            match.getUnmatchedBy(),
-            match.getUnmatchedAt(),
-            match.getUnmatchReason()
+                match.getId(),
+                match.getPaymentId(),
+                match.getTargetType(),
+                match.getTargetId(),
+                match.getMatchedAmount(),
+                match.getMatchType(),
+                match.getConfidence(),
+                match.isActive(),
+                match.getMatchedBy(),
+                match.getMatchedAt(),
+                match.getUnmatchedBy(),
+                match.getUnmatchedAt(),
+                match.getUnmatchReason()
+        );
+    }
+
+    private ClaimPaymentData toClaimPaymentData(
+            ClaimPaymentContextResponse response
+    ) {
+        return new ClaimPaymentData(
+                response.claimId(),
+                response.shipmentId(),
+                response.claimNumber(),
+                response.debtorInn(),
+                response.shipmentOrderNumber(),
+                response.serviceAmount(),
+                response.status()
         );
     }
 }

@@ -1,5 +1,6 @@
 package ru.sber.cargotech.payment.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,24 +23,13 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class PaymentImportService {
 
     private final PaymentSpreadsheetParser parser;
     private final PaymentImportRepository importRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentOutboxWriter outboxWriter;
-
-    public PaymentImportService(
-        PaymentSpreadsheetParser parser,
-        PaymentImportRepository importRepository,
-        PaymentRepository paymentRepository,
-        PaymentOutboxWriter outboxWriter
-    ) {
-        this.parser = parser;
-        this.importRepository = importRepository;
-        this.paymentRepository = paymentRepository;
-        this.outboxWriter = outboxWriter;
-    }
 
     @Transactional
     public PaymentImportResponse importFromOneC(

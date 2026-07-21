@@ -3,9 +3,10 @@ server:
 
 spring:
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/cargotech}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:admin}
+    url: ${AUTH_DB_URL:jdbc:postgresql://localhost:5432/cargotech_auth}
+    username: ${AUTH_DB_USERNAME:postgres}
+    password: ${AUTH_DB_PASSWORD:admin}
+    driver-class-name: org.postgresql.Driver
   jpa:
     open-in-view: false
     hibernate:

@@ -1,5 +1,6 @@
 package ru.sber.cargotech.auth.controller;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,18 +13,11 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/roles")
+@RequiredArgsConstructor
 public class RoleController {
 
     private final AccessService accessService;
     private final CurrentUserProvider currentUserProvider;
-
-    public RoleController(
-        AccessService accessService,
-        CurrentUserProvider currentUserProvider
-    ) {
-        this.accessService = accessService;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('USER_READ')")

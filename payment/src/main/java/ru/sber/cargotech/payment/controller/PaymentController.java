@@ -1,6 +1,7 @@
 package ru.sber.cargotech.payment.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -35,6 +36,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/payments")
+@RequiredArgsConstructor
 public class PaymentController {
 
     private final PaymentImportService importService;
@@ -42,20 +44,6 @@ public class PaymentController {
     private final PaymentMatchingService matchingService;
     private final PaymentReconciliationService reconciliationService;
     private final CurrentPaymentUserProvider userProvider;
-
-    public PaymentController(
-        PaymentImportService importService,
-        PaymentService paymentService,
-        PaymentMatchingService matchingService,
-        PaymentReconciliationService reconciliationService,
-        CurrentPaymentUserProvider userProvider
-    ) {
-        this.importService = importService;
-        this.paymentService = paymentService;
-        this.matchingService = matchingService;
-        this.reconciliationService = reconciliationService;
-        this.userProvider = userProvider;
-    }
 
     @PostMapping(
         value = "/import/1c",

@@ -9,7 +9,7 @@ import ru.sber.cargotech.auth.dto.ApiErrorResponse;
 
 import java.time.OffsetDateTime;
 
-@RestControllerAdvice(basePackages = "ru.cargotech.claimlawyer.auth")
+@RestControllerAdvice
 public class AuthExceptionHandler {
 
     @ExceptionHandler(AuthException.class)

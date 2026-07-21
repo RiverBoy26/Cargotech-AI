@@ -1,5 +1,6 @@
 package ru.sber.cargotech.claim.controller;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,17 +15,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/calculations/claim/{claimId}")
+@RequiredArgsConstructor
 public class CalculationController {
     private final ClaimCalculationService calculationService;
     private final CurrentClaimUserProvider currentUserProvider;
-
-    public CalculationController(
-        ClaimCalculationService calculationService,
-        CurrentClaimUserProvider currentUserProvider
-    ) {
-        this.calculationService = calculationService;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('CALCULATION_READ')")

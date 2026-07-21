@@ -1,5 +1,6 @@
 package ru.sber.cargotech.auth.bootstrap;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +25,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 public class SuperAdminBootstrapRunner implements ApplicationRunner {
 
     private final AuthProperties properties;
@@ -33,62 +35,58 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
     private final UserAccessRepository accessRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public SuperAdminBootstrapRunner(
-        AuthProperties properties,
-        AuthOrganizationRepository organizationRepository,
-        AuthUserRepository userRepository,
-        AuthRoleRepository roleRepository,
-        UserAccessRepository accessRepository,
-        PasswordEncoder passwordEncoder
-    ) {
-        this.properties = properties;
-        this.organizationRepository = organizationRepository;
-        this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
-        this.accessRepository = accessRepository;
-        this.passwordEncoder = passwordEncoder;
-    }
-
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
         AuthProperties.Bootstrap bootstrap = properties.bootstrap();
+
         if (!bootstrap.enabled()) {
             return;
         }
 
         validate(bootstrap);
+
         AuthOrganization organization = findOrCreateOrganization(bootstrap);
+
         AuthUser user = userRepository
-            .findByEmailIgnoreCase(normalizeEmail(bootstrap.email()))
-            .orElseGet(() -> createUser(bootstrap, organization));
+                .findByEmailIgnoreCase(normalizeEmail(bootstrap.email()))
+                .orElseGet(() -> createUser(bootstrap, organization));
+
+        userRepository.flush();
 
         AuthRole superAdmin = roleRepository.findByCode("SUPER_ADMIN")
-            .orElseThrow(() -> AuthException.validation(
-                "Роль SUPER_ADMIN отсутствует в БД"
-            ));
+                .orElseThrow(() -> AuthException.validation(
+                        "Роль SUPER_ADMIN отсутствует в БД"
+                ));
 
         Set<String> currentRoles = accessRepository.findRoleCodes(user.getId());
+
         if (!currentRoles.contains("SUPER_ADMIN")) {
             List<UUID> roleIds = roleRepository
-                .findAllByCodeIn(currentRoles)
-                .stream()
-                .map(AuthRole::getId)
-                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+                    .findAllByCodeIn(currentRoles)
+                    .stream()
+                    .map(AuthRole::getId)
+                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+
             roleIds.add(superAdmin.getId());
-            accessRepository.replaceRoles(user.getId(), roleIds, null);
+
+            accessRepository.replaceRoles(
+                    user.getId(),
+                    roleIds,
+                    null
+            );
         }
     }
 
     private AuthOrganization findOrCreateOrganization(
-        AuthProperties.Bootstrap bootstrap
+            AuthProperties.Bootstrap bootstrap
     ) {
         Optional<AuthOrganization> existing =
-            bootstrap.organizationInn() != null
-                && !bootstrap.organizationInn().isBlank()
-                ? organizationRepository.findByInn(bootstrap.organizationInn())
-                : organizationRepository.findFirstByNameIgnoreCase(
-                    bootstrap.organizationName()
+                bootstrap.organizationInn() != null
+                        && !bootstrap.organizationInn().isBlank()
+                        ? organizationRepository.findByInn(bootstrap.organizationInn())
+                        : organizationRepository.findFirstByNameIgnoreCase(
+                        bootstrap.organizationName()
                 );
 
         return existing.orElseGet(() -> {
@@ -96,13 +94,14 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
             organization.setName(bootstrap.organizationName().trim());
             organization.setInn(blankToNull(bootstrap.organizationInn()));
             organization.setStatus(OrganizationStatus.ACTIVE);
-            return organizationRepository.save(organization);
+
+            return organizationRepository.saveAndFlush(organization);
         });
     }
 
     private AuthUser createUser(
-        AuthProperties.Bootstrap bootstrap,
-        AuthOrganization organization
+            AuthProperties.Bootstrap bootstrap,
+            AuthOrganization organization
     ) {
         AuthUser user = new AuthUser();
         user.setOrganizationId(organization.getId());
@@ -110,7 +109,8 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
         user.setEmail(normalizeEmail(bootstrap.email()));
         user.setPasswordHash(passwordEncoder.encode(bootstrap.password()));
         user.setActive(true);
-        return userRepository.save(user);
+
+        return userRepository.saveAndFlush(user);
     }
 
     private void validate(AuthProperties.Bootstrap bootstrap) {

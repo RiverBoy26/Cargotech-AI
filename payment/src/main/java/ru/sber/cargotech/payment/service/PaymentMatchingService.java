@@ -1,5 +1,6 @@
 package ru.sber.cargotech.payment.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.payment.dto.CreatePaymentMatchRequest;
@@ -20,24 +21,13 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class PaymentMatchingService {
 
     private final PaymentServiceImpl paymentService;
     private final PaymentMatchRepository matchRepository;
     private final PaymentTargetRepository targetRepository;
     private final PaymentOutboxWriter outboxWriter;
-
-    public PaymentMatchingService(
-        PaymentServiceImpl paymentService,
-        PaymentMatchRepository matchRepository,
-        PaymentTargetRepository targetRepository,
-        PaymentOutboxWriter outboxWriter
-    ) {
-        this.paymentService = paymentService;
-        this.matchRepository = matchRepository;
-        this.targetRepository = targetRepository;
-        this.outboxWriter = outboxWriter;
-    }
 
     @Transactional
     public PaymentMatchResponse match(

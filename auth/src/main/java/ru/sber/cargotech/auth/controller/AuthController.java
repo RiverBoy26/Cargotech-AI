@@ -2,7 +2,9 @@ package ru.sber.cargotech.auth.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,18 +21,11 @@ import ru.sber.cargotech.auth.service.AuthenticationService;
 
 @RestController
 @RequestMapping("/api/v1/auth")
+@RequiredArgsConstructor
 public class AuthController {
 
     private final AuthenticationService authenticationService;
     private final CurrentUserProvider currentUserProvider;
-
-    public AuthController(
-        AuthenticationService authenticationService,
-        CurrentUserProvider currentUserProvider
-    ) {
-        this.authenticationService = authenticationService;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     @PostMapping("/login")
     public TokenResponse login(

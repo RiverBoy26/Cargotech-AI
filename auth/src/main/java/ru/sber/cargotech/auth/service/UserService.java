@@ -1,6 +1,7 @@
 package ru.sber.cargotech.auth.service;
 
 import jakarta.persistence.criteria.Predicate;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -33,6 +34,7 @@ import java.util.TreeSet;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class UserService {
 
     private final AuthUserRepository userRepository;
@@ -42,24 +44,6 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final AuthOutboxWriter outboxWriter;
-
-    public UserService(
-        AuthUserRepository userRepository,
-        UserAccessRepository accessRepository,
-        AccessService accessService,
-        UserAccessPolicy policy,
-        PasswordEncoder passwordEncoder,
-        TokenService tokenService,
-        AuthOutboxWriter outboxWriter
-    ) {
-        this.userRepository = userRepository;
-        this.accessRepository = accessRepository;
-        this.accessService = accessService;
-        this.policy = policy;
-        this.passwordEncoder = passwordEncoder;
-        this.tokenService = tokenService;
-        this.outboxWriter = outboxWriter;
-    }
 
     @Transactional(readOnly = true)
     public PageResponse<UserResponse> findUsers(
@@ -164,7 +148,7 @@ public class UserService {
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setActive(true);
-        user = userRepository.save(user);
+        user = userRepository.saveAndFlush(user);
 
         accessRepository.replaceRoles(
             user.getId(),

@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,17 +24,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/claims/{claimId}/comments")
+@RequiredArgsConstructor
 public class ClaimCommentController {
     private final ClaimCommentService commentService;
     private final CurrentClaimUserProvider currentUserProvider;
-
-    public ClaimCommentController(
-        ClaimCommentService commentService,
-        CurrentClaimUserProvider currentUserProvider
-    ) {
-        this.commentService = commentService;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('CLAIM_READ')")

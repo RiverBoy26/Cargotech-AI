@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,17 +22,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/claims/{claimId}/versions")
+@RequiredArgsConstructor
 public class ClaimVersionController {
     private final ClaimVersionService versionService;
     private final CurrentClaimUserProvider currentUserProvider;
-
-    public ClaimVersionController(
-        ClaimVersionService versionService,
-        CurrentClaimUserProvider currentUserProvider
-    ) {
-        this.versionService = versionService;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('CLAIM_READ')")

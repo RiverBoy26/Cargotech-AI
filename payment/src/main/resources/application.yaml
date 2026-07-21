@@ -6,9 +6,10 @@ spring:
     name: payment
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/cargotech}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5432/cargotech_payment}
+    username: ${PAYMENT_DB_USERNAME:postgres}
+    password: ${PAYMENT_DB_PASSWORD:admin}
+    driver-class-name: org.postgresql.Driver
 
   jpa:
     open-in-view: false

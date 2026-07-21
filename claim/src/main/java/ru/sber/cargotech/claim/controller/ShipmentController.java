@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -23,17 +24,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/shipments")
+@RequiredArgsConstructor
 public class ShipmentController {
     private final ShipmentService shipmentService;
     private final CurrentClaimUserProvider currentUserProvider;
-
-    public ShipmentController(
-        ShipmentService shipmentService,
-        CurrentClaimUserProvider currentUserProvider
-    ) {
-        this.shipmentService = shipmentService;
-        this.currentUserProvider = currentUserProvider;
-    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('CLAIM_READ')")
