@@ -1,6 +1,7 @@
 package ru.sber.cargotech.payment.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,6 +25,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentImportService {
 
     private final PaymentSpreadsheetParser parser;
@@ -36,6 +38,8 @@ public class PaymentImportService {
         MultipartFile file,
         CurrentPaymentUser user
     ) {
+        log.debug("Импорт из 1С: organizationId={}, userId={}, fileName={}, sizeBytes={}", user.organizationId(), user.userId(), file.getOriginalFilename(), file.getSize());
+
         return importPayments(file, PaymentSourceSystem.ONE_C, user);
     }
 
@@ -44,6 +48,8 @@ public class PaymentImportService {
         MultipartFile file,
         CurrentPaymentUser user
     ) {
+        log.debug("Импорт банковской выписки: organizationId={}, userId={}, fileName={}, sizeBytes={}", user.organizationId(), user.userId(), file.getOriginalFilename(), file.getSize());
+
         return importPayments(file, PaymentSourceSystem.BANK_STATEMENT, user);
     }
 
@@ -52,6 +58,8 @@ public class PaymentImportService {
         PaymentSourceSystem sourceSystem,
         CurrentPaymentUser user
     ) {
+        log.debug("Обработка файла импорта: sourceSystem={}, organizationId={}, fileName={}", sourceSystem, user.organizationId(), file.getOriginalFilename());
+
         if (file == null || file.isEmpty()) {
             throw PaymentException.unprocessable("Файл импорта пуст");
         }

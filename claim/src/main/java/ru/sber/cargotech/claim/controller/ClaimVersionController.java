@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/claims/{claimId}/versions")
 @RequiredArgsConstructor
+@Slf4j
 public class ClaimVersionController {
     private final ClaimVersionService versionService;
     private final CurrentClaimUserProvider currentUserProvider;
@@ -30,6 +32,7 @@ public class ClaimVersionController {
     @GetMapping
     @PreAuthorize("hasAuthority('CLAIM_READ')")
     public List<ClaimVersionResponse> list(@PathVariable UUID claimId) {
+        log.info("Вызов endpoint: list");
         return versionService.list(currentUserProvider.getRequiredUser(), claimId);
     }
 
@@ -39,6 +42,7 @@ public class ClaimVersionController {
         @PathVariable UUID claimId,
         @PathVariable UUID versionId
     ) {
+        log.info("Вызов endpoint: get");
         return versionService.get(currentUserProvider.getRequiredUser(), claimId, versionId);
     }
 
@@ -49,6 +53,7 @@ public class ClaimVersionController {
         @PathVariable UUID claimId,
         @Valid @RequestBody CreateClaimVersionRequest request
     ) {
+        log.info("Вызов endpoint: create");
         return versionService.create(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -58,6 +63,7 @@ public class ClaimVersionController {
         @PathVariable UUID claimId,
         @PathVariable UUID versionId
     ) {
+        log.info("Вызов endpoint: markFinal");
         return versionService.markFinal(currentUserProvider.getRequiredUser(), claimId, versionId);
     }
 
@@ -67,6 +73,7 @@ public class ClaimVersionController {
         @PathVariable UUID claimId,
         @PathVariable UUID versionId
     ) {
+        log.info("Вызов endpoint: restore");
         return versionService.restore(currentUserProvider.getRequiredUser(), claimId, versionId);
     }
 
@@ -76,6 +83,7 @@ public class ClaimVersionController {
         @PathVariable UUID claimId,
         @PathVariable UUID versionId
     ) {
+        log.info("Вызов endpoint: diff");
         return versionService.diff(currentUserProvider.getRequiredUser(), claimId, versionId);
     }
 }

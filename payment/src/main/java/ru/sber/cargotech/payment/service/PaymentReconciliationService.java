@@ -1,6 +1,7 @@
 package ru.sber.cargotech.payment.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.payment.dto.ReconciliationResponse;
@@ -29,6 +30,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentReconciliationService {
 
     private final PaymentRepository paymentRepository;
@@ -39,6 +41,8 @@ public class PaymentReconciliationService {
 
     @Transactional
     public ReconciliationResponse reconcile(CurrentPaymentUser user) {
+        log.debug("Запуск автоматической сверки: organizationId={}, userId={}", user.organizationId(), user.userId());
+
         PaymentReconciliationRun run = startRun(user);
 
         List<Payment> payments = paymentRepository
@@ -48,6 +52,7 @@ public class PaymentReconciliationService {
                 );
 
         int matchesCreated = 0;
+        log.debug("Платежи для сверки загружены: runId={}, count={}", run.getId(), payments.size());
 
         try {
             for (Payment payment : payments) {
@@ -67,6 +72,7 @@ public class PaymentReconciliationService {
             }
 
             completeRun(run, payments.size(), matchesCreated);
+            log.debug("Сверка успешно завершена: runId={}, checked={}, matched={}, unmatched={}", run.getId(), payments.size(), matchesCreated, payments.size() - matchesCreated);
 
             outboxWriter.write(
                     "PAYMENT_RECONCILIATION",
@@ -81,6 +87,8 @@ public class PaymentReconciliationService {
                     )
             );
         } catch (RuntimeException exception) {
+            log.debug("Сверка завершилась ошибкой: runId={}, matchesCreated={}, errorType={}, message={}", run.getId(), matchesCreated, exception.getClass().getSimpleName(), exception.getMessage());
+
             run.setStatus(ReconciliationStatus.FAILED);
             run.setCompletedAt(OffsetDateTime.now());
             run.setErrorMessage(exception.getMessage());
@@ -97,6 +105,8 @@ public class PaymentReconciliationService {
             UUID runId,
             CurrentPaymentUser user
     ) {
+        log.debug("Получение результата сверки: runId={}, organizationId={}, userId={}", runId, user.organizationId(), user.userId());
+
         PaymentReconciliationRun run = runRepository
                 .findByIdAndOrganizationId(runId, user.organizationId())
                 .orElseThrow(() -> PaymentException.notFound(
@@ -107,6 +117,8 @@ public class PaymentReconciliationService {
     }
 
     private PaymentReconciliationRun startRun(CurrentPaymentUser user) {
+        log.debug("Создание запуска сверки: organizationId={}, userId={}", user.organizationId(), user.userId());
+
         PaymentReconciliationRun run = new PaymentReconciliationRun();
         run.setOrganizationId(user.organizationId());
         run.setStatus(ReconciliationStatus.PROCESSING);
@@ -125,6 +137,8 @@ public class PaymentReconciliationService {
             int checked,
             int matched
     ) {
+        log.debug("Завершение сверки: runId={}, checked={}, matched={}, unmatched={}", run.getId(), checked, matched, checked - matched);
+
         run.setPaymentsChecked(checked);
         run.setMatchesCreated(matched);
         run.setUnmatchedCount(checked - matched);
@@ -138,6 +152,8 @@ public class PaymentReconciliationService {
             Payment payment,
             UUID organizationId
     ) {
+        log.debug("Поиск кандидата для платежа: paymentId={}, organizationId={}, payerInn={}, amount={}, purposeLength={}", payment.getId(), organizationId, payment.getPayerInn(), payment.getAmount(), payment.getPurpose() == null ? 0 : payment.getPurpose().length());
+
         List<ClaimPaymentData> claimsByPurpose =
                 paymentService.findClaimsMentionedInPurpose(
                         organizationId,
@@ -192,6 +208,8 @@ public class PaymentReconciliationService {
             PaymentTargetCandidate candidate,
             UUID userId
     ) {
+        log.debug("Попытка автоматического сопоставления: paymentId={}, targetType={}, targetId={}, candidateRemaining={}", payment.getId(), candidate.targetType(), candidate.targetId(), candidate.remainingAmount());
+
         if (payment.getAmount().signum() <= 0) {
             return false;
         }

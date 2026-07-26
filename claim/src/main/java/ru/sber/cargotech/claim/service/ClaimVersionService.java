@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.ClaimVersionResponse;
@@ -23,6 +24,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ClaimVersionService {
     private final ClaimRepository claimRepository;
     private final ClaimVersionRepository versionRepository;
@@ -30,6 +32,8 @@ public class ClaimVersionService {
 
     @Transactional(readOnly = true)
     public List<ClaimVersionResponse> list(CurrentClaimUser user, UUID claimId) {
+        log.debug("Получение версий: claimId={}, organizationId={}", claimId, user.organizationId());
+
         ClaimEntity claim = getClaim(user, claimId);
         return versionRepository.findByClaimIdOrderByVersionNumberDesc(claim.getId())
             .stream()
@@ -39,6 +43,8 @@ public class ClaimVersionService {
 
     @Transactional(readOnly = true)
     public ClaimVersionResponse get(CurrentClaimUser user, UUID claimId, UUID versionId) {
+        log.debug("Получение версии: claimId={}, versionId={}, organizationId={}", claimId, versionId, user.organizationId());
+
         ClaimEntity claim = getClaim(user, claimId);
         return toResponse(getVersion(claim.getId(), versionId));
     }
@@ -49,6 +55,8 @@ public class ClaimVersionService {
         UUID claimId,
         CreateClaimVersionRequest request
     ) {
+        log.debug("Создание версии: claimId={}, userId={}, source={}, baseVersionId={}, finalVersion={}", claimId, user.userId(), request.source(), request.baseVersionId(), request.finalVersion());
+
         ClaimEntity claim = getClaim(user, claimId);
         ClaimVersion version = new ClaimVersion();
         version.setClaimId(claim.getId());
@@ -83,6 +91,8 @@ public class ClaimVersionService {
 
     @Transactional
     public ClaimVersionResponse markFinal(CurrentClaimUser user, UUID claimId, UUID versionId) {
+        log.debug("Назначение финальной версии: claimId={}, versionId={}, userId={}", claimId, versionId, user.userId());
+
         ClaimEntity claim = getClaim(user, claimId);
         ClaimVersion version = getVersion(claim.getId(), versionId);
         versionRepository.clearFinalFlags(claim.getId());
@@ -104,6 +114,8 @@ public class ClaimVersionService {
 
     @Transactional
     public ClaimVersionResponse restore(CurrentClaimUser user, UUID claimId, UUID versionId) {
+        log.debug("Восстановление версии: claimId={}, sourceVersionId={}, userId={}", claimId, versionId, user.userId());
+
         ClaimEntity claim = getClaim(user, claimId);
         ClaimVersion source = getVersion(claim.getId(), versionId);
         return create(
@@ -121,6 +133,8 @@ public class ClaimVersionService {
 
     @Transactional(readOnly = true)
     public VersionDiffResponse diff(CurrentClaimUser user, UUID claimId, UUID versionId) {
+        log.debug("Сравнение версий: claimId={}, versionId={}", claimId, versionId);
+
         ClaimEntity claim = getClaim(user, claimId);
         ClaimVersion version = getVersion(claim.getId(), versionId);
         ClaimVersion base = resolveBaseVersion(version);

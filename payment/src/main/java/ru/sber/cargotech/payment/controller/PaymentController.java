@@ -2,6 +2,7 @@ package ru.sber.cargotech.payment.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -37,6 +38,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/payments")
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentController {
 
     private final PaymentImportService importService;
@@ -53,6 +55,7 @@ public class PaymentController {
     public ResponseEntity<PaymentImportResponse> importFromOneC(
         @RequestPart("file") MultipartFile file
     ) {
+        log.info("Вызов endpoint: importFromOneC");
         return ResponseEntity.status(HttpStatus.CREATED).body(
             importService.importFromOneC(
                 file,
@@ -69,6 +72,7 @@ public class PaymentController {
     public ResponseEntity<PaymentImportResponse> importBankStatement(
         @RequestPart("file") MultipartFile file
     ) {
+        log.info("Вызов endpoint: importBankStatement");
         return ResponseEntity.status(HttpStatus.CREATED).body(
             importService.importBankStatement(
                 file,
@@ -86,6 +90,7 @@ public class PaymentController {
             direction = Sort.Direction.DESC
         ) Pageable pageable
     ) {
+        log.info("Вызов endpoint: getPayments");
         return paymentService.findAll(
             pageable,
             userProvider.getRequiredUser()
@@ -97,6 +102,7 @@ public class PaymentController {
     public PaymentDetailsResponse getPayment(
         @PathVariable UUID paymentId
     ) {
+        log.info("Вызов endpoint: getPayment");
         return paymentService.getDetails(
             paymentId,
             userProvider.getRequiredUser()
@@ -106,6 +112,7 @@ public class PaymentController {
     @PostMapping("/reconcile")
     @PreAuthorize("hasAuthority('PAYMENT_RECONCILE')")
     public ReconciliationResponse reconcile() {
+        log.info("Вызов endpoint: reconcile");
         return reconciliationService.reconcile(
             userProvider.getRequiredUser()
         );
@@ -116,6 +123,7 @@ public class PaymentController {
     public ReconciliationResponse getReconciliationRun(
         @PathVariable UUID runId
     ) {
+        log.info("Вызов endpoint: getReconciliationRun");
         return reconciliationService.getRun(
             runId,
             userProvider.getRequiredUser()
@@ -128,6 +136,7 @@ public class PaymentController {
         @PathVariable UUID paymentId,
         @RequestBody @Valid CreatePaymentMatchRequest request
     ) {
+        log.info("Вызов endpoint: matchPayment");
         return matchingService.match(
             paymentId,
             request,
@@ -142,6 +151,7 @@ public class PaymentController {
         @PathVariable UUID matchId,
         @RequestParam String reason
     ) {
+        log.info("Вызов endpoint: unmatchPayment");
         return matchingService.unmatch(
             paymentId,
             matchId,

@@ -1,5 +1,7 @@
 package ru.sber.cargotech.auth.service;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -8,7 +10,10 @@ import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.auth.config.AuthProperties;
+import ru.sber.cargotech.auth.dto.RefreshContext;
 import ru.sber.cargotech.auth.dto.RequestMetadata;
+import ru.sber.cargotech.auth.dto.TokenPair;
+import ru.sber.cargotech.auth.dto.UserAccess;
 import ru.sber.cargotech.auth.entity.AuthRefreshToken;
 import ru.sber.cargotech.auth.exception.AuthException;
 import ru.sber.cargotech.auth.repository.AuthRefreshTokenRepository;
@@ -25,6 +30,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class TokenService {
 
     private final JwtEncoder jwtEncoder;
@@ -32,21 +39,13 @@ public class TokenService {
     private final AuthProperties properties;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public TokenService(
-            JwtEncoder jwtEncoder,
-            AuthRefreshTokenRepository refreshTokenRepository,
-            AuthProperties properties
-    ) {
-        this.jwtEncoder = jwtEncoder;
-        this.refreshTokenRepository = refreshTokenRepository;
-        this.properties = properties;
-    }
-
     @Transactional
     public TokenPair issuePair(
-            AccessService.UserAccess access,
+            UserAccess access,
             RequestMetadata metadata
     ) {
+        log.debug("Выпуск пары токенов: userId={}, organizationId={}, rolesCount={}, permissionsCount={}", access.userId(), access.organizationId(), access.roles().size(), access.permissions().size());
+
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
         OffsetDateTime accessExpiresAt = now.plus(
@@ -87,6 +86,8 @@ public class TokenService {
 
     @Transactional(noRollbackFor = AuthException.class)
     public RefreshContext consumeForRotation(String rawToken) {
+        log.debug("Проверка refresh token для ротации");
+
         AuthRefreshToken entity = refreshTokenRepository
                 .findForUpdateByTokenHash(hash(rawToken))
                 .orElseThrow(() -> AuthException.unauthorized(
@@ -128,6 +129,8 @@ public class TokenService {
 
     @Transactional
     public Optional<RefreshContext> revoke(String rawToken) {
+        log.debug("Отзыв refresh token");
+
         return refreshTokenRepository
                 .findForUpdateByTokenHash(hash(rawToken))
                 .map(entity -> {
@@ -148,6 +151,8 @@ public class TokenService {
 
     @Transactional
     public void revokeAll(UUID userId) {
+        log.debug("Отзыв всех активных refresh token: userId={}", userId);
+
         refreshTokenRepository.revokeAllActiveByUserId(
                 userId,
                 OffsetDateTime.now(ZoneOffset.UTC)
@@ -155,7 +160,7 @@ public class TokenService {
     }
 
     private String issueAccessToken(
-            AccessService.UserAccess access,
+            UserAccess access,
             OffsetDateTime issuedAt,
             OffsetDateTime expiresAt
     ) {
@@ -244,19 +249,5 @@ public class TokenService {
         }
 
         return value.substring(0, length);
-    }
-
-    public record TokenPair(
-            String accessToken,
-            OffsetDateTime accessTokenExpiresAt,
-            String refreshToken,
-            OffsetDateTime refreshTokenExpiresAt
-    ) {
-    }
-
-    public record RefreshContext(
-            UUID userId,
-            UUID organizationId
-    ) {
     }
 }

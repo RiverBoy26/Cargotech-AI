@@ -8,7 +8,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
+import ru.sber.cargotech.payment.exception.PaymentException;
 import ru.sber.cargotech.payment.dto.ClaimPaymentContextResponse;
 
 import java.math.BigDecimal;
@@ -33,7 +36,9 @@ public class ClaimClient {
                         request.getHeaders().setBearerAuth(token);
                     }
 
-                    if (!request.getHeaders().containsHeader(HttpHeaders.CONTENT_TYPE)) {
+                    if (!request.getHeaders()
+                            .containsHeader(HttpHeaders.CONTENT_TYPE)) {
+
                         request.getHeaders().add(
                                 HttpHeaders.CONTENT_TYPE,
                                 "application/json"
@@ -45,61 +50,153 @@ public class ClaimClient {
                 .build();
     }
 
-    public ClaimPaymentContextResponse getPaymentContext(UUID claimId) {
-        return restClient
-                .get()
-                .uri("/internal/api/v1/claims/{claimId}/payment-context", claimId)
-                .retrieve()
-                .body(ClaimPaymentContextResponse.class);
+    public ClaimPaymentContextResponse getPaymentContext(
+            UUID claimId
+    ) {
+        try {
+            ClaimPaymentContextResponse response = restClient
+                    .get()
+                    .uri(
+                            "/internal/api/v1/claims/{claimId}/payment-context",
+                            claimId
+                    )
+                    .retrieve()
+                    .body(ClaimPaymentContextResponse.class);
+
+            if (response == null) {
+                throw PaymentException.notFound(
+                        "Claim вернул пустой ответ для претензии %s"
+                                .formatted(claimId)
+                );
+            }
+
+            return response;
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw PaymentException.notFound(
+                        "Претензия %s не найдена".formatted(claimId)
+                );
+            }
+
+            throw PaymentException.conflict(
+                    "Ошибка обращения к claim при получении претензии: "
+                            + exception.getStatusCode()
+            );
+        } catch (ResourceAccessException exception) {
+            throw PaymentException.conflict(
+                    "Модуль claim недоступен"
+            );
+        }
     }
 
     public List<ClaimPaymentContextResponse> findOpenByPayerInn(
             String payerInn
     ) {
-        List<ClaimPaymentContextResponse> response = restClient
-                .get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/internal/api/v1/claims/payment-contexts/by-payer-inn")
-                        .queryParam("payerInn", payerInn)
-                        .build()
-                )
-                .retrieve()
-                .body(new ParameterizedTypeReference<>() {
-                });
+        if (payerInn == null || payerInn.isBlank()) {
+            return List.of();
+        }
 
-        return response == null ? List.of() : response;
+        try {
+            List<ClaimPaymentContextResponse> response = restClient
+                    .get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path(
+                                    "/internal/api/v1/claims/"
+                                            + "payment-contexts/by-payer-inn"
+                            )
+                            .queryParam("payerInn", payerInn)
+                            .build()
+                    )
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {
+                    });
+
+            return response == null
+                    ? List.of()
+                    : response;
+        } catch (RestClientResponseException exception) {
+            throw PaymentException.conflict(
+                    "Ошибка обращения к claim при поиске претензий "
+                            + "по ИНН: "
+                            + exception.getStatusCode()
+            );
+        } catch (ResourceAccessException exception) {
+            throw PaymentException.conflict(
+                    "Модуль claim недоступен"
+            );
+        }
     }
 
     public List<ClaimPaymentContextResponse> findMentionedInPurpose(
             String purpose
     ) {
-        List<ClaimPaymentContextResponse> response = restClient
-                .get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/internal/api/v1/claims/payment-contexts/mentioned")
-                        .queryParam("purpose", purpose)
-                        .build()
-                )
-                .retrieve()
-                .body(new ParameterizedTypeReference<>() {
-                });
+        if (purpose == null || purpose.isBlank()) {
+            return List.of();
+        }
 
-        return response == null ? List.of() : response;
+        try {
+            List<ClaimPaymentContextResponse> response = restClient
+                    .get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path(
+                                    "/internal/api/v1/claims/"
+                                            + "payment-contexts/mentioned"
+                            )
+                            .queryParam("purpose", purpose)
+                            .build()
+                    )
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {
+                    });
+
+            return response == null
+                    ? List.of()
+                    : response;
+        } catch (RestClientResponseException exception) {
+            throw PaymentException.conflict(
+                    "Ошибка обращения к claim при поиске претензий "
+                            + "в назначении платежа: "
+                            + exception.getStatusCode()
+            );
+        } catch (ResourceAccessException exception) {
+            throw PaymentException.conflict(
+                    "Модуль claim недоступен"
+            );
+        }
     }
 
     public void updateLastPaymentCheck(
             UUID claimId,
             UUID checkId
     ) {
-        restClient
-                .patch()
-                .uri(
-                        "/internal/api/v1/claims/{claimId}/last-payment-check",
-                        claimId
-                )
-                .body(new UpdateLastPaymentCheckRequest(checkId))
-                .retrieve()
-                .toBodilessEntity();
+        try {
+            restClient
+                    .patch()
+                    .uri(
+                            "/internal/api/v1/claims/"
+                                    + "{claimId}/last-payment-check",
+                            claimId
+                    )
+                    .body(new UpdateLastPaymentCheckRequest(checkId))
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw PaymentException.notFound(
+                        "Претензия %s не найдена".formatted(claimId)
+                );
+            }
+
+            throw PaymentException.conflict(
+                    "Ошибка обновления последней проверки оплаты "
+                            + "в claim: "
+                            + exception.getStatusCode()
+            );
+        } catch (ResourceAccessException exception) {
+            throw PaymentException.conflict(
+                    "Модуль claim недоступен"
+            );
+        }
     }
 
     private static String currentBearerToken() {
@@ -109,6 +206,7 @@ public class ClaimClient {
 
         if (authentication instanceof JwtAuthenticationToken jwt
                 && authentication.isAuthenticated()) {
+
             return jwt.getToken().getTokenValue();
         }
 

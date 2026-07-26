@@ -2,6 +2,7 @@ package ru.sber.cargotech.auth.service;
 
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -35,6 +36,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
     private final AuthUserRepository userRepository;
@@ -54,6 +56,8 @@ public class UserService {
         Pageable pageable,
         CurrentUser actor
     ) {
+        log.debug("Поиск пользователей: actorUserId={}, actorOrganizationId={}, requestedOrganizationId={}, active={}, searchPresent={}, page={}, size={}", actor.userId(), actor.organizationId(), organizationId, active, search != null && !search.isBlank(), pageable.getPageNumber(), pageable.getPageSize());
+
         UUID effectiveOrganization = resolveListOrganization(
             organizationId,
             actor
@@ -114,6 +118,8 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserResponse getUser(UUID userId, CurrentUser actor) {
+        log.debug("Получение пользователя: targetUserId={}, actorUserId={}, actorOrganizationId={}", userId, actor.userId(), actor.organizationId());
+
         AuthUser user = requireUser(userId);
         Set<String> roles = accessService.roleCodes(userId);
         policy.checkTargetUser(actor, user, roles);
@@ -125,6 +131,8 @@ public class UserService {
         CreateUserRequest request,
         CurrentUser actor
     ) {
+        log.debug("Создание пользователя: actorUserId={}, targetOrganizationId={}, requestedRoles={}", actor.userId(), request.organizationId(), request.roles());
+
         UUID organizationId = policy.resolveTargetOrganization(
             actor,
             request.organizationId()
@@ -174,6 +182,8 @@ public class UserService {
         UpdateUserRequest request,
         CurrentUser actor
     ) {
+        log.debug("Обновление пользователя: targetUserId={}, actorUserId={}, fullNameChanged={}, emailChanged={}", userId, actor.userId(), request.fullName() != null, request.email() != null);
+
         AuthUser user = requireUser(userId);
         Set<String> roles = accessService.roleCodes(userId);
         policy.checkTargetUser(actor, user, roles);
@@ -221,6 +231,8 @@ public class UserService {
         ChangeUserRolesRequest request,
         CurrentUser actor
     ) {
+        log.debug("Изменение ролей: targetUserId={}, actorUserId={}, requestedRoles={}", userId, actor.userId(), request.roles());
+
         policy.checkCanChangeRoles(actor, userId);
 
         AuthUser user = requireUser(userId);
@@ -251,6 +263,8 @@ public class UserService {
 
     @Transactional
     public UserResponse block(UUID userId, CurrentUser actor) {
+        log.debug("Блокировка пользователя: targetUserId={}, actorUserId={}", userId, actor.userId());
+
         policy.checkCanBlock(actor, userId);
 
         AuthUser user = requireUser(userId);
@@ -279,6 +293,8 @@ public class UserService {
 
     @Transactional
     public UserResponse unblock(UUID userId, CurrentUser actor) {
+        log.debug("Разблокировка пользователя: targetUserId={}, actorUserId={}", userId, actor.userId());
+
         AuthUser user = requireUser(userId);
         Set<String> roles = accessService.roleCodes(userId);
         policy.checkTargetUser(actor, user, roles);

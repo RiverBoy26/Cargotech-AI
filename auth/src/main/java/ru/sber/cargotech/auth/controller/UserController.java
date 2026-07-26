@@ -2,6 +2,7 @@ package ru.sber.cargotech.auth.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -27,6 +28,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
+@Slf4j
 public class UserController {
 
     private final UserService userService;
@@ -45,6 +47,7 @@ public class UserController {
             direction = Sort.Direction.ASC
         ) Pageable pageable
     ) {
+        log.info("Вызов endpoint: findUsers");
         return userService.findUsers(
             organizationId,
             search,
@@ -58,6 +61,7 @@ public class UserController {
     @GetMapping("/{userId}")
     @PreAuthorize("hasAuthority('USER_READ')")
     public UserResponse getUser(@PathVariable UUID userId) {
+        log.info("Вызов endpoint: getUser");
         return userService.getUser(
             userId,
             currentUserProvider.getRequiredUser()
@@ -69,6 +73,7 @@ public class UserController {
     public UserResponse createUser(
         @RequestBody @Valid CreateUserRequest request
     ) {
+        log.info("Вызов endpoint: createUser");
         return userService.createUser(
             request,
             currentUserProvider.getRequiredUser()
@@ -81,6 +86,7 @@ public class UserController {
         @PathVariable UUID userId,
         @RequestBody @Valid UpdateUserRequest request
     ) {
+        log.info("Вызов endpoint: updateUser");
         return userService.updateUser(
             userId,
             request,
@@ -94,6 +100,7 @@ public class UserController {
         @PathVariable UUID userId,
         @RequestBody @Valid ChangeUserRolesRequest request
     ) {
+        log.info("Вызов endpoint: changeRoles");
         return userService.changeRoles(
             userId,
             request,
@@ -104,6 +111,7 @@ public class UserController {
     @PostMapping("/{userId}/block")
     @PreAuthorize("hasAuthority('USER_UPDATE')")
     public UserResponse block(@PathVariable UUID userId) {
+        log.info("Вызов endpoint: block");
         return userService.block(
             userId,
             currentUserProvider.getRequiredUser()
@@ -113,6 +121,7 @@ public class UserController {
     @PostMapping("/{userId}/unblock")
     @PreAuthorize("hasAuthority('USER_UPDATE')")
     public UserResponse unblock(@PathVariable UUID userId) {
+        log.info("Вызов endpoint: unblock");
         return userService.unblock(
             userId,
             currentUserProvider.getRequiredUser()

@@ -2,6 +2,7 @@ package ru.sber.cargotech.payment.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +24,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/payments/claims/{claimId}")
 @RequiredArgsConstructor
+@Slf4j
 public class ClaimPaymentController {
 
     private final PaymentService paymentService;
@@ -34,6 +36,7 @@ public class ClaimPaymentController {
     public ClaimPaymentsResponse getClaimPayments(
         @PathVariable UUID claimId
     ) {
+        log.info("Вызов endpoint: getClaimPayments");
         return paymentService.findByClaim(
             claimId,
             userProvider.getRequiredUser()
@@ -46,6 +49,7 @@ public class ClaimPaymentController {
         @PathVariable UUID claimId,
         @RequestParam(required = false) String comment
     ) {
+        log.info("Вызов endpoint: preflightCheck");
         return checkService.preflightCheck(
             claimId,
             comment,
@@ -59,6 +63,7 @@ public class ClaimPaymentController {
         @PathVariable UUID claimId,
         @RequestBody @Valid MarkPaidRequest request
     ) {
+        log.info("Вызов endpoint: markPaid");
         return checkService.markPaid(
             claimId,
             request,

@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/claims")
 @RequiredArgsConstructor
+@Slf4j
 public class ClaimController {
     private final ClaimService claimService;
     private final CurrentClaimUserProvider currentUserProvider;
@@ -41,6 +43,7 @@ public class ClaimController {
         @RequestParam(required = false) String search,
         @PageableDefault(size = 50) Pageable pageable
     ) {
+        log.info("Вызов endpoint: list");
         return PageResponse.from(claimService.list(
             currentUserProvider.getRequiredUser(),
             status,
@@ -55,6 +58,7 @@ public class ClaimController {
     @GetMapping("/{claimId}")
     @PreAuthorize("hasAuthority('CLAIM_READ')")
     public ClaimDetailsResponse get(@PathVariable UUID claimId) {
+        log.info("Вызов endpoint: get");
         return claimService.get(currentUserProvider.getRequiredUser(), claimId);
     }
 
@@ -62,6 +66,7 @@ public class ClaimController {
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('CLAIM_CREATE')")
     public ClaimDetailsResponse create(@Valid @RequestBody CreateClaimRequest request) {
+        log.info("Вызов endpoint: create");
         return claimService.create(currentUserProvider.getRequiredUser(), request);
     }
 
@@ -71,6 +76,7 @@ public class ClaimController {
         @PathVariable UUID claimId,
         @Valid @RequestBody UpdateClaimRequest request
     ) {
+        log.info("Вызов endpoint: update");
         return claimService.update(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -78,6 +84,7 @@ public class ClaimController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('CLAIM_DELETE')")
     public void delete(@PathVariable UUID claimId) {
+        log.info("Вызов endpoint: delete");
         claimService.deleteDraft(currentUserProvider.getRequiredUser(), claimId);
     }
 
@@ -87,6 +94,7 @@ public class ClaimController {
         @PathVariable UUID claimId,
         @RequestBody(required = false) StatusChangeRequest request
     ) {
+        log.info("Вызов endpoint: submitToLegalReview");
         return claimService.submitToLegalReview(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -96,6 +104,7 @@ public class ClaimController {
         @PathVariable UUID claimId,
         @RequestBody(required = false) StatusChangeRequest request
     ) {
+        log.info("Вызов endpoint: approve");
         return claimService.approve(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -105,6 +114,7 @@ public class ClaimController {
         @PathVariable UUID claimId,
         @RequestBody(required = false) StatusChangeRequest request
     ) {
+        log.info("Вызов endpoint: send");
         return claimService.send(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -114,6 +124,7 @@ public class ClaimController {
         @PathVariable UUID claimId,
         @RequestBody(required = false) StatusChangeRequest request
     ) {
+        log.info("Вызов endpoint: cancel");
         return claimService.cancel(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -123,6 +134,7 @@ public class ClaimController {
         @PathVariable UUID claimId,
         @RequestBody(required = false) StatusChangeRequest request
     ) {
+        log.info("Вызов endpoint: markPaid");
         return claimService.markPaid(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -132,6 +144,7 @@ public class ClaimController {
         @PathVariable UUID claimId,
         @RequestBody(required = false) StatusChangeRequest request
     ) {
+        log.info("Вызов endpoint: escalateToCourt");
         return claimService.escalateToCourt(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -141,12 +154,14 @@ public class ClaimController {
         @PathVariable UUID claimId,
         @RequestBody(required = false) StatusChangeRequest request
     ) {
+        log.info("Вызов endpoint: closeInCourt");
         return claimService.closeInCourt(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
     @GetMapping("/{claimId}/status-history")
     @PreAuthorize("hasAuthority('CLAIM_READ')")
     public List<StatusHistoryResponse> statusHistory(@PathVariable UUID claimId) {
+        log.info("Вызов endpoint: statusHistory");
         return claimService.statusHistory(currentUserProvider.getRequiredUser(), claimId);
     }
 }

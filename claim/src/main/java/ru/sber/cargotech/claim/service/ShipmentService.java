@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ShipmentService {
     private final ClaimShipmentRepository shipmentRepository;
     private final PartyService partyService;
@@ -29,6 +31,8 @@ public class ShipmentService {
 
     @Transactional(readOnly = true)
     public Page<ShipmentResponse> list(CurrentClaimUser user, Pageable pageable) {
+        log.debug("Получение рейсов: organizationId={}, page={}, size={}", user.organizationId(), pageable.getPageNumber(), pageable.getPageSize());
+
         return shipmentRepository
             .findByOrganizationId(user.organizationId(), pageable)
             .map(shipment -> toResponse(user.organizationId(), shipment));
@@ -36,11 +40,15 @@ public class ShipmentService {
 
     @Transactional(readOnly = true)
     public ShipmentResponse get(CurrentClaimUser user, UUID id) {
+        log.debug("Получение рейса: shipmentId={}, organizationId={}", id, user.organizationId());
+
         return toResponse(user.organizationId(), getEntity(user.organizationId(), id));
     }
 
     @Transactional
     public ShipmentResponse create(CurrentClaimUser user, ShipmentRequest request) {
+        log.debug("Создание рейса: organizationId={}, userId={}, orderNumber={}, clientId={}, expeditorId={}, contractId={}, serviceAmount={}, status={}", user.organizationId(), user.userId(), request.orderNumber(), request.clientId(), request.expeditorId(), request.contractId(), request.serviceAmount(), request.status());
+
         validateReferences(user.organizationId(), request);
         ClaimShipment shipment = new ClaimShipment();
         shipment.setOrganizationId(user.organizationId());
@@ -54,6 +62,8 @@ public class ShipmentService {
 
     @Transactional
     public ShipmentResponse update(CurrentClaimUser user, UUID id, ShipmentRequest request) {
+        log.debug("Обновление рейса: shipmentId={}, organizationId={}, userId={}, orderNumber={}, serviceAmount={}, status={}", id, user.organizationId(), user.userId(), request.orderNumber(), request.serviceAmount(), request.status());
+
         validateReferences(user.organizationId(), request);
         ClaimShipment shipment = getEntity(user.organizationId(), id);
         apply(shipment, request, user.userId());

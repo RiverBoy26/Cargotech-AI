@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.ClaimCommentResponse;
@@ -21,6 +22,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ClaimCommentService {
     private final ClaimRepository claimRepository;
     private final ClaimCommentRepository commentRepository;
@@ -28,6 +30,8 @@ public class ClaimCommentService {
 
     @Transactional(readOnly = true)
     public List<ClaimCommentResponse> list(CurrentClaimUser user, UUID claimId) {
+        log.debug("Получение комментариев: claimId={}, organizationId={}", claimId, user.organizationId());
+
         ClaimEntity claim = getClaim(user, claimId);
         return commentRepository.findByClaimIdAndDeletedAtIsNullOrderByCreatedAtAsc(claim.getId())
             .stream()
@@ -37,6 +41,8 @@ public class ClaimCommentService {
 
     @Transactional
     public ClaimCommentResponse create(CurrentClaimUser user, UUID claimId, CreateCommentRequest request) {
+        log.debug("Создание комментария: claimId={}, userId={}, textLength={}", claimId, user.userId(), request.text() == null ? 0 : request.text().length());
+
         ClaimEntity claim = getClaim(user, claimId);
         ClaimComment comment = new ClaimComment();
         comment.setClaimId(claim.getId());
@@ -61,6 +67,8 @@ public class ClaimCommentService {
         UUID commentId,
         UpdateCommentRequest request
     ) {
+        log.debug("Обновление комментария: claimId={}, commentId={}, userId={}, textLength={}", claimId, commentId, user.userId(), request.text() == null ? 0 : request.text().length());
+
         ClaimEntity claim = getClaim(user, claimId);
         ClaimComment comment = getComment(claim.getId(), commentId);
         ensureAuthor(user, comment);
@@ -79,6 +87,8 @@ public class ClaimCommentService {
 
     @Transactional
     public void delete(CurrentClaimUser user, UUID claimId, UUID commentId) {
+        log.debug("Удаление комментария: claimId={}, commentId={}, userId={}", claimId, commentId, user.userId());
+
         ClaimEntity claim = getClaim(user, claimId);
         ClaimComment comment = getComment(claim.getId(), commentId);
         ensureAuthor(user, comment);

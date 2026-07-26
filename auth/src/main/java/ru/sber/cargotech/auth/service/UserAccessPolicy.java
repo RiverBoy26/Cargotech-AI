@@ -1,5 +1,6 @@
 package ru.sber.cargotech.auth.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.sber.cargotech.auth.entity.AuthUser;
 import ru.sber.cargotech.auth.enums.SystemRole;
@@ -11,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Component
+@Slf4j
 public class UserAccessPolicy {
 
     private static final Set<String> EXPEDITOR_ASSIGNABLE_ROLES =
@@ -20,6 +22,8 @@ public class UserAccessPolicy {
         CurrentUser actor,
         UUID requestedOrganizationId
     ) {
+        log.debug("Определение целевой организации: actorUserId={}, actorOrganizationId={}, requestedOrganizationId={}", actor.userId(), actor.organizationId(), requestedOrganizationId);
+
         if (actor.hasRole(SystemRole.SUPER_ADMIN.name())) {
             return requestedOrganizationId != null
                 ? requestedOrganizationId
@@ -41,6 +45,8 @@ public class UserAccessPolicy {
         AuthUser target,
         Set<String> targetRoles
     ) {
+        log.debug("Проверка доступа к пользователю: actorUserId={}", actor.userId());
+
         if (actor.hasRole(SystemRole.SUPER_ADMIN.name())) {
             return;
         }
@@ -67,6 +73,8 @@ public class UserAccessPolicy {
         CurrentUser actor,
         Set<String> requestedRoles
     ) {
+        log.debug("Проверка назначения ролей: actorUserId={}", actor.userId());
+
         for (String role : requestedRoles) {
             try {
                 SystemRole.valueOf(role);
@@ -88,6 +96,8 @@ public class UserAccessPolicy {
     }
 
     public void checkCanChangeRoles(CurrentUser actor, UUID targetUserId) {
+        log.debug("Проверка права изменения ролей: actorUserId={}, targetUserId={}", actor.userId(), targetUserId);
+
         if (actor.userId().equals(targetUserId)) {
             throw AuthException.forbidden(
                 "Нельзя изменять собственные роли"
@@ -96,6 +106,8 @@ public class UserAccessPolicy {
     }
 
     public void checkCanBlock(CurrentUser actor, UUID targetUserId) {
+        log.debug("Проверка права блокировки: actorUserId={}, targetUserId={}", actor.userId(), targetUserId);
+
         if (actor.userId().equals(targetUserId)) {
             throw AuthException.forbidden(
                 "Нельзя заблокировать собственную учётную запись"

@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/shipments")
 @RequiredArgsConstructor
+@Slf4j
 public class ShipmentController {
     private final ShipmentService shipmentService;
     private final CurrentClaimUserProvider currentUserProvider;
@@ -32,12 +34,14 @@ public class ShipmentController {
     @GetMapping
     @PreAuthorize("hasAuthority('CLAIM_READ')")
     public PageResponse<ShipmentResponse> list(@PageableDefault(size = 50) Pageable pageable) {
+        log.info("Вызов endpoint: list");
         return PageResponse.from(shipmentService.list(currentUserProvider.getRequiredUser(), pageable));
     }
 
     @GetMapping("/{shipmentId}")
     @PreAuthorize("hasAuthority('CLAIM_READ')")
     public ShipmentResponse get(@PathVariable UUID shipmentId) {
+        log.info("Вызов endpoint: get");
         return shipmentService.get(currentUserProvider.getRequiredUser(), shipmentId);
     }
 
@@ -45,6 +49,7 @@ public class ShipmentController {
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('CLAIM_CREATE')")
     public ShipmentResponse create(@Valid @RequestBody ShipmentRequest request) {
+        log.info("Вызов endpoint: create");
         return shipmentService.create(currentUserProvider.getRequiredUser(), request);
     }
 
@@ -54,6 +59,7 @@ public class ShipmentController {
         @PathVariable UUID shipmentId,
         @Valid @RequestBody ShipmentRequest request
     ) {
+        log.info("Вызов endpoint: update");
         return shipmentService.update(currentUserProvider.getRequiredUser(), shipmentId, request);
     }
 }

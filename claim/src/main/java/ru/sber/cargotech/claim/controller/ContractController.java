@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -26,6 +27,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/contracts")
 @RequiredArgsConstructor
+@Slf4j
 public class ContractController {
     private final ContractService contractService;
     private final CurrentClaimUserProvider currentUserProvider;
@@ -33,12 +35,14 @@ public class ContractController {
     @GetMapping
     @PreAuthorize("hasAuthority('CLAIM_READ')")
     public PageResponse<ContractResponse> list(@PageableDefault(size = 50) Pageable pageable) {
+        log.info("Вызов endpoint: list");
         return PageResponse.from(contractService.list(currentUserProvider.getRequiredUser(), pageable));
     }
 
     @GetMapping("/{contractId}")
     @PreAuthorize("hasAuthority('CLAIM_READ')")
     public ContractResponse get(@PathVariable UUID contractId) {
+        log.info("Вызов endpoint: get");
         return contractService.get(currentUserProvider.getRequiredUser(), contractId);
     }
 
@@ -46,6 +50,7 @@ public class ContractController {
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('CLAIM_CREATE')")
     public ContractResponse create(@Valid @RequestBody ContractRequest request) {
+        log.info("Вызов endpoint: create");
         return contractService.create(currentUserProvider.getRequiredUser(), request);
     }
 
@@ -55,6 +60,7 @@ public class ContractController {
         @PathVariable UUID contractId,
         @Valid @RequestBody ContractRequest request
     ) {
+        log.info("Вызов endpoint: update");
         return contractService.update(currentUserProvider.getRequiredUser(), contractId, request);
     }
 
@@ -62,6 +68,7 @@ public class ContractController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('CLAIM_DELETE')")
     public void delete(@PathVariable UUID contractId) {
+        log.info("Вызов endpoint: delete");
         contractService.delete(currentUserProvider.getRequiredUser(), contractId);
     }
 }

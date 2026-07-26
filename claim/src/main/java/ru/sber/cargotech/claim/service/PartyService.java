@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -19,12 +20,15 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PartyService {
     private final ClaimPartyRepository partyRepository;
     private final ClaimOutboxWriter outboxWriter;
 
     @Transactional(readOnly = true)
     public Page<PartyResponse> list(CurrentClaimUser user, Pageable pageable) {
+        log.debug("Получение контрагентов: organizationId={}, page={}, size={}", user.organizationId(), pageable.getPageNumber(), pageable.getPageSize());
+
         return partyRepository
             .findByOrganizationIdAndDeletedAtIsNull(user.organizationId(), pageable)
             .map(this::toResponse);
@@ -32,11 +36,15 @@ public class PartyService {
 
     @Transactional(readOnly = true)
     public PartyResponse get(CurrentClaimUser user, UUID id) {
+        log.debug("Получение контрагента: partyId={}, organizationId={}", id, user.organizationId());
+
         return toResponse(getEntity(user.organizationId(), id));
     }
 
     @Transactional
     public PartyResponse create(CurrentClaimUser user, PartyRequest request) {
+        log.debug("Создание контрагента: organizationId={}, userId={}, type={}, inn={}", user.organizationId(), user.userId(), request.type(), request.inn());
+
         ClaimParty party = new ClaimParty();
         party.setOrganizationId(user.organizationId());
         party.setCreatedBy(user.userId());
@@ -56,6 +64,8 @@ public class PartyService {
 
     @Transactional
     public PartyResponse update(CurrentClaimUser user, UUID id, PartyRequest request) {
+        log.debug("Обновление контрагента: partyId={}, organizationId={}, userId={}, type={}, inn={}", id, user.organizationId(), user.userId(), request.type(), request.inn());
+
         ClaimParty party = getEntity(user.organizationId(), id);
         apply(party, request, user.userId());
         ClaimParty saved = partyRepository.save(party);
@@ -72,6 +82,8 @@ public class PartyService {
 
     @Transactional
     public void delete(CurrentClaimUser user, UUID id) {
+        log.debug("Удаление контрагента: partyId={}, organizationId={}, userId={}", id, user.organizationId(), user.userId());
+
         ClaimParty party = getEntity(user.organizationId(), id);
         party.setActive(false);
         party.setDeletedAt(OffsetDateTime.now());

@@ -1,14 +1,11 @@
 package ru.sber.cargotech.auth.service;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.sber.cargotech.auth.dto.CurrentUserResponse;
-import ru.sber.cargotech.auth.dto.LoginRequest;
-import ru.sber.cargotech.auth.dto.LogoutRequest;
-import ru.sber.cargotech.auth.dto.RefreshTokenRequest;
-import ru.sber.cargotech.auth.dto.RequestMetadata;
-import ru.sber.cargotech.auth.dto.TokenResponse;
+import ru.sber.cargotech.auth.dto.*;
 import ru.sber.cargotech.auth.entity.AuthUser;
 import ru.sber.cargotech.auth.exception.AuthException;
 import ru.sber.cargotech.auth.repository.AuthOutboxWriter;
@@ -23,6 +20,8 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class AuthenticationService {
 
     private final AuthUserRepository userRepository;
@@ -31,25 +30,13 @@ public class AuthenticationService {
     private final TokenService tokenService;
     private final AuthOutboxWriter outboxWriter;
 
-    public AuthenticationService(
-        AuthUserRepository userRepository,
-        PasswordEncoder passwordEncoder,
-        AccessService accessService,
-        TokenService tokenService,
-        AuthOutboxWriter outboxWriter
-    ) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.accessService = accessService;
-        this.tokenService = tokenService;
-        this.outboxWriter = outboxWriter;
-    }
-
     @Transactional
     public TokenResponse login(
         LoginRequest request,
         RequestMetadata metadata
     ) {
+        log.debug("Попытка входа: organizationContextProvided={}", request.organizationId() != null);
+
         AuthUser user = userRepository
             .findByEmailIgnoreCase(normalizeEmail(request.email()))
             .orElseThrow(this::invalidCredentials);
@@ -70,13 +57,13 @@ public class AuthenticationService {
         );
         accessService.requireActiveOrganization(organizationContext);
 
-        AccessService.UserAccess access =
+        UserAccess access =
             accessService.load(user, organizationContext);
 
         user.setLastLoginAt(OffsetDateTime.now());
         userRepository.save(user);
 
-        TokenService.TokenPair tokens = tokenService.issuePair(
+        TokenPair tokens = tokenService.issuePair(
             access,
             metadata
         );
@@ -97,7 +84,9 @@ public class AuthenticationService {
         RefreshTokenRequest request,
         RequestMetadata metadata
     ) {
-        TokenService.RefreshContext context =
+        log.debug("Запуск ротации refresh token");
+
+        RefreshContext context =
             tokenService.consumeForRotation(request.refreshToken());
 
         AuthUser user = userRepository.findById(context.userId())
@@ -120,9 +109,9 @@ public class AuthenticationService {
             );
         }
 
-        AccessService.UserAccess access =
+        UserAccess access =
             accessService.load(user, context.organizationId());
-        TokenService.TokenPair tokens = tokenService.issuePair(
+        TokenPair tokens = tokenService.issuePair(
             access,
             metadata
         );
@@ -140,6 +129,7 @@ public class AuthenticationService {
     }
 
     public void logout(LogoutRequest request) {
+        log.debug("Завершение пользовательской сессии");
         tokenService.revoke(request.refreshToken()).ifPresent(context ->
             outboxWriter.write(
                 "USER",
@@ -154,6 +144,8 @@ public class AuthenticationService {
 
     @Transactional(readOnly = true)
     public CurrentUserResponse me(CurrentUser principal) {
+        log.debug("Получение профиля текущего пользователя: userId={}, organizationId={}", principal.userId(), principal.organizationId());
+
         AuthUser user = userRepository.findById(principal.userId())
             .orElseThrow(() -> AuthException.notFound(
                 "Текущий пользователь не найден"
@@ -161,7 +153,7 @@ public class AuthenticationService {
 
         requireActiveUser(user);
         accessService.requireActiveOrganization(principal.organizationId());
-        AccessService.UserAccess access = accessService.load(
+        UserAccess access = accessService.load(
             user,
             principal.organizationId()
         );
@@ -214,8 +206,8 @@ public class AuthenticationService {
     }
 
     private TokenResponse tokenResponse(
-        AccessService.UserAccess access,
-        TokenService.TokenPair tokens
+        UserAccess access,
+        TokenPair tokens
     ) {
         return new TokenResponse(
             "Bearer",

@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,6 +26,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/claims/{claimId}/comments")
 @RequiredArgsConstructor
+@Slf4j
 public class ClaimCommentController {
     private final ClaimCommentService commentService;
     private final CurrentClaimUserProvider currentUserProvider;
@@ -32,6 +34,7 @@ public class ClaimCommentController {
     @GetMapping
     @PreAuthorize("hasAuthority('CLAIM_READ')")
     public List<ClaimCommentResponse> list(@PathVariable UUID claimId) {
+        log.info("Вызов endpoint: list");
         return commentService.list(currentUserProvider.getRequiredUser(), claimId);
     }
 
@@ -42,6 +45,7 @@ public class ClaimCommentController {
         @PathVariable UUID claimId,
         @Valid @RequestBody CreateCommentRequest request
     ) {
+        log.info("Вызов endpoint: create");
         return commentService.create(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
@@ -52,6 +56,7 @@ public class ClaimCommentController {
         @PathVariable UUID commentId,
         @Valid @RequestBody UpdateCommentRequest request
     ) {
+        log.info("Вызов endpoint: update");
         return commentService.update(currentUserProvider.getRequiredUser(), claimId, commentId, request);
     }
 
@@ -62,6 +67,7 @@ public class ClaimCommentController {
         @PathVariable UUID claimId,
         @PathVariable UUID commentId
     ) {
+        log.info("Вызов endpoint: delete");
         commentService.delete(currentUserProvider.getRequiredUser(), claimId, commentId);
     }
 }

@@ -3,6 +3,7 @@ package ru.sber.cargotech.auth.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +23,7 @@ import ru.sber.cargotech.auth.service.AuthenticationService;
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
     private final AuthenticationService authenticationService;
@@ -32,6 +34,7 @@ public class AuthController {
         @RequestBody @Valid LoginRequest request,
         HttpServletRequest servletRequest
     ) {
+        log.info("Вызов endpoint: login");
         return authenticationService.login(
             request,
             metadata(servletRequest)
@@ -43,6 +46,7 @@ public class AuthController {
         @RequestBody @Valid RefreshTokenRequest request,
         HttpServletRequest servletRequest
     ) {
+        log.info("Вызов endpoint: refresh");
         return authenticationService.refresh(
             request,
             metadata(servletRequest)
@@ -53,12 +57,14 @@ public class AuthController {
     public ResponseEntity<Void> logout(
         @RequestBody @Valid LogoutRequest request
     ) {
+        log.info("Вызов endpoint: logout");
         authenticationService.logout(request);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me")
     public CurrentUserResponse me() {
+        log.info("Вызов endpoint: me");
         return authenticationService.me(
             currentUserProvider.getRequiredUser()
         );

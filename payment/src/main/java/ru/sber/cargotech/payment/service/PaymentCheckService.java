@@ -1,6 +1,7 @@
 package ru.sber.cargotech.payment.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.payment.dto.MarkPaidRequest;
@@ -26,6 +27,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentCheckService {
 
     private final PaymentServiceImpl paymentService;
@@ -39,6 +41,8 @@ public class PaymentCheckService {
             String comment,
             CurrentPaymentUser user
     ) {
+        log.debug("Preflight-проверка оплаты: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         ClaimPaymentData claim = paymentService.getClaim(
                 claimId,
                 user.organizationId()
@@ -53,6 +57,8 @@ public class PaymentCheckService {
             MarkPaidRequest request,
             CurrentPaymentUser user
     ) {
+        log.debug("Подтверждение полной оплаты: claimId={}, paymentId={}, organizationId={}, userId={}", claimId, request.paymentId(), user.organizationId(), user.userId());
+
         ClaimPaymentData claim = paymentService.getClaim(
                 claimId,
                 user.organizationId()
@@ -144,6 +150,8 @@ public class PaymentCheckService {
             CurrentPaymentUser user,
             boolean publishEvent
     ) {
+        log.debug("Формирование проверки оплаты: claimId={}, serviceAmount={}, publishEvent={}, userId={}", claim.id(), claim.serviceAmount(), publishEvent, user.userId());
+
         BigDecimal paid = paymentService.paidAmount(claim);
 
         BigDecimal remaining = claim.serviceAmount()

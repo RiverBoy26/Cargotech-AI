@@ -1,6 +1,7 @@
 package ru.sber.cargotech.payment.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.payment.dto.CreatePaymentMatchRequest;
@@ -12,7 +13,6 @@ import ru.sber.cargotech.payment.enums.PaymentMatchType;
 import ru.sber.cargotech.payment.exception.PaymentException;
 import ru.sber.cargotech.payment.repository.PaymentMatchRepository;
 import ru.sber.cargotech.payment.repository.PaymentOutboxWriter;
-import ru.sber.cargotech.payment.repository.PaymentTargetRepository;
 import ru.sber.cargotech.payment.security.CurrentPaymentUser;
 
 import java.math.BigDecimal;
@@ -22,11 +22,12 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentMatchingService {
 
     private final PaymentServiceImpl paymentService;
+    private final PaymentTargetService targetService;
     private final PaymentMatchRepository matchRepository;
-    private final PaymentTargetRepository targetRepository;
     private final PaymentOutboxWriter outboxWriter;
 
     @Transactional
@@ -35,6 +36,8 @@ public class PaymentMatchingService {
         CreatePaymentMatchRequest request,
         CurrentPaymentUser user
     ) {
+        log.debug("Ручное сопоставление: paymentId={}, organizationId={}, userId={}, targetType={}, targetId={}, requestedAmount={}", paymentId, user.organizationId(), user.userId(), request.targetType(), request.targetId(), request.matchedAmount());
+
         Payment payment = paymentService.getPayment(
             paymentId,
             user.organizationId()
@@ -46,10 +49,9 @@ public class PaymentMatchingService {
             );
         }
 
-        if (!targetRepository.exists(
-            user.organizationId(),
-            request.targetType(),
-            request.targetId()
+        if (!targetService.exists(
+                request.targetType(),
+                request.targetId()
         )) {
             throw PaymentException.notFound(
                 "Цель сопоставления не найдена"
@@ -57,6 +59,8 @@ public class PaymentMatchingService {
         }
 
         BigDecimal available = paymentService.availableAmount(payment);
+        log.debug("Доступная сумма платежа: paymentId={}, availableAmount={}", paymentId, available);
+
         if (request.matchedAmount().compareTo(available) > 0) {
             throw PaymentException.conflict(
                 "Сумма сопоставления %s превышает доступный остаток %s"
@@ -64,10 +68,9 @@ public class PaymentMatchingService {
             );
         }
 
-        targetRepository.remainingAmount(
-            user.organizationId(),
-            request.targetType(),
-            request.targetId()
+        targetService.remainingAmount(
+                request.targetType(),
+                request.targetId()
         ).ifPresent(remaining -> {
             if (request.matchedAmount().compareTo(remaining) > 0) {
                 throw PaymentException.conflict(
@@ -116,6 +119,8 @@ public class PaymentMatchingService {
         String reason,
         CurrentPaymentUser user
     ) {
+        log.debug("Отмена сопоставления: paymentId={}, matchId={}, organizationId={}, userId={}", paymentId, matchId, user.organizationId(), user.userId());
+
         if (reason == null || reason.isBlank()) {
             throw PaymentException.unprocessable(
                 "Причина отмены сопоставления обязательна"

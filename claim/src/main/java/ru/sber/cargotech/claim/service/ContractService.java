@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ContractService {
     private final ClaimContractRepository contractRepository;
     private final PartyService partyService;
@@ -29,6 +31,8 @@ public class ContractService {
 
     @Transactional(readOnly = true)
     public Page<ContractResponse> list(CurrentClaimUser user, Pageable pageable) {
+        log.debug("Получение договоров: organizationId={}, page={}, size={}", user.organizationId(), pageable.getPageNumber(), pageable.getPageSize());
+
         return contractRepository
             .findByOrganizationIdAndDeletedAtIsNull(user.organizationId(), pageable)
             .map(contract -> toResponse(user.organizationId(), contract));
@@ -36,11 +40,15 @@ public class ContractService {
 
     @Transactional(readOnly = true)
     public ContractResponse get(CurrentClaimUser user, UUID id) {
+        log.debug("Получение договора: contractId={}, organizationId={}", id, user.organizationId());
+
         return toResponse(user.organizationId(), getEntity(user.organizationId(), id));
     }
 
     @Transactional
     public ContractResponse create(CurrentClaimUser user, ContractRequest request) {
+        log.debug("Создание договора: organizationId={}, userId={}, number={}, clientId={}, expeditorId={}, paymentDays={}, penaltyType={}, penaltyRate={}", user.organizationId(), user.userId(), request.number(), request.clientId(), request.expeditorId(), request.paymentDays(), request.penaltyType(), request.penaltyRate());
+
         if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNull(
             user.organizationId(), request.number()
         )) {
@@ -59,6 +67,8 @@ public class ContractService {
 
     @Transactional
     public ContractResponse update(CurrentClaimUser user, UUID id, ContractRequest request) {
+        log.debug("Обновление договора: contractId={}, organizationId={}, userId={}, number={}, paymentDays={}, penaltyType={}, penaltyRate={}", id, user.organizationId(), user.userId(), request.number(), request.paymentDays(), request.penaltyType(), request.penaltyRate());
+
         ClaimContract contract = getEntity(user.organizationId(), id);
         validateParties(user.organizationId(), request.clientId(), request.expeditorId());
         apply(contract, request, user.userId());
@@ -69,6 +79,8 @@ public class ContractService {
 
     @Transactional
     public void delete(CurrentClaimUser user, UUID id) {
+        log.debug("Удаление договора: contractId={}, organizationId={}, userId={}", id, user.organizationId(), user.userId());
+
         ClaimContract contract = getEntity(user.organizationId(), id);
         contract.setDeletedAt(OffsetDateTime.now());
         contract.setUpdatedBy(user.userId());

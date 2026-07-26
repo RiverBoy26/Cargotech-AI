@@ -1,6 +1,7 @@
 package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +39,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ClaimService {
     private static final Collection<ClaimStatus> CLOSED_STATUSES = List.of(
         ClaimStatus.PAID,
@@ -69,6 +71,8 @@ public class ClaimService {
         String search,
         Pageable pageable
     ) {
+        log.debug("Поиск претензий: organizationId={}, userId={}, status={}, creditorId={}, debtorId={}, assignedLawyerId={}, searchPresent={}, page={}, size={}", user.organizationId(), user.userId(), status, creditorId, debtorId, assignedLawyerId, search != null && !search.isBlank(), pageable.getPageNumber(), pageable.getPageSize());
+
         return queryRepository.findClaims(
             user.organizationId(),
             status,
@@ -82,12 +86,16 @@ public class ClaimService {
 
     @Transactional(readOnly = true)
     public ClaimDetailsResponse get(CurrentClaimUser user, UUID claimId) {
+        log.debug("Получение претензии: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         return queryRepository.findDetails(user.organizationId(), claimId)
             .orElseThrow(() -> ClaimException.notFound("Претензия не найдена"));
     }
 
     @Transactional
     public ClaimDetailsResponse create(CurrentClaimUser user, CreateClaimRequest request) {
+        log.debug("Создание претензии: organizationId={}, userId={}, shipmentId={}, claimType={}, assignedLawyerId={}, nonPaymentConfirmed={}", user.organizationId(), user.userId(), request.shipmentId(), request.claimType(), request.assignedLawyerId(), request.nonPaymentConfirmed());
+
         ClaimShipment shipment = shipmentService.getEntity(user.organizationId(), request.shipmentId());
         ClaimContract contract = contractService.getEntity(user.organizationId(), shipment.getContractId());
 
@@ -149,6 +157,8 @@ public class ClaimService {
 
     @Transactional
     public ClaimDetailsResponse update(CurrentClaimUser user, UUID claimId, UpdateClaimRequest request) {
+        log.debug("Обновление претензии: claimId={}, organizationId={}, userId={}, assignedLawyerId={}, nonPaymentConfirmed={}", claimId, user.organizationId(), user.userId(), request.assignedLawyerId(), request.nonPaymentConfirmed());
+
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         ensureEditable(claim);
         if (request.reason() != null) {
@@ -180,6 +190,8 @@ public class ClaimService {
 
     @Transactional
     public void deleteDraft(CurrentClaimUser user, UUID claimId) {
+        log.debug("Удаление черновика претензии: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             throw ClaimException.conflict("Удалить можно только черновик претензии");
@@ -190,11 +202,15 @@ public class ClaimService {
 
     @Transactional
     public ClaimDetailsResponse submitToLegalReview(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
+        log.debug("Передача претензии на юридическую проверку: claimId={}, userId={}", claimId, user.userId());
+
         return changeStatus(user, claimId, ClaimStatus.PENDING_LEGAL_REVIEW, request == null ? null : request.reason());
     }
 
     @Transactional
     public ClaimDetailsResponse approve(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
+        log.debug("Утверждение претензии: claimId={}, userId={}", claimId, user.userId());
+
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         if (claim.getFinalVersionId() == null) {
             throw ClaimException.conflict("Нельзя утвердить претензию без финальной версии текста");
@@ -212,6 +228,8 @@ public class ClaimService {
             UUID claimId,
             StatusChangeRequest request
     ) {
+        log.debug("Начало отправки претензии с preflight-проверкой оплаты: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         ClaimEntity claim = getEntity(
                 user.organizationId(),
                 claimId
@@ -237,6 +255,8 @@ public class ClaimService {
 
     @Transactional
     public ClaimDetailsResponse cancel(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
+        log.debug("Отмена претензии: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         if (claim.getStatus() == ClaimStatus.PAID || claim.getStatus() == ClaimStatus.CLOSED_IN_COURT) {
             throw ClaimException.conflict("Оплаченную или закрытую в суде претензию нельзя отменить");
@@ -251,6 +271,8 @@ public class ClaimService {
 
     @Transactional
     public ClaimDetailsResponse markPaid(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
+        log.debug("Перевод претензии в PAID: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         if (claim.getStatus() == ClaimStatus.CANCELLED || claim.getStatus() == ClaimStatus.CLOSED_IN_COURT) {
             throw ClaimException.conflict("Нельзя отметить оплату по отменённой или закрытой в суде претензии");
@@ -263,6 +285,8 @@ public class ClaimService {
 
     @Transactional
     public ClaimDetailsResponse escalateToCourt(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
+        log.debug("Эскалация претензии в суд: claimId={}, userId={}", claimId, user.userId());
+
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         if (claim.getStatus() != ClaimStatus.SENT && claim.getStatus() != ClaimStatus.AWAITING_RESPONSE) {
             throw ClaimException.conflict("В суд можно эскалировать только отправленную претензию или претензию в ожидании ответа");
@@ -275,6 +299,8 @@ public class ClaimService {
 
     @Transactional
     public ClaimDetailsResponse closeInCourt(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
+        log.debug("Закрытие судебной работы: claimId={}, userId={}", claimId, user.userId());
+
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         if (claim.getStatus() != ClaimStatus.ESCALATED_TO_COURT) {
             throw ClaimException.conflict("Закрыть в суде можно только эскалированную претензию");
@@ -284,6 +310,8 @@ public class ClaimService {
 
     @Transactional(readOnly = true)
     public List<StatusHistoryResponse> statusHistory(CurrentClaimUser user, UUID claimId) {
+        log.debug("Получение истории статусов: claimId={}, organizationId={}", claimId, user.organizationId());
+
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         return historyRepository.findByClaimIdOrderByChangedAtAsc(claim.getId())
             .stream()
@@ -305,6 +333,8 @@ public class ClaimService {
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         validateTransition(claim.getStatus(), newStatus);
         ClaimStatus previous = claim.getStatus();
+        log.debug("Изменение статуса претензии: claimId={}, currentStatus={}, targetStatus={}, userId={}", claim.getId(), claim.getStatus(), newStatus, user.userId());
+
         claim.setStatus(newStatus);
         claim.setUpdatedBy(user.userId());
         claimRepository.save(claim);

@@ -8,8 +8,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import ru.sber.cargotech.claim.dto.PaymentClaimStateResponse;
 import ru.sber.cargotech.claim.dto.PaymentPreflightResponse;
+import ru.sber.cargotech.claim.exception.ClaimException;
 
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Component
@@ -73,5 +75,47 @@ public class PaymentClient {
         }
 
         return null;
+    }
+
+    public PaymentStateResponse getPaymentState(
+            UUID claimId,
+            UUID shipmentId,
+            BigDecimal serviceAmount
+    ) {
+        PaymentStateResponse response = restClient
+                .post()
+                .uri("/internal/api/v1/payments/payment-state")
+                .body(new PaymentStateRequest(
+                        claimId,
+                        shipmentId,
+                        serviceAmount
+                ))
+                .retrieve()
+                .body(PaymentStateResponse.class);
+
+        if (response == null) {
+            throw ClaimException.conflict(
+                    "Payment вернул пустой ответ"
+            );
+        }
+
+        return response;
+    }
+
+    public record PaymentStateRequest(
+            UUID claimId,
+            UUID shipmentId,
+            BigDecimal serviceAmount
+    ) {
+    }
+
+    public record PaymentStateResponse(
+            UUID claimId,
+            UUID shipmentId,
+            BigDecimal serviceAmount,
+            BigDecimal paidAmount,
+            BigDecimal remainingAmount,
+            String paymentStatus
+    ) {
     }
 }

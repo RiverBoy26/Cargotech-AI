@@ -1,8 +1,11 @@
 package ru.sber.cargotech.auth.service;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.auth.dto.RoleResponse;
+import ru.sber.cargotech.auth.dto.UserAccess;
 import ru.sber.cargotech.auth.entity.AuthOrganization;
 import ru.sber.cargotech.auth.entity.AuthRole;
 import ru.sber.cargotech.auth.entity.AuthUser;
@@ -23,24 +26,18 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class AccessService {
 
     private final AuthOrganizationRepository organizationRepository;
     private final AuthRoleRepository roleRepository;
     private final UserAccessRepository accessRepository;
 
-    public AccessService(
-        AuthOrganizationRepository organizationRepository,
-        AuthRoleRepository roleRepository,
-        UserAccessRepository accessRepository
-    ) {
-        this.organizationRepository = organizationRepository;
-        this.roleRepository = roleRepository;
-        this.accessRepository = accessRepository;
-    }
-
     @Transactional(readOnly = true)
     public UserAccess load(AuthUser user, UUID organizationContext) {
+        log.debug("Загрузка прав пользователя: userId={}, userOrganizationId={}, organizationContext={}", user.getId(), user.getOrganizationId(), organizationContext);
+
         return new UserAccess(
             user.getId(),
             organizationContext,
@@ -53,11 +50,15 @@ public class AccessService {
 
     @Transactional(readOnly = true)
     public Set<String> roleCodes(UUID userId) {
+        log.debug("Загрузка ролей пользователя: userId={}", userId);
+
         return accessRepository.findRoleCodes(userId);
     }
 
     @Transactional(readOnly = true)
     public List<AuthRole> requireRoles(Set<String> roleCodes) {
+        log.debug("Проверка существования ролей: requestedRoles={}", roleCodes);
+
         Set<String> normalized = normalizeRoles(roleCodes);
         List<AuthRole> roles = roleRepository.findAllByCodeIn(normalized);
         Set<String> found = roles.stream()
@@ -76,6 +77,8 @@ public class AccessService {
 
     @Transactional(readOnly = true)
     public List<RoleResponse> assignableRoles(CurrentUser actor) {
+        log.debug("Определение назначаемых ролей: actorUserId={}, actorRoles={}", actor.userId(), actor.roles());
+
         Set<String> allowed = actor.hasRole("SUPER_ADMIN")
             ? Set.of("ACCOUNTANT", "LAWYER", "EXPEDITOR_ADMIN", "SUPER_ADMIN")
             : Set.of("ACCOUNTANT", "LAWYER");
@@ -92,6 +95,8 @@ public class AccessService {
     }
 
     public AuthOrganization requireActiveOrganization(UUID organizationId) {
+        log.debug("Проверка активной организации: organizationId={}", organizationId);
+
         AuthOrganization organization = organizationRepository
             .findById(organizationId)
             .orElseThrow(() -> AuthException.notFound(
@@ -114,18 +119,5 @@ public class AccessService {
             .map(String::trim)
             .map(value -> value.toUpperCase(Locale.ROOT))
             .collect(Collectors.toCollection(TreeSet::new));
-    }
-
-    public record UserAccess(
-        UUID userId,
-        UUID organizationId,
-        String fullName,
-        String email,
-        Set<String> roles,
-        Set<String> permissions
-    ) {
-        public boolean hasRole(String role) {
-            return roles.contains(role);
-        }
     }
 }

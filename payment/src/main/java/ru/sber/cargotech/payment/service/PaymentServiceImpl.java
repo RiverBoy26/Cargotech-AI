@@ -1,6 +1,7 @@
 package ru.sber.cargotech.payment.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ import java.util.UUID;
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
@@ -42,6 +44,8 @@ public class PaymentServiceImpl implements PaymentService {
             Pageable pageable,
             CurrentPaymentUser user
     ) {
+        log.debug("Получение списка платежей: organizationId={}, userId={}, page={}, size={}", user.organizationId(), user.userId(), pageable.getPageNumber(), pageable.getPageSize());
+
         return paymentRepository
                 .findAllByOrganizationId(user.organizationId(), pageable)
                 .map(this::toResponse);
@@ -51,6 +55,8 @@ public class PaymentServiceImpl implements PaymentService {
             UUID paymentId,
             CurrentPaymentUser user
     ) {
+        log.debug("Получение платежа: paymentId={}, organizationId={}, userId={}", paymentId, user.organizationId(), user.userId());
+
         Payment payment = getPayment(paymentId, user.organizationId());
 
         return new PaymentDetailsResponse(
@@ -66,6 +72,8 @@ public class PaymentServiceImpl implements PaymentService {
             UUID claimId,
             CurrentPaymentUser user
     ) {
+        log.debug("Получение состояния оплаты претензии: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         ClaimPaymentData claim = getClaim(claimId, user.organizationId());
 
         List<UUID> paymentIds = paymentIds(claim);
@@ -97,6 +105,8 @@ public class PaymentServiceImpl implements PaymentService {
             UUID paymentId,
             UUID organizationId
     ) {
+        log.debug("Поиск платежа: paymentId={}, organizationId={}", paymentId, organizationId);
+
         return paymentRepository
                 .findByIdAndOrganizationId(paymentId, organizationId)
                 .orElseThrow(() -> PaymentException.notFound(
@@ -108,6 +118,8 @@ public class PaymentServiceImpl implements PaymentService {
             UUID claimId,
             UUID organizationId
     ) {
+        log.debug("Запрос контекста претензии из claim: claimId={}, organizationId={}", claimId, organizationId);
+
         try {
             ClaimPaymentContextResponse response =
                     claimClient.getPaymentContext(claimId);
@@ -137,6 +149,8 @@ public class PaymentServiceImpl implements PaymentService {
             UUID organizationId,
             String purpose
     ) {
+        log.debug("Поиск претензий по назначению: organizationId={}, purposeLength={}", organizationId, purpose == null ? 0 : purpose.length());
+
         if (purpose == null || purpose.isBlank()) {
             return List.of();
         }
@@ -151,6 +165,8 @@ public class PaymentServiceImpl implements PaymentService {
             UUID organizationId,
             String payerInn
     ) {
+        log.debug("Поиск открытых претензий по ИНН: organizationId={}, payerInn={}", organizationId, payerInn);
+
         if (payerInn == null || payerInn.isBlank()) {
             return List.of();
         }
@@ -166,6 +182,8 @@ public class PaymentServiceImpl implements PaymentService {
             UUID organizationId,
             UUID checkId
     ) {
+        log.debug("Передача проверки оплаты в claim: claimId={}, checkId={}, organizationId={}", claimId, checkId, organizationId);
+
         try {
             claimClient.updateLastPaymentCheck(claimId, checkId);
         } catch (RestClientResponseException exception) {
@@ -248,6 +266,8 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Transactional
     public void refreshStatus(Payment payment) {
+        log.debug("Пересчёт статуса платежа: paymentId={}, currentStatus={}, amount={}", payment.getId(), payment.getStatus(), payment.getAmount());
+
         BigDecimal matched = matchedAmount(payment.getId());
 
         if (matched.signum() == 0) {

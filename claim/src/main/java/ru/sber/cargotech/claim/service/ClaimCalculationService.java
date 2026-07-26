@@ -1,8 +1,10 @@
 package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.sber.cargotech.claim.client.PaymentClient;
 import ru.sber.cargotech.claim.dto.ClaimCalculationResponse;
 import ru.sber.cargotech.claim.entity.ClaimCalculation;
 import ru.sber.cargotech.claim.entity.ClaimContract;
@@ -13,7 +15,6 @@ import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimCalculationRepository;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
-import ru.sber.cargotech.claim.repository.ClaimPaymentFactRepository;
 import ru.sber.cargotech.claim.repository.ClaimRepository;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
@@ -26,19 +27,22 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ClaimCalculationService {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final BigDecimal DAYS_IN_YEAR = new BigDecimal("365");
 
     private final ClaimRepository claimRepository;
     private final ClaimCalculationRepository calculationRepository;
+    private final PaymentClient paymentClient;
     private final ShipmentService shipmentService;
     private final ContractService contractService;
-    private final ClaimPaymentFactRepository paymentFactRepository;
     private final ClaimOutboxWriter outboxWriter;
 
     @Transactional(readOnly = true)
     public ClaimCalculationResponse getLatest(CurrentClaimUser user, UUID claimId) {
+        log.debug("Получение последнего расчёта: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         ClaimEntity claim = getClaim(user, claimId);
         return calculationRepository.findFirstByClaimIdOrderByCalculationVersionDesc(claim.getId())
             .map(this::toResponse)
@@ -47,21 +51,22 @@ public class ClaimCalculationService {
 
     @Transactional
     public ClaimCalculationResponse recalculate(CurrentClaimUser user, UUID claimId) {
+        log.debug("Запуск перерасчёта: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+
         ClaimEntity claim = getClaim(user, claimId);
         ClaimShipment shipment = shipmentService.getEntity(user.organizationId(), claim.getShipmentId());
         ClaimContract contract = contractService.getEntity(user.organizationId(), claim.getContractId());
 
         BigDecimal principalDebt = money(shipment.getServiceAmount());
-        BigDecimal paidAmount = money(paymentFactRepository.sumPaidForClaimOrShipment(
-            user.organizationId(),
-            claim.getId(),
-            shipment.getId()
-        ));
-        BigDecimal remainingDebt = principalDebt.subtract(paidAmount);
-        if (remainingDebt.signum() < 0) {
-            remainingDebt = BigDecimal.ZERO;
-        }
-        remainingDebt = money(remainingDebt);
+        PaymentClient.PaymentStateResponse paymentState =
+                paymentClient.getPaymentState(
+                        claim.getId(),
+                        shipment.getId(),
+                        principalDebt
+                );
+
+        BigDecimal paidAmount = money(paymentState.paidAmount());
+        BigDecimal remainingDebt = money(principalDebt.subtract(paidAmount).max(BigDecimal.ZERO));
 
         LocalDate calculationDate = LocalDate.now();
         LocalDate overdueStartDate = resolveOverdueStartDate(shipment, contract);
@@ -79,6 +84,7 @@ public class ClaimCalculationService {
             penaltyRate
         );
         BigDecimal totalAmount = money(remainingDebt.add(penaltyAmount));
+        log.debug("Расчёт выполнен: claimId={}, principalDebt={}, paidAmount={}, remainingDebt={}, overdueStartDate={}, overdueDays={}, penaltyType={}, penaltyRate={}, penaltyAmount={}, totalAmount={}", claim.getId(), principalDebt, paidAmount, remainingDebt, overdueStartDate, overdueDays, penaltyType, penaltyRate, penaltyAmount, totalAmount);
 
         int nextVersion = calculationRepository.findLastCalculationVersion(claim.getId()) + 1;
         ClaimCalculation calculation = new ClaimCalculation();
@@ -105,6 +111,7 @@ public class ClaimCalculationService {
         ));
         calculation.setCreatedBy(user.userId());
         ClaimCalculation saved = calculationRepository.save(calculation);
+        log.debug("Расчёт сохранён: claimId={}, calculationId={}, version={}", claim.getId(), saved.getId(), saved.getCalculationVersion());
 
         claim.setPrincipalDebt(remainingDebt);
         claim.setPenaltyAmount(penaltyAmount);
