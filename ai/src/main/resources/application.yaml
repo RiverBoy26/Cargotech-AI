@@ -1,3 +1,33 @@
+server:
+  port: 8081
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
 spring:
   application:
-    name: ai
+    name: cargotech-ai
+  docker:
+    compose:
+      enabled: false
+
+gigachat:
+  auth-url: ${GIGACHAT_AUTH_URL:https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+  chat-url: ${GIGACHAT_CHAT_URL:https://gigachat.devices.sberbank.ru/api/v1/chat/completions}
+  embeddings-url: ${GIGACHAT_EMBEDDINGS_URL:https://gigachat.devices.sberbank.ru/api/v1/embeddings}
+  scope: ${GIGACHAT_SCOPE:GIGACHAT_API_B2B}
+  client-id: ${GIGACHAT_CLIENT_ID:}
+  auth-key: ${GIGACHAT_AUTH_KEY:}
+  chat-model: ${GIGACHAT_CHAT_MODEL:GigaChat-2-Pro}
+  embeddings-model: ${GIGACHAT_EMBEDDINGS_MODEL:EmbeddingsGigaR}
+  temperature: ${GIGACHAT_TEMPERATURE:0.1}
+  max-tokens: ${GIGACHAT_MAX_TOKENS:1000}
+  token-refresh-skew-seconds: ${GIGACHAT_TOKEN_REFRESH_SKEW_SECONDS:60}
+
+qdrant:
+  url: ${QDRANT_URL:http://localhost:6333}
+  collection-name: ${QDRANT_COLLECTION_NAME:cargotech_rag_chunks}
+  vector-size: ${QDRANT_VECTOR_SIZE:2560}
+  distance: ${QDRANT_DISTANCE:Cosine}
