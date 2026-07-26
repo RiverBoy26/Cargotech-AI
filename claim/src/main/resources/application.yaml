@@ -1,3 +1,49 @@
+server:
+  port: ${SERVER_PORT:8083}
+
 spring:
   application:
     name: claim
+
+  datasource:
+    url: ${CLAIM_DB_URL:jdbc:postgresql://localhost:5432/cargotech_claim}
+    username: ${CLAIM_DB_USERNAME:postgres}
+    password: ${CLAIM_DB_PASSWORD:admin}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: cargotech
+        jdbc:
+          time_zone: UTC
+
+  jackson:
+    default-property-inclusion: non_null
+
+claim:
+  security:
+    jwt-secret-base64: ${JWT_SECRET_BASE64}
+    jwt-issuer: ${JWT_ISSUER:http://localhost:8081}
+  number-prefix: ${CLAIM_NUMBER_PREFIX:CLM}
+
+services:
+  payment:
+    base-url: ${PAYMENT_SERVICE_URL:http://localhost:8082}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+    try-it-out-enabled: true
