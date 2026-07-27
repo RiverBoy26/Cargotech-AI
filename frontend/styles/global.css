@@ -16,19 +16,19 @@ main {
 header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   background-color: #F26522;
   padding: 10px 16px;
   font-size: 14px;
 }
 
 .topbar_user {
-  font-size: 16px;
-  color: #1B2A4A; 
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
+  color: #1B2A4A;
+  font-size: 16px;
 }
 
 /* Toolbar */
@@ -79,6 +79,108 @@ header {
   padding: 10px 20px;
   width: 220px;
   cursor: pointer;
+}
+
+/* форма */
+
+.add_claim_form {
+  display: none;
+  background: #d6d6d6;
+  border: 1px solid #1a1a1a;
+  border-radius: 10px;
+  padding: 24px 28px;
+  margin-bottom: 20px;
+}
+
+.add_claim_form_visible {
+  display: block;
+}
+
+.add_claim_form_title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+/* Сетка полей: 4 колонки в первой строке, широкие поля на всю ширину */
+.add_claim_form_fields {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.form_field_wide {
+  grid-column: 1 / -1;
+}
+
+.form_field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form_label {
+  font-size: 13px;
+  color: #444;
+}
+
+.form_label_hint {
+  font-size: 12px;
+  color: #888;
+}
+
+.form_input {
+  font-family: inherit;
+  font-size: 14px;
+  background: #fff;
+  border: 1px solid #1a1a1a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #1a1a1a;
+  outline: none;
+}
+
+.form_input:focus { border-color: #555; }
+
+.form_select { cursor: pointer; }
+
+.form_textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* Нижняя строка формы: чекбокс слева, кнопки и ошибка справа */
+.add_claim_form_footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.add_claim_confirm_row {
+  display: flex;
+  align-items: center;
+}
+
+.form_checkbox_label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.add_claim_form_actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form_error {
+  font-size: 13px;
+  color: #c0392b;
+  margin: 0;
 }
 
 /* Таблица претензий */

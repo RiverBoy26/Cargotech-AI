@@ -3,17 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <title>Карточка претензии</title>
-    <link rel="stylesheet" href="/styles/claim_card.css">
+    <link rel="stylesheet" href="../../styles/claim_card.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
 </head>
 <body>
     <header>
-        <button class="notif_btn">
-            <img src="/assets/notifications1.svg" alt="notifications">
-            3 уведомления
-        </button>
 
         <div class="topbar_user">
             <div class="topbar_usename">Иванов Иван Иванович</div>
@@ -74,14 +70,6 @@
 
                     <div class="claim_actions_column">
 
-                        <div class="template_row">
-                            <span class="template_label">шаблон:</span>
-                            <div class="template_select" id="template_select">
-                                шаблон1
-                                <span class="template_select_arrow">&#9662;</span>
-                            </div>
-                        </div>
-
                         <div class="action_buttons_grid">
                             <button class="action_btn action_btn_disabled" id="btn_compose" disabled>Составить</button>
                             <button class="action_btn" id="btn_download">Скачать</button>
@@ -106,7 +94,7 @@
         </div>
     </main>
 
-    <script src="/scripts/api.js"></script>
-    <script src="/scripts/claim_script.js"></script>
+    <script src="../../scripts/api.js"></script>
+    <script src="../../scripts/claim_script.js"></script>
 </body>
 </html>

@@ -179,6 +179,10 @@ async function getUsers(params = {}) {
   return apiRequest(`/users?${qs}`);
 }
 
+async function getUser(userId) {
+  return apiRequest(`/users/${userId}`);
+}
+
 async function createUser(payload) {
   return apiRequest('/users', {
     method: 'POST',
@@ -213,6 +217,13 @@ async function getClaims(params = {}) {
 
 async function getClaim(claimId) {
   return apiRequest(`/claims/${claimId}`);
+}
+
+async function createClaim(payload) {
+  return apiRequest('/claims', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 async function updateClaim(claimId, payload) {

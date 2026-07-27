@@ -3,20 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <title>Дашборд просрочек</title>
-    <link rel="stylesheet" href="/styles/ac_dashboard.css">
+    <link rel="stylesheet" href="../../styles/ac_dashboard.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
 </head>
 <body>
     <header>
-        <button class="notif_btn">
-            <span class="notif_btn_icon">
-                <img src="/assets/notifications.svg" alt="notifications">
-            </span>
-            3 уведомления
-        </button>
-
         <div class="topbar_user">
             <div class="topbar_usename">Кузнецова Мария Геннадьевна</div>
             <div class="topbar_user_role">бухгалтер</div>
@@ -27,7 +20,7 @@
         <div class="toolbar">
             <div class="search_box">
                 <span class="search-box__icon">
-                    <img src="/assets/Search.svg" alt="Search">
+                    <img src="../../assets/Search.svg" alt="Search">
                 </span>
                 <input
                     class="search-box__input"
@@ -37,7 +30,7 @@
             <div class="status_filter">
                 Все
                 <span class="status_filter_arrow">
-                    <img src="/assets/down.svg" alt="down">
+                    <img src="../../assets/down.svg" alt="down">
                 </span>
             </div>
         </div>
@@ -45,7 +38,7 @@
         <div class="overdues_table">
             <div class="overdues_table_head">
                 <div class="overdues_table_head_t">Клиент</div>
-                <div class="overdues_table_head_t">Перевозчик</div>
+                <div class="overdues_table_head_t">Экспедитор</div>
                 <div class="overdues_table_head_t">Рейс</div>
                 <div class="overdues_table_head_t">Сумма долга</div>
                 <div class="overdues_table_head_t">Просрочка</div>
@@ -56,7 +49,7 @@
         </div>
     </main>
 
-    <script src="/scripts/api.js"></script>
-    <script src="/scripts/ac_script.js"></script>
+    <script src="../../scripts/api.js"></script>
+    <script src="../../scripts/ac_script.js"></script>
 </body>
 </html>

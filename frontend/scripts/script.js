@@ -63,3 +63,73 @@ async function initClaimsPage() {
 }
 
 initClaimsPage();
+
+const addClaimForm = document.getElementById('add_claim_form');
+const claimFormError = document.getElementById('claim_form_error');
+
+// Показать / скрыть форму
+document.getElementById('create_claim_btn').addEventListener('click', () => {
+  addClaimForm.classList.add('add_claim_form_visible');
+  claimFormError.textContent = '';
+});
+
+function resetClaimForm() {
+  addClaimForm.classList.remove('add_claim_form_visible');
+  document.getElementById('claim_shipment_id').value = '';
+  document.getElementById('claim_type').value = '';
+  document.getElementById('claim_number').value = '';
+  document.getElementById('claim_principal_debt').value = '';
+  document.getElementById('claim_reason').value = '';
+  document.getElementById('claim_draft_content').value = '';
+  document.getElementById('claim_non_payment_confirmed').checked = false;
+  claimFormError.textContent = '';
+}
+
+document.getElementById('cancel_claim_btn').addEventListener('click', resetClaimForm);
+
+// Отправка формы
+document.getElementById('save_claim_btn').addEventListener('click', async () => {
+  const shipmentId = document.getElementById('claim_shipment_id').value.trim();
+  const claimType  = document.getElementById('claim_type').value;
+  const reason     = document.getElementById('claim_reason').value.trim();
+
+  // Обязательные поля
+  if (!shipmentId || !claimType || !reason) {
+    claimFormError.textContent = 'Заполните обязательные поля: ID рейса, тип претензии, основание';
+    return;
+  }
+
+  const payload = {
+    shipmentId,
+    claimType,
+    reason,
+    nonPaymentConfirmed: document.getElementById('claim_non_payment_confirmed').checked,
+  };
+
+  const claimNumber    = document.getElementById('claim_number').value.trim();
+  const principalDebt  = document.getElementById('claim_principal_debt').value;
+  const draftContent   = document.getElementById('claim_draft_content').value.trim();
+
+  if (claimNumber)   payload.claimNumber   = claimNumber;
+  if (principalDebt) payload.principalDebt = parseFloat(principalDebt);
+  if (draftContent)  payload.draftContent  = draftContent;
+
+  const saveBtn = document.getElementById('save_claim_btn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Создание...';
+  claimFormError.textContent = '';
+
+  try {
+    await createClaim(payload);
+
+    resetClaimForm();
+
+    if (typeof loadClaims === 'function') await loadClaims();
+
+  } catch (err) {
+    claimFormError.textContent = err.message || 'Не удалось создать претензию';
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Создать';
+  }
+});

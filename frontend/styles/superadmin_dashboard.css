@@ -16,19 +16,19 @@ main {
 header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   background-color: #F26522;
   padding: 10px 16px;
   font-size: 14px;
 }
 
 .topbar_user {
-  font-size: 16px;
-  color: #1B2A4A; 
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
+  color: #1B2A4A;
+  font-size: 16px;
 }
 
 .topbar_usename { font-size: 15px; }
@@ -80,6 +80,63 @@ header {
   font-size: 14px;
   color: #8A93A0;
   margin: 0;
+}
+
+/* форма */
+
+.add_user_form {
+  display: none;
+  background: #FFFFFF;
+  border: 1px solid #E6E9ED;
+  border-radius: 10px;
+  padding: 24px 28px;
+  margin-bottom: 20px;
+}
+
+.add_user_form_visible {
+  display: block;
+}
+
+.add_user_form_title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.add_user_form_fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.form_field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form_label {
+  font-size: 13px;
+  color: #8A93A0;
+}
+
+.form_input {
+  font-family: inherit;
+  font-size: 14px;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 8px;
+  padding: 10px 14px;
+  outline: none;
+}
+.form_select {
+  cursor: pointer;
+}
+
+.add_user_form_actions {
+  display: flex;
+  gap: 10px;
 }
 
 /* секуции */
@@ -182,8 +239,8 @@ header {
   border: 1px solid rgba(0,0,0,0.25);
 }
 
-.status-pill--active  { background: #a9e0a0; color: #1f5c14; }
-.status-pill--blocked { background: #f4a8a3; color: #6b1f1a; }
+.status-pill--active  { background: #c3e8bd; color: #44743c; }
+.status-pill--blocked { background: #f5c6c3; color: #a26661; }
 
 /* кнопки */
 
@@ -209,6 +266,94 @@ header {
 .action_btn_unblock:hover { background: #bac6d5; }
 
 .action_btn_unblock:hover { background: #93d488; }
+
+/* просмотр пользователя */
+
+.modal_overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal_overlay_visible {
+  display: flex;
+}
+
+.modal {
+  background: #d6d6d6;
+  border: 1px solid #1a1a1a;
+  border-radius: 12px;
+  width: 480px;
+  max-width: 90vw;
+}
+
+.modal_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #b9b9b9;
+}
+
+.modal_title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.modal_close_btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #555;
+  padding: 4px;
+}
+
+.modal_close_btn:hover { color: #1a1a1a; }
+
+.modal_body { padding: 20px 24px; }
+
+.modal_field_grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.modal_field_label {
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.modal_field_value {
+  font-size: 14px;
+}
+
+.modal_loading {
+  display: none;
+  text-align: center;
+  color: #555;
+  font-size: 14px;
+  padding: 12px 0;
+}
+
+.modal_error {
+  color: #c0392b;
+  font-size: 14px;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.modal_footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 24px 20px;
+  border-top: 1px solid #b9b9b9;
+}
 
 /* заглушка */
 
