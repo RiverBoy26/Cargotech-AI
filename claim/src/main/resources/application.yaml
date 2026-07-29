@@ -34,6 +34,11 @@ services:
   payment:
     base-url: ${PAYMENT_SERVICE_URL:http://localhost:8082}
 
+  ai:
+    base-url: ${AI_SERVICE_URL:http://localhost:8084}
+    connect-timeout: 5s
+    read-timeout: 60s
+
 management:
   endpoints:
     web:

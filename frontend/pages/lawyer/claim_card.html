@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Карточка претензии</title>
+    <link rel="stylesheet" href="../../styles/claim_card.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+
+        <div class="topbar_user">
+            <div class="topbar_usename">Иванов Иван Иванович</div>
+            <div class="topbar_user_role">юрист</div>
+        </div>
+    </header>
+
+    <main>
+        <div class="back_link_row">
+            <button class="back_link" id="back_link">Вернуться к списку претензий</button>
+        </div>
+
+        <div class="claim_card">
+
+            <div class="claim_card_stripe" id="claim_card_stripe"></div>
+
+            <div class="claim_card_body">
+
+                <div class="claim_card_header">
+                    <div class="claim_card_header_left">
+                        <div class="claim_card_title" id="claim_card_title">Претензия 1111-1111</div>
+                        <div class="claim_card_subtitle" id="claim_card_subtitle">Экспедитор 1 — АА-1111</div>
+                    </div>
+                    <div class="claim_card_header_right">
+                        <div class="claim_card_badge" id="claim_card_overdue_badge">Дней просрочки 45</div>
+                        <div class="claim_card_status_badge" id="claim_card_status_badge">Эскалация</div>
+                    </div>
+                </div>
+
+                <div class="claim_card_info_grid">
+                    <div class="info_box">
+                        <div class="info_box_label">Сумма долга</div>
+                        <div class="info_box_value" id="info_debt_amount">217 000 ₽</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Неустойка</div>
+                        <div class="info_box_value" id="info_penalty">61 000 ₽</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Срок оплаты по договору</div>
+                        <div class="info_box_value" id="info_payment_term">75 дней</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Дата выполнения</div>
+                        <div class="info_box_value" id="info_completion_date">01.01.2025</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Дата просрочки</div>
+                        <div class="info_box_value" id="info_overdue_date">16.04.2025</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Ответственный юрист</div>
+                        <div class="info_box_value" id="info_lawyer_name">Иванов Иван Иванович</div>
+                    </div>
+                </div>
+
+                <div class="claim_card_main">
+
+                    <div class="claim_actions_column">
+
+                        <div class="action_buttons_grid">
+                            <button class="action_btn" id="btn_compose">Сгенерировать</button>
+                            <button class="action_btn" id="btn_approve">Утвердить</button>
+                            <button class="action_btn" id="btn_edit">Редактировать</button>
+                            <button class="action_btn" id="btn_recalculate">Расчёт</button>
+                            <button class="action_btn" id="btn_cancel">Отменить</button>
+                            <button class="action_btn" id="btn_court_package">Пакет для суда</button>
+                            <button class="action_btn" id="btn_download_claim" hidden>Скачать</button>
+                        </div>
+
+                        <section class="workflow_panel">
+                            <h2 class="workflow_title">Текст претензии</h2>
+                            <div class="workflow_controls">
+                                <select class="workflow_input" id="template_select">
+                                    <option value="">— выберите шаблон —</option>
+                                </select>
+                                <button class="action_btn" id="btn_template_preview">Предпросмотр</button>
+                                <select class="workflow_input" id="version_select">
+                                    <option value="">— версии текста —</option>
+                                </select>
+                            </div>
+                            <textarea class="workflow_textarea" id="claim_text_editor"
+                                      placeholder="Сгенерированный или отредактированный текст претензии"></textarea>
+                            <div class="workflow_controls">
+                                <button class="action_btn" id="btn_save_version">Сохранить версию</button>
+                                <button class="action_btn" id="btn_mark_final">Назначить финальной</button>
+                                <span id="ai_warning"></span>
+                            </div>
+                        </section>
+
+                        <section class="workflow_panel">
+                            <h2 class="workflow_title">Документы и отправка</h2>
+                            <div class="workflow_controls">
+                                <select class="workflow_input" id="document_format">
+                                    <option value="CLAIM_PDF">PDF</option>
+                                    <option value="CLAIM_DOCX">DOCX</option>
+                                </select>
+                                <button class="action_btn" id="btn_generate_document">Сформировать файл</button>
+                            </div>
+                            <div class="document_list" id="document_list">Документы ещё не сформированы</div>
+                            <div class="workflow_controls">
+                                <input class="workflow_input" id="email_to" type="email" placeholder="Email клиента">
+                                <input class="workflow_input" id="email_cc" type="email" placeholder="Копия">
+                                <input class="workflow_input" id="email_subject" placeholder="Тема письма">
+                                <button class="action_btn" id="btn_send_document">Проверить оплату и отправить</button>
+                            </div>
+                            <textarea class="workflow_textarea workflow_textarea_small" id="email_message"
+                                      placeholder="Текст письма"></textarea>
+                            <div id="delivery_status"></div>
+                        </section>
+
+                        <input class="comment_input" id="comment_input" type="text" placeholder="Введите комментарий...">
+
+                        <div class="history_row">
+                            <span class="history_title">История изменений</span>
+                            <button class="add_comment_btn" id="add_comment_btn">Добавить<br>комментарий</button>
+                        </div>
+
+                        <div class="history_list" id="history_list"></div>
+
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script src="../../scripts/api.js"></script>
+    <script src="../../scripts/claim_script.js"></script>
+</body>
+</html>

@@ -3,6 +3,7 @@ package ru.sber.cargotech.payment.service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import ru.sber.cargotech.payment.dto.ClaimPaymentsResponse;
+import ru.sber.cargotech.payment.dto.CreatePaymentRequest;
 import ru.sber.cargotech.payment.dto.PaymentDetailsResponse;
 import ru.sber.cargotech.payment.dto.PaymentMatchResponse;
 import ru.sber.cargotech.payment.dto.PaymentResponse;
@@ -18,6 +19,11 @@ import java.util.List;
 import java.util.UUID;
 
 public interface PaymentService {
+    PaymentResponse create(
+            CreatePaymentRequest request,
+            CurrentPaymentUser user
+    );
+
     Page<PaymentResponse> findAll(
             Pageable pageable,
             CurrentPaymentUser user

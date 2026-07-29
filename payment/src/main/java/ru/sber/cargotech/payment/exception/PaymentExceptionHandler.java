@@ -8,7 +8,7 @@ import ru.sber.cargotech.payment.dto.PaymentErrorResponse;
 
 import java.time.OffsetDateTime;
 
-@RestControllerAdvice(basePackages = "ru.cargotech.claimlawyer.payment")
+@RestControllerAdvice(basePackages = "ru.sber.cargotech.payment")
 public class PaymentExceptionHandler {
     @ExceptionHandler(PaymentException.class)
     public ResponseEntity<PaymentErrorResponse> handlePaymentException(

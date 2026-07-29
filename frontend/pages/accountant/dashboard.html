@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Дашборд бухгалтера</title>
+    <link rel="stylesheet" href="../../styles/ac_dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="topbar_user">
+            <div class="topbar_usename">Кузнецова Мария Геннадьевна</div>
+            <div class="topbar_user_role">бухгалтер</div>
+        </div>
+    </header>
+
+    <main>
+        <div class="page_title_row">
+            <h1 class="page_title">Рабочее место бухгалтера</h1>
+        </div>
+
+        <div class="tabs_row">
+            <button class="tab_btn tab_btn_active" data-tab="overdues">Претензии и просрочки</button>
+            <button class="tab_btn" data-tab="payments">Платежи</button>
+        </div>
+
+        <section class="tab_panel tab_panel_active" id="tab_panel_overdues">
+            <div class="toolbar">
+                <div class="search_box">
+                    <span class="search-box__icon">
+                        <img src="../../assets/Search.svg" alt="">
+                    </span>
+                    <input
+                        class="search-box__input"
+                        id="overdue_search"
+                        type="search"
+                        placeholder="Поиск по клиенту, экспедитору или рейсу...">
+                </div>
+                <div class="toolbar_actions">
+                    <button class="action_btn" id="refresh_overdues_btn">Обновить</button>
+                </div>
+            </div>
+
+            <div class="overdues_table">
+                <div class="overdues_table_head">
+                    <div class="overdues_table_head_t">Клиент</div>
+                    <div class="overdues_table_head_t">Экспедитор</div>
+                    <div class="overdues_table_head_t">Рейс</div>
+                    <div class="overdues_table_head_t">Сумма долга</div>
+                    <div class="overdues_table_head_t">Просрочка</div>
+                    <div class="overdues_table_head_t">Статус</div>
+                    <div class="overdues_table_head_t">Действие</div>
+                </div>
+                <div class="overdues_list" id="overdues_list"></div>
+            </div>
+        </section>
+
+        <section class="tab_panel" id="tab_panel_payments">
+            <div class="panel_header">
+                <div>
+                    <h2 class="panel_title">Платежи организации</h2>
+                    <p class="panel_subtitle">Импортируйте выписку, зарегистрируйте платёж вручную или запустите автоматическую сверку.</p>
+                </div>
+                <div class="toolbar_actions">
+                    <button class="secondary_btn" id="show_import_btn">Импортировать XLSX</button>
+                    <button class="primary_btn" id="show_create_payment_btn">+ Создать платёж</button>
+                </div>
+            </div>
+
+            <section class="payment_form" id="payment_import_form">
+                <div class="payment_form_title">Импорт платежей</div>
+                <div class="payment_form_hint">XLSX должен содержать столбцы <code>payment_date</code> и <code>amount</code>.</div>
+                <div class="payment_form_grid payment_form_grid_import">
+                    <div class="form_field">
+                        <label class="form_label" for="payment_import_source">Источник *</label>
+                        <select class="form_input" id="payment_import_source">
+                            <option value="BANK_STATEMENT">Банковская выписка</option>
+                            <option value="ONE_C">Выгрузка из 1С</option>
+                        </select>
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_import_file">Файл XLSX *</label>
+                        <input class="form_input form_file" id="payment_import_file" type="file"
+                               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                    </div>
+                </div>
+                <div class="payment_form_footer">
+                    <p class="form_message" id="payment_import_message" role="status"></p>
+                    <div class="payment_form_actions">
+                        <button class="secondary_btn" id="cancel_import_btn" type="button">Отмена</button>
+                        <button class="primary_btn" id="import_payment_btn" type="button">Загрузить</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="payment_form" id="payment_create_form">
+                <div class="payment_form_title">Новый платёж</div>
+                <div class="payment_form_hint">Платёж будет создан со статусом «Не сопоставлен» и сможет участвовать в сверке.</div>
+                <div class="payment_form_grid">
+                    <div class="form_field">
+                        <label class="form_label" for="payment_number">Номер платежа</label>
+                        <input class="form_input" id="payment_number" maxlength="128" placeholder="ПП-101">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_external_id">Внешний ID</label>
+                        <input class="form_input" id="payment_external_id" maxlength="255" placeholder="MANUAL-2026-001">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_date">Дата платежа *</label>
+                        <input class="form_input" id="payment_date" type="date">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_amount">Сумма *</label>
+                        <input class="form_input" id="payment_amount" type="number" step="0.01" placeholder="150000,00">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_currency">Валюта *</label>
+                        <select class="form_input" id="payment_currency">
+                            <option value="RUB">RUB — российский рубль</option>
+                            <option value="USD">USD — доллар США</option>
+                            <option value="EUR">EUR — евро</option>
+                        </select>
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_payer_inn">ИНН плательщика</label>
+                        <input class="form_input" id="payment_payer_inn" maxlength="12">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_payer_name">Плательщик</label>
+                        <input class="form_input" id="payment_payer_name" maxlength="500" placeholder="ООО Клиент">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_recipient_inn">ИНН получателя</label>
+                        <input class="form_input" id="payment_recipient_inn" maxlength="12">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="payment_recipient_name">Получатель</label>
+                        <input class="form_input" id="payment_recipient_name" maxlength="500" placeholder="ООО Экспедитор">
+                    </div>
+                    <div class="form_field form_field_wide">
+                        <label class="form_label" for="payment_purpose">Назначение платежа</label>
+                        <textarea class="form_input form_textarea" id="payment_purpose"
+                                  placeholder="Оплата по претензии CT-2026-001"></textarea>
+                    </div>
+                </div>
+                <div class="payment_form_footer">
+                    <p class="form_message form_error" id="payment_create_message" role="alert"></p>
+                    <div class="payment_form_actions">
+                        <button class="secondary_btn" id="cancel_create_payment_btn" type="button">Отмена</button>
+                        <button class="primary_btn" id="create_payment_btn" type="button">Создать платёж</button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="payments_toolbar">
+                <div class="search_box">
+                    <span class="search-box__icon"><img src="../../assets/Search.svg" alt=""></span>
+                    <input class="search-box__input" id="payment_search" type="search"
+                           placeholder="Поиск по номеру, плательщику, ИНН или назначению...">
+                </div>
+                <div class="toolbar_actions">
+                    <select class="compact_select" id="payment_status_filter">
+                        <option value="">Все статусы</option>
+                        <option value="IMPORTED">Не сопоставлен</option>
+                        <option value="PARTIALLY_MATCHED">Сопоставлен частично</option>
+                        <option value="MATCHED">Сопоставлен</option>
+                        <option value="REJECTED">Отклонён</option>
+                    </select>
+                    <button class="action_btn" id="reconcile_btn">Запустить сверку</button>
+                    <button class="action_btn" id="refresh_payments_btn">Обновить</button>
+                </div>
+            </div>
+
+            <p class="form_message" id="reconciliation_message" role="status"></p>
+
+            <div class="payments_table">
+                <div class="payments_table_head">
+                    <div>Дата</div>
+                    <div>Номер / источник</div>
+                    <div>Плательщик</div>
+                    <div>Получатель</div>
+                    <div>Сумма</div>
+                    <div>Сопоставлено</div>
+                    <div>Доступно</div>
+                    <div>Статус</div>
+                </div>
+                <div id="payments_list"></div>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal_overlay" id="payment_modal">
+        <div class="payment_modal">
+            <div class="modal_header">
+                <div>
+                    <div class="payment_form_title" id="payment_modal_title">Платёж</div>
+                    <div class="payment_form_hint" id="payment_modal_subtitle"></div>
+                </div>
+                <button class="modal_close" id="close_payment_modal_btn" type="button" aria-label="Закрыть">×</button>
+            </div>
+            <div class="modal_body" id="payment_modal_body"></div>
+        </div>
+    </div>
+
+    <script src="../../scripts/api.js"></script>
+    <script src="../../scripts/ac_script.js"></script>
+</body>
+</html>

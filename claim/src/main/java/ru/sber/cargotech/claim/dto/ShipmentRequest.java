@@ -13,7 +13,7 @@ import java.util.UUID;
 public record ShipmentRequest(
     @NotBlank @Size(max = 128) String orderNumber,
     @NotNull UUID clientId,
-    @NotNull UUID expeditorId,
+    UUID expeditorId,
     @NotNull UUID contractId,
     @Size(max = 500) String routeFrom,
     @Size(max = 500) String routeTo,

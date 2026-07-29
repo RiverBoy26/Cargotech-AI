@@ -48,3 +48,7 @@ auth:
     full-name: ${AUTH_BOOTSTRAP_FULL_NAME}
     organization-name: ${AUTH_BOOTSTRAP_ORGANIZATION_NAME:CargoTech}
     organization-inn: ${AUTH_BOOTSTRAP_ORGANIZATION_INN:7700000000}
+
+services:
+  claim:
+    base-url: ${CLAIM_SERVICE_URL:http://localhost:8083}

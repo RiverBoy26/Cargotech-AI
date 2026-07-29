@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.PartyRequest;
 import ru.sber.cargotech.claim.dto.PartyResponse;
 import ru.sber.cargotech.claim.entity.ClaimParty;
+import ru.sber.cargotech.claim.enums.PartyType;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.repository.ClaimPartyRepository;
@@ -26,12 +27,43 @@ public class PartyService {
     private final ClaimOutboxWriter outboxWriter;
 
     @Transactional(readOnly = true)
-    public Page<PartyResponse> list(CurrentClaimUser user, Pageable pageable) {
-        log.debug("Получение контрагентов: organizationId={}, page={}, size={}", user.organizationId(), pageable.getPageNumber(), pageable.getPageSize());
+    public Page<PartyResponse> list(
+            CurrentClaimUser user,
+            PartyType type,
+            Pageable pageable
+    ) {
+        log.debug(
+                "Получение контрагентов: organizationId={}, type={}, page={}, size={}",
+                user.organizationId(),
+                type,
+                pageable.getPageNumber(),
+                pageable.getPageSize()
+        );
 
-        return partyRepository
-            .findByOrganizationIdAndDeletedAtIsNull(user.organizationId(), pageable)
-            .map(this::toResponse);
+        Page<ClaimParty> parties;
+
+        if (type == null) {
+            parties = partyRepository.findByOrganizationIdAndDeletedAtIsNull(
+                    user.organizationId(),
+                    pageable
+            );
+        } else {
+            parties =
+                    partyRepository.findByOrganizationIdAndTypeAndDeletedAtIsNull(
+                            user.organizationId(),
+                            type,
+                            pageable
+                    );
+        }
+        log.debug(
+                "Контрагенты получены: organizationId={}, type={}, totalElements={}, totalPages={}",
+                user.organizationId(),
+                type,
+                parties.getTotalElements(),
+                parties.getTotalPages()
+        );
+
+        return parties.map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
@@ -45,6 +77,7 @@ public class PartyService {
     public PartyResponse create(CurrentClaimUser user, PartyRequest request) {
         log.debug("Создание контрагента: organizationId={}, userId={}, type={}, inn={}", user.organizationId(), user.userId(), request.type(), request.inn());
 
+        ensureNotManagedExpeditor(request.type());
         ClaimParty party = new ClaimParty();
         party.setOrganizationId(user.organizationId());
         party.setCreatedBy(user.userId());
@@ -67,6 +100,8 @@ public class PartyService {
         log.debug("Обновление контрагента: partyId={}, organizationId={}, userId={}, type={}, inn={}", id, user.organizationId(), user.userId(), request.type(), request.inn());
 
         ClaimParty party = getEntity(user.organizationId(), id);
+        ensureEditableParty(party);
+        ensureNotManagedExpeditor(request.type());
         apply(party, request, user.userId());
         ClaimParty saved = partyRepository.save(party);
         outboxWriter.write(
@@ -85,6 +120,7 @@ public class PartyService {
         log.debug("Удаление контрагента: partyId={}, organizationId={}, userId={}", id, user.organizationId(), user.userId());
 
         ClaimParty party = getEntity(user.organizationId(), id);
+        ensureEditableParty(party);
         party.setActive(false);
         party.setDeletedAt(OffsetDateTime.now());
         party.setUpdatedBy(user.userId());
@@ -115,6 +151,22 @@ public class PartyService {
         party.setEmail(blankToNull(request.email()));
         party.setPhone(blankToNull(request.phone()));
         party.setUpdatedBy(userId);
+    }
+
+    private void ensureEditableParty(ClaimParty party) {
+        if (party.getType() == PartyType.EXPEDITOR) {
+            throw ClaimException.forbidden(
+                "Экспедитор управляется через auth_organizations"
+            );
+        }
+    }
+
+    private void ensureNotManagedExpeditor(PartyType type) {
+        if (type == PartyType.EXPEDITOR) {
+            throw ClaimException.validation(
+                "Экспедитор создаётся только через auth_organizations"
+            );
+        }
     }
 
     public PartyResponse toResponse(ClaimParty party) {

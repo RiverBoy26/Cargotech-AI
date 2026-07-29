@@ -1,0 +1,133 @@
+body {
+    margin: 0;
+    min-height: 100vh;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    background: #F4F6F8;
+
+    font-family: "Anonymous Pro", monospace;
+    color: #2E3440;
+}
+
+
+/* Основной контейнер */
+
+main {
+    width: 100%;
+    max-width: 420px;
+
+    padding: 35px;
+
+    background: #FFFFFF;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 2px solid #DDE1E6;
+}
+
+
+/* Заголовок страницы */
+
+.head {
+    text-align: center;
+    margin-bottom: 25px;
+    
+}
+
+.head h1 {
+    margin: 0;
+
+    font-size: 28px;
+    font-weight: 700;
+
+    color: #1B2A4A;
+}
+
+
+/* Форма */
+
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+
+form h1 {
+    margin: 0 0 10px;
+
+    text-align: center;
+
+    font-size: 22px;
+
+    color: #8A93A0;
+}
+
+
+/* Поля */
+
+label {
+    display: flex;
+    flex-direction: column;
+
+    gap: 8px;
+
+    font-size: 16px;
+
+}
+
+
+input {
+    height: 42px;
+
+    padding: 0 12px;
+
+    background: #FCEADF;
+    border: 1px solid #F6C9A6;
+
+    border-radius: 6px;
+
+    font-family: inherit;
+    font-size: 16px;
+
+    outline: none;
+
+    transition: border-color 0.2s;
+}
+
+
+/* Кнопка */
+
+button {
+    height: 45px;
+    margin-top: 10px;
+    background: #F26522;
+    border: 1px solid #DDE1E6;
+    border-radius: 10px;
+    padding: 12px 20px;
+
+    font-family: inherit;
+    font-size: 14px;
+    color: #1B2A4A;
+    cursor: pointer;
+}
+
+
+button:hover {
+    background: #D9531A;
+}
+
+
+/* Ошибка */
+
+#error {
+    min-height: 20px;
+
+    margin: 0;
+
+    text-align: center;
+
+    color: #ff8c8c;
+}

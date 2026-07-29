@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Дашборд претензий</title>
+    <link rel="stylesheet" href="../../styles/global.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+
+      <div class="topbar_user">
+        <div class="topbar_usename">Иванов Иван Иванович</div>
+        <div class="topbar_user_role">юрист</div>
+      </div>
+    </header>
+    <main>
+        <div class="toolbar">
+            <div class="search_box">
+                <span class="search-box__icon">
+                    <img src="../../assets/Search.svg" alt="Search">
+                </span>
+                <input
+                class="search-box__input"
+                type="text"
+                placeholder="Поиск по перевозчику, клиенту, рейсу...">
+            </div>
+            <div class="status_filter">
+                Все
+                <span class="status-select__arrow">
+                    <img src="../../assets/down.svg" alt="down">
+                </span>
+                <button class="primary_btn" id="create_claim_btn">+ Создать претензию</button>
+            </div>
+        </div>
+        <section class="add_claim_form" id="add_claim_form">
+            <div class="add_claim_form_title">Новая претензия</div>
+            <div class="add_claim_form_fields">
+                <div class="form_field">
+                    <label class="form_label" for="claim_shipment_id">Перевозка *</label>
+                    <select class="form_input form_select" id="claim_shipment_id">
+                        <option value="">— выберите перевозку —</option>
+                    </select>
+                </div>
+                <div class="form_field">
+                    <label class="form_label" for="claim_type">Тип *</label>
+                    <select class="form_input form_select" id="claim_type">
+                        <option value="PAYMENT_DELAY">Просрочка оплаты</option>
+                    </select>
+                </div>
+                <div class="form_field">
+                    <label class="form_label" for="claim_number">Номер</label>
+                    <input class="form_input" id="claim_number" placeholder="Будет создан автоматически">
+                </div>
+                <div class="form_field">
+                    <label class="form_label" for="claim_principal_debt">Основной долг</label>
+                    <input class="form_input" id="claim_principal_debt" type="number" min="0" step="0.01">
+                </div>
+                <div class="form_field form_field_wide">
+                    <label class="form_label" for="claim_reason">Основание *</label>
+                    <textarea class="form_input form_textarea" id="claim_reason"></textarea>
+                </div>
+                <div class="form_field form_field_wide">
+                    <label class="form_label" for="claim_draft_content">Первичный текст</label>
+                    <textarea class="form_input form_textarea" id="claim_draft_content"></textarea>
+                </div>
+            </div>
+            <div class="add_claim_form_footer">
+                <p class="form_error" id="claim_form_error"></p>
+                <div class="add_claim_form_actions">
+                    <button class="secondary_btn" id="cancel_claim_btn" type="button">Отмена</button>
+                    <button class="primary_btn" id="save_claim_btn" type="button">Создать</button>
+                </div>
+            </div>
+        </section>
+        <div class="claims_table">
+            <div class="claims_table_head">
+                <div class="claims_table_head_t">Клиент</div>
+                <div class="claims_table_head_t">Экспедитор</div>
+                <div class="claims_table_head_t">Рейс</div>
+                <div class="claims_table_head_t">Просрочка</div>
+                <div class="claims_table_head_t">Сумма долга</div>
+                <div class="claims_table_head_t">Неустойка</div>
+                <div class="claims_table_head_t">Статус</div>
+            </div>
+            <div class="claims_list" id="claims_list"></div>
+        </div>
+    </main>
+    <script src="../../scripts/api.js"></script>
+    <script src="../../scripts/script.js"></script>
+</body>

@@ -139,6 +139,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/MarkPaidResponse"
   /api/v1/payments:
+    post:
+      tags:
+      - payment-controller
+      operationId: createPayment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PaymentResponse"
     get:
       tags:
       - payment-controller
@@ -245,6 +262,41 @@ paths:
                 $ref: "#/components/schemas/PaymentDetailsResponse"
 components:
   schemas:
+    CreatePaymentRequest:
+      type: object
+      required:
+      - paymentDate
+      - amount
+      properties:
+        externalPaymentId:
+          type: string
+          maxLength: 255
+        paymentNumber:
+          type: string
+          maxLength: 128
+        paymentDate:
+          type: string
+          format: date
+        payerInn:
+          type: string
+          maxLength: 12
+        payerName:
+          type: string
+          maxLength: 500
+        recipientInn:
+          type: string
+          maxLength: 12
+        recipientName:
+          type: string
+          maxLength: 500
+        amount:
+          type: number
+        currency:
+          type: string
+          maxLength: 10
+          default: RUB
+        purpose:
+          type: string
     CreatePaymentMatchRequest:
       type: object
       properties:

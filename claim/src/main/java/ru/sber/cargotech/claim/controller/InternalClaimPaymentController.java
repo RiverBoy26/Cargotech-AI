@@ -7,9 +7,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import ru.sber.cargotech.claim.dto.ClaimPaymentContextResponse;
 import ru.sber.cargotech.claim.dto.UpdateLastPaymentCheckRequest;
+import ru.sber.cargotech.claim.dto.ClaimDetailsResponse;
+import ru.sber.cargotech.claim.dto.StatusChangeRequest;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 import ru.sber.cargotech.claim.security.CurrentClaimUserProvider;
 import ru.sber.cargotech.claim.service.InternalClaimPaymentService;
+import ru.sber.cargotech.claim.service.ClaimService;
 
 import java.util.List;
 import java.util.UUID;
@@ -21,6 +24,7 @@ import java.util.UUID;
 public class InternalClaimPaymentController {
 
     private final InternalClaimPaymentService service;
+    private final ClaimService claimService;
     private final CurrentClaimUserProvider currentUserProvider;
 
     @GetMapping("/{claimId}/payment-context")
@@ -90,5 +94,19 @@ public class InternalClaimPaymentController {
         );
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{claimId}/mark-paid")
+    @PreAuthorize("hasAuthority('PAYMENT_MARK_PAID')")
+    public ClaimDetailsResponse markPaid(@PathVariable UUID claimId) {
+        CurrentClaimUser user = currentUserProvider.getRequiredUser();
+        return claimService.markPaid(
+            user,
+            claimId,
+            new StatusChangeRequest(
+                "Полная оплата подтверждена модулем payment",
+                "PAYMENT_CONFIRMED"
+            )
+        );
     }
 }

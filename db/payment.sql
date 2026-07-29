@@ -4,6 +4,29 @@
 
 -- DROP TABLE cargotech.payment_imports;
 
+-- Transactional outbox used by payment-service. It must live in the same
+-- database as payments so business changes and their events commit atomically.
+CREATE TABLE cargotech.outbox_events (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	module_name varchar(64) NOT NULL,
+	aggregate_type varchar(128) NOT NULL,
+	aggregate_id uuid NOT NULL,
+	event_type varchar(128) NOT NULL,
+	event_version int4 DEFAULT 1 NOT NULL,
+	payload jsonb NOT NULL,
+	status varchar(32) DEFAULT 'NEW'::character varying NOT NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	published_at timestamptz NULL,
+	retry_count int4 DEFAULT 0 NOT NULL,
+	error_message text NULL,
+	CONSTRAINT outbox_events_module_name_check CHECK (((module_name)::text = ANY ((ARRAY['AUTH'::character varying, 'CLAIM'::character varying, 'PAYMENT'::character varying, 'DOCUMENT'::character varying, 'AI'::character varying, 'NOTIFICATION'::character varying, 'AUDIT'::character varying])::text[]))),
+	CONSTRAINT outbox_events_pkey PRIMARY KEY (id),
+	CONSTRAINT outbox_events_status_check CHECK (((status)::text = ANY ((ARRAY['NEW'::character varying, 'PUBLISHED'::character varying, 'FAILED'::character varying])::text[])))
+);
+CREATE INDEX idx_outbox_aggregate ON cargotech.outbox_events USING btree (aggregate_id);
+CREATE INDEX idx_outbox_pending ON cargotech.outbox_events USING btree (status, created_at) WHERE ((status)::text = ANY ((ARRAY['NEW'::character varying, 'FAILED'::character varying])::text[]));
+
+
 CREATE TABLE cargotech.payment_imports (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	organization_id uuid NOT NULL,

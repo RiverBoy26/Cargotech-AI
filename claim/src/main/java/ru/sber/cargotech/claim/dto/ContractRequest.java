@@ -16,7 +16,7 @@ import java.util.UUID;
 public record ContractRequest(
     @NotBlank @Size(max = 128) String number,
     @NotNull UUID clientId,
-    @NotNull UUID expeditorId,
+    UUID expeditorId,
     LocalDate signedAt,
     LocalDate validFrom,
     LocalDate validTo,

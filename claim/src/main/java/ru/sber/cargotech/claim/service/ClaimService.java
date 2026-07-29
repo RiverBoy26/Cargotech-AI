@@ -15,6 +15,7 @@ import ru.sber.cargotech.claim.dto.CreateClaimRequest;
 import ru.sber.cargotech.claim.dto.CreateClaimVersionRequest;
 import ru.sber.cargotech.claim.dto.StatusChangeRequest;
 import ru.sber.cargotech.claim.dto.StatusHistoryResponse;
+import ru.sber.cargotech.claim.dto.PaymentPreflightResponse;
 import ru.sber.cargotech.claim.dto.UpdateClaimRequest;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
@@ -201,10 +202,81 @@ public class ClaimService {
     }
 
     @Transactional
-    public ClaimDetailsResponse submitToLegalReview(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
-        log.debug("Передача претензии на юридическую проверку: claimId={}, userId={}", claimId, user.userId());
+    public ClaimDetailsResponse submitToLegalReview(
+            CurrentClaimUser user,
+            UUID claimId,
+            StatusChangeRequest request
+    ) {
+        log.debug(
+                "Подтверждение неуплаты и передача претензии на юридическую проверку: " +
+                        "claimId={}, organizationId={}, userId={}",
+                claimId,
+                user.organizationId(),
+                user.userId()
+        );
 
-        return changeStatus(user, claimId, ClaimStatus.PENDING_LEGAL_REVIEW, request == null ? null : request.reason());
+        ClaimEntity claim = getEntity(
+                user.organizationId(),
+                claimId
+        );
+
+        if (claim.getStatus() != ClaimStatus.DRAFT) {
+            throw ClaimException.conflict(
+                    "Передать на юридическую проверку можно только претензию " +
+                            "в статусе DRAFT"
+            );
+        }
+        if (claim.getFinalVersionId() == null) {
+            throw ClaimException.conflict(
+                "Перед подтверждением неуплаты необходимо назначить финальную версию текста"
+            );
+        }
+
+        String reason = request == null
+                ? null
+                : request.reason();
+
+        applyNonPaymentConfirmation(
+                claim,
+                user,
+                true,
+                reason
+        );
+
+        claim.setUpdatedBy(user.userId());
+
+        ClaimEntity saved = claimRepository.save(claim);
+
+        outboxWriter.write(
+                "CLAIM",
+                saved.getId(),
+                "CLAIM_NON_PAYMENT_CONFIRMED",
+                user.organizationId(),
+                user.userId(),
+                Map.of(
+                        "claimId", saved.getId(),
+                        "confirmed", true,
+                        "confirmedBy", user.userId()
+                )
+        );
+
+        ClaimDetailsResponse response = changeStatus(
+                user,
+                saved.getId(),
+                ClaimStatus.PENDING_LEGAL_REVIEW,
+                reason
+        );
+
+        log.debug(
+                "Неуплата подтверждена, претензия передана на юридическую проверку: " +
+                        "claimId={}, organizationId={}, userId={}, newStatus={}",
+                saved.getId(),
+                user.organizationId(),
+                user.userId(),
+                ClaimStatus.PENDING_LEGAL_REVIEW
+        );
+
+        return response;
     }
 
     @Transactional
@@ -212,6 +284,11 @@ public class ClaimService {
         log.debug("Утверждение претензии: claimId={}, userId={}", claimId, user.userId());
 
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
+        if (claim.getStatus() != ClaimStatus.PENDING_LEGAL_REVIEW) {
+            throw ClaimException.conflict(
+                "Утвердить можно только претензию на юридической проверке"
+            );
+        }
         if (claim.getFinalVersionId() == null) {
             throw ClaimException.conflict("Нельзя утвердить претензию без финальной версии текста");
         }
@@ -241,6 +318,16 @@ public class ClaimService {
             );
         }
 
+        PaymentPreflightResponse preflight = paymentClient.preflightCheck(
+            claimId,
+            "Проверка оплаты перед отправкой претензии"
+        );
+        if (preflight == null || !preflight.isCanSend()) {
+            throw ClaimException.conflict(
+                "Отправка заблокирована: задолженность погашена или результат проверки оплаты недоступен"
+            );
+        }
+
         claim.setSentAt(OffsetDateTime.now());
         claim.setUpdatedBy(user.userId());
         claimRepository.save(claim);
@@ -250,6 +337,20 @@ public class ClaimService {
                 claimId,
                 ClaimStatus.SENT,
                 request == null ? null : request.reason()
+        );
+    }
+
+    @Transactional
+    public ClaimDetailsResponse awaitResponse(
+        CurrentClaimUser user,
+        UUID claimId,
+        StatusChangeRequest request
+    ) {
+        return changeStatus(
+            user,
+            claimId,
+            ClaimStatus.AWAITING_RESPONSE,
+            request == null ? null : request.reason()
         );
     }
 
@@ -360,13 +461,14 @@ public class ClaimService {
         }
         boolean valid = switch (next) {
             case PENDING_LEGAL_REVIEW -> current == ClaimStatus.DRAFT;
-            case LEGAL_APPROVED -> current == ClaimStatus.DRAFT || current == ClaimStatus.PENDING_LEGAL_REVIEW;
+            case LEGAL_APPROVED -> current == ClaimStatus.PENDING_LEGAL_REVIEW;
             case SENT -> current == ClaimStatus.LEGAL_APPROVED;
             case PAID -> current != ClaimStatus.CANCELLED && current != ClaimStatus.CLOSED_IN_COURT;
             case CANCELLED -> current != ClaimStatus.PAID && current != ClaimStatus.CLOSED_IN_COURT;
             case ESCALATED_TO_COURT -> current == ClaimStatus.SENT || current == ClaimStatus.AWAITING_RESPONSE;
             case CLOSED_IN_COURT -> current == ClaimStatus.ESCALATED_TO_COURT;
-            case DRAFT, AWAITING_RESPONSE -> false;
+            case AWAITING_RESPONSE -> current == ClaimStatus.SENT;
+            case DRAFT -> false;
         };
         if (!valid) {
             throw ClaimException.conflict("Недопустимый переход статуса: " + current + " -> " + next);

@@ -10,17 +10,20 @@ import org.springframework.web.client.RestClientResponseException;
 import ru.sber.cargotech.payment.client.ClaimClient;
 import ru.sber.cargotech.payment.dto.ClaimPaymentContextResponse;
 import ru.sber.cargotech.payment.dto.ClaimPaymentsResponse;
+import ru.sber.cargotech.payment.dto.CreatePaymentRequest;
 import ru.sber.cargotech.payment.dto.PaymentDetailsResponse;
 import ru.sber.cargotech.payment.dto.PaymentMatchResponse;
 import ru.sber.cargotech.payment.dto.PaymentResponse;
 import ru.sber.cargotech.payment.entity.Payment;
 import ru.sber.cargotech.payment.entity.PaymentMatch;
 import ru.sber.cargotech.payment.enums.PaymentCheckStatus;
+import ru.sber.cargotech.payment.enums.PaymentSourceSystem;
 import ru.sber.cargotech.payment.enums.PaymentStatus;
 import ru.sber.cargotech.payment.enums.PaymentTargetType;
 import ru.sber.cargotech.payment.exception.PaymentException;
 import ru.sber.cargotech.payment.repository.ClaimPaymentData;
 import ru.sber.cargotech.payment.repository.PaymentMatchRepository;
+import ru.sber.cargotech.payment.repository.PaymentOutboxWriter;
 import ru.sber.cargotech.payment.repository.PaymentRepository;
 import ru.sber.cargotech.payment.security.CurrentPaymentUser;
 
@@ -28,6 +31,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -38,7 +43,75 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final PaymentMatchRepository matchRepository;
+    private final PaymentOutboxWriter outboxWriter;
     private final ClaimClient claimClient;
+
+    @Transactional
+    public PaymentResponse create(
+            CreatePaymentRequest request,
+            CurrentPaymentUser user
+    ) {
+        log.debug(
+                "Ручное создание платежа: organizationId={}, userId={}, paymentNumber={}, paymentDate={}, amount={}",
+                user.organizationId(),
+                user.userId(),
+                request.paymentNumber(),
+                request.paymentDate(),
+                request.amount()
+        );
+
+        if (request.amount().signum() == 0) {
+            throw PaymentException.unprocessable(
+                    "Сумма платежа не может быть равна нулю"
+            );
+        }
+
+        String externalPaymentId = normalizeOptional(request.externalPaymentId());
+        if (externalPaymentId != null
+                && paymentRepository
+                .existsByOrganizationIdAndSourceSystemAndExternalPaymentId(
+                        user.organizationId(),
+                        PaymentSourceSystem.MANUAL_EXCEL,
+                        externalPaymentId
+                )) {
+            throw PaymentException.conflict(
+                    "Платёж с таким внешним идентификатором уже существует"
+            );
+        }
+
+        Payment payment = new Payment();
+        payment.setOrganizationId(user.organizationId());
+        payment.setSourceSystem(PaymentSourceSystem.MANUAL_EXCEL);
+        payment.setExternalPaymentId(externalPaymentId);
+        payment.setPaymentNumber(normalizeOptional(request.paymentNumber()));
+        payment.setPaymentDate(request.paymentDate());
+        payment.setPayerInn(normalizeOptional(request.payerInn()));
+        payment.setPayerName(normalizeOptional(request.payerName()));
+        payment.setRecipientInn(normalizeOptional(request.recipientInn()));
+        payment.setRecipientName(normalizeOptional(request.recipientName()));
+        payment.setAmount(request.amount());
+        payment.setCurrency(normalizeCurrency(request.currency()));
+        payment.setPurpose(normalizeOptional(request.purpose()));
+        payment.setStatus(PaymentStatus.IMPORTED);
+        payment.setRawData(Map.of("entryMode", "MANUAL"));
+        payment.setCreatedAt(java.time.OffsetDateTime.now());
+
+        Payment saved = paymentRepository.save(payment);
+        outboxWriter.write(
+                "PAYMENT",
+                saved.getId(),
+                "PAYMENT_CREATED",
+                user.organizationId(),
+                user.userId(),
+                Map.of(
+                        "paymentId", saved.getId(),
+                        "sourceSystem", saved.getSourceSystem().name(),
+                        "amount", saved.getAmount(),
+                        "currency", saved.getCurrency()
+                )
+        );
+        return toResponse(saved);
+    }
 
     public Page<PaymentResponse> findAll(
             Pageable pageable,
@@ -335,5 +408,14 @@ public class PaymentServiceImpl implements PaymentService {
                 response.serviceAmount(),
                 response.status()
         );
+    }
+
+    private String normalizeCurrency(String currency) {
+        String normalized = normalizeOptional(currency);
+        return normalized == null ? "RUB" : normalized.toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

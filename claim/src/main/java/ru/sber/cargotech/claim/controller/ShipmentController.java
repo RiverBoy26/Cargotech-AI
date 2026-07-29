@@ -32,14 +32,14 @@ public class ShipmentController {
     private final CurrentClaimUserProvider currentUserProvider;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('CLAIM_READ')")
+    @PreAuthorize("hasAuthority('SHIPMENT_READ')")
     public PageResponse<ShipmentResponse> list(@PageableDefault(size = 50) Pageable pageable) {
         log.info("Вызов endpoint: list");
         return PageResponse.from(shipmentService.list(currentUserProvider.getRequiredUser(), pageable));
     }
 
     @GetMapping("/{shipmentId}")
-    @PreAuthorize("hasAuthority('CLAIM_READ')")
+    @PreAuthorize("hasAuthority('SHIPMENT_READ')")
     public ShipmentResponse get(@PathVariable UUID shipmentId) {
         log.info("Вызов endpoint: get");
         return shipmentService.get(currentUserProvider.getRequiredUser(), shipmentId);
@@ -47,14 +47,14 @@ public class ShipmentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('CLAIM_CREATE')")
+    @PreAuthorize("hasAuthority('SHIPMENT_CREATE')")
     public ShipmentResponse create(@Valid @RequestBody ShipmentRequest request) {
         log.info("Вызов endpoint: create");
         return shipmentService.create(currentUserProvider.getRequiredUser(), request);
     }
 
     @PatchMapping("/{shipmentId}")
-    @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
+    @PreAuthorize("hasAuthority('SHIPMENT_UPDATE')")
     public ShipmentResponse update(
         @PathVariable UUID shipmentId,
         @Valid @RequestBody ShipmentRequest request

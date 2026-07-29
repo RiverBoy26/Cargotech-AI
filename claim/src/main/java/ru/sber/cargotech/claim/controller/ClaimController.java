@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.sber.cargotech.claim.dto.*;
 import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.security.CurrentClaimUserProvider;
+import ru.sber.cargotech.claim.service.ClaimGenerationService;
 import ru.sber.cargotech.claim.service.ClaimService;
 
 import java.util.List;
@@ -31,6 +32,7 @@ import java.util.UUID;
 @Slf4j
 public class ClaimController {
     private final ClaimService claimService;
+    private final ClaimGenerationService claimGenerationService;
     private final CurrentClaimUserProvider currentUserProvider;
 
     @GetMapping
@@ -88,14 +90,33 @@ public class ClaimController {
         claimService.deleteDraft(currentUserProvider.getRequiredUser(), claimId);
     }
 
-    @PostMapping("/{claimId}/submit-to-legal-review")
+    @PostMapping("/{claimId}/generate")
     @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
+    public GenerateClaimResponse generate(@PathVariable UUID claimId) {
+        log.info("Вызов endpoint: generate");
+        return claimGenerationService.generate(
+            currentUserProvider.getRequiredUser(),
+            claimId
+        );
+    }
+
+    @PostMapping("/{claimId}/submit-to-legal-review")
+    @PreAuthorize("hasAuthority('OVERDUE_CONFIRM_NON_PAYMENT')")
     public ClaimDetailsResponse submitToLegalReview(
-        @PathVariable UUID claimId,
-        @RequestBody(required = false) StatusChangeRequest request
+            @PathVariable UUID claimId,
+            @Valid @RequestBody(required = false)
+            StatusChangeRequest request
     ) {
-        log.info("Вызов endpoint: submitToLegalReview");
-        return claimService.submitToLegalReview(currentUserProvider.getRequiredUser(), claimId, request);
+        log.info(
+                "Передача претензии на юридическую проверку с подтверждением неуплаты: claimId={}",
+                claimId
+        );
+
+        return claimService.submitToLegalReview(
+                currentUserProvider.getRequiredUser(),
+                claimId,
+                request
+        );
     }
 
     @PostMapping("/{claimId}/approve")
@@ -116,6 +137,20 @@ public class ClaimController {
     ) {
         log.info("Вызов endpoint: send");
         return claimService.send(currentUserProvider.getRequiredUser(), claimId, request);
+    }
+
+    @PostMapping("/{claimId}/await-response")
+    @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
+    public ClaimDetailsResponse awaitResponse(
+        @PathVariable UUID claimId,
+        @RequestBody(required = false) StatusChangeRequest request
+    ) {
+        log.info("Вызов endpoint: awaitResponse");
+        return claimService.awaitResponse(
+            currentUserProvider.getRequiredUser(),
+            claimId,
+            request
+        );
     }
 
     @PostMapping("/{claimId}/cancel")
