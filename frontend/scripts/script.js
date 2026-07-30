@@ -1,3 +1,24 @@
+let lawyerClaims = [];
+
+function claimMatchesSearch(claim, search) {
+  return [
+    claim.debtorName,
+    claim.creditorName,
+    claim.shipmentNumber,
+    claim.claimNumber,
+  ].some((value) => String(value || '').toLowerCase().includes(search));
+}
+
+function filteredClaims() {
+  const search = document.getElementById('claim_search').value.trim().toLowerCase();
+  const status = document.getElementById('claim_status_filter').value;
+
+  return lawyerClaims.filter((claim) =>
+    (!status || claim.status === status)
+    && (!search || claimMatchesSearch(claim, search))
+  );
+}
+
 function renderClaimRow(claim) {
   const status = mapStatus(claim.status);
 
@@ -28,22 +49,35 @@ function bindClaimRowClicks() {
   });
 }
 
+function renderClaims() {
+  const listEl = document.getElementById('claims_list');
+  const claims = filteredClaims();
+
+  if (claims.length === 0) {
+    listEl.innerHTML = '<div class="claim_row">Ничего не найдено</div>';
+    return;
+  }
+
+  listEl.innerHTML = claims.map(renderClaimRow).join('');
+  bindClaimRowClicks();
+}
+
 async function loadClaims() {
   const listEl = document.getElementById('claims_list');
   listEl.innerHTML = '<div class="claim_row">Загрузка...</div>';
 
   try {
-    const page = await getClaims();
-    const claims = page.content || [];
+    const page = await getClaims({ size: 100 });
+    lawyerClaims = page.content || [];
 
-    if (claims.length === 0) {
+    if (lawyerClaims.length === 0) {
       listEl.innerHTML = '<div class="claim_row">Претензий пока нет</div>';
       return;
     }
 
-    listEl.innerHTML = claims.map(renderClaimRow).join('');
-    bindClaimRowClicks();
+    renderClaims();
   } catch (err) {
+    lawyerClaims = [];
     listEl.innerHTML = `<div class="claim_row">Ошибка: ${err.message}</div>`;
   }
 }
@@ -58,6 +92,9 @@ async function initClaimsPage() {
   } catch (err) {
     console.warn('Не удалось загрузить профиль:', err.message);
   }
+
+  document.getElementById('claim_search').addEventListener('input', renderClaims);
+  document.getElementById('claim_status_filter').addEventListener('change', renderClaims);
 
   await loadClaims();
   await loadShipmentOptions();
@@ -95,7 +132,6 @@ function resetClaimForm() {
   document.getElementById('claim_number').value = '';
   document.getElementById('claim_principal_debt').value = '';
   document.getElementById('claim_reason').value = '';
-  document.getElementById('claim_draft_content').value = '';
   claimFormError.textContent = '';
 }
 
@@ -122,11 +158,9 @@ document.getElementById('save_claim_btn').addEventListener('click', async () => 
 
   const claimNumber    = document.getElementById('claim_number').value.trim();
   const principalDebt  = document.getElementById('claim_principal_debt').value;
-  const draftContent   = document.getElementById('claim_draft_content').value.trim();
 
   if (claimNumber)   payload.claimNumber   = claimNumber;
   if (principalDebt) payload.principalDebt = parseFloat(principalDebt);
-  if (draftContent)  payload.draftContent  = draftContent;
 
   const saveBtn = document.getElementById('save_claim_btn');
   saveBtn.disabled = true;

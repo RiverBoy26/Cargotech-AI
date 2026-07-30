@@ -148,7 +148,7 @@ async function loadAllUsers() {
 
 function renderOrganization(organization) {
   return `
-    <div class="user_row organization_row" data-organization-id="${organization.id}">
+    <div class="organization_row" data-organization-id="${organization.id}">
       <div>
         <div class="user_row_name">${escapeSuperAdmin(organization.name)}</div>
         <div class="organization_meta">${escapeSuperAdmin(organization.id)}</div>
@@ -206,7 +206,7 @@ async function loadOrganizations() {
     populateOrganizationSelect(organizations);
     list.innerHTML = organizations.length
       ? organizations.map(renderOrganization).join('')
-      : '<div class="user_row">Организаций пока нет</div>';
+      : '<div class="organization_empty_row">Организаций пока нет</div>';
     bindOrganizationActions();
   } catch (error) {
     list.textContent = `Ошибка: ${error.message}`;

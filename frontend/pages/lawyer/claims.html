@@ -10,7 +10,7 @@
 </head>
 <body>
     <header>
-
+      <button class="logout_btn" id="logout_btn" type="button">Выйти из аккаунта</button>
       <div class="topbar_user">
         <div class="topbar_usename">Иванов Иван Иванович</div>
         <div class="topbar_user_role">юрист</div>
@@ -24,57 +24,71 @@
                 </span>
                 <input
                 class="search-box__input"
-                type="text"
+                id="claim_search"
+                type="search"
                 placeholder="Поиск по перевозчику, клиенту, рейсу...">
             </div>
-            <div class="status_filter">
-                Все
-                <span class="status-select__arrow">
-                    <img src="../../assets/down.svg" alt="down">
-                </span>
-                <button class="primary_btn" id="create_claim_btn">+ Создать претензию</button>
-            </div>
+            <select class="status_filter" id="claim_status_filter" aria-label="Фильтр по статусу претензии">
+                <option value="">Все статусы</option>
+                <option value="DRAFT">Черновик</option>
+                <option value="PENDING_LEGAL_REVIEW">На проверке</option>
+                <option value="LEGAL_APPROVED">Утверждено</option>
+                <option value="SENT">Отправлено</option>
+                <option value="AWAITING_RESPONSE">Ожидание ответа</option>
+                <option value="PAID">Оплачено</option>
+                <option value="ESCALATED_TO_COURT">Передано в суд</option>
+                <option value="CANCELLED">Отменено</option>
+                <option value="CLOSED_IN_COURT">Закрыто судом</option>
+            </select>
+            <button class="primary_btn" id="create_claim_btn">+ Создать претензию</button>
         </div>
-        <section class="add_claim_form" id="add_claim_form">
+        <div class="add_claim_form" id="add_claim_form">
             <div class="add_claim_form_title">Новая претензия</div>
             <div class="add_claim_form_fields">
+
                 <div class="form_field">
-                    <label class="form_label" for="claim_shipment_id">Перевозка *</label>
-                    <select class="form_input form_select" id="claim_shipment_id">
-                        <option value="">— выберите перевозку —</option>
+                    <label class="form_label" for="claim_shipment_id">ID рейса (shipmentId) *</label>
+                    <select class="form_input form_select" id="claim_shipment_id" required>
+                        <option value="">— выберите рейс —</option>
                     </select>
                 </div>
+
                 <div class="form_field">
-                    <label class="form_label" for="claim_type">Тип *</label>
-                    <select class="form_input form_select" id="claim_type">
-                        <option value="PAYMENT_DELAY">Просрочка оплаты</option>
+                    <label class="form_label" for="claim_type">Тип претензии *</label>
+                    <select class="form_input form_select" id="claim_type" required>
+                        <option value="">— выберите тип —</option>
+                        <option value="PAYMENT_DELAY">Задержка оплаты</option>
                     </select>
                 </div>
+
                 <div class="form_field">
-                    <label class="form_label" for="claim_number">Номер</label>
-                    <input class="form_input" id="claim_number" placeholder="Будет создан автоматически">
+                    <label class="form_label" for="claim_number">Номер претензии</label>
+                    <input class="form_input" id="claim_number" type="text"
+                        placeholder="CT-2026-001 (необязательно)">
                 </div>
+
                 <div class="form_field">
-                    <label class="form_label" for="claim_principal_debt">Основной долг</label>
-                    <input class="form_input" id="claim_principal_debt" type="number" min="0" step="0.01">
+                    <label class="form_label" for="claim_principal_debt">Сумма долга (₽)</label>
+                    <input class="form_input" id="claim_principal_debt" type="number"
+                        placeholder="150000" min="0" step="0.01">
                 </div>
+
                 <div class="form_field form_field_wide">
-                    <label class="form_label" for="claim_reason">Основание *</label>
-                    <textarea class="form_input form_textarea" id="claim_reason"></textarea>
+                    <label class="form_label" for="claim_reason">Основание претензии *</label>
+                    <input class="form_input" id="claim_reason" type="text" required
+                        placeholder="Не оплачены транспортно-экспедиционные услуги по рейсу AA-1111">
                 </div>
-                <div class="form_field form_field_wide">
-                    <label class="form_label" for="claim_draft_content">Первичный текст</label>
-                    <textarea class="form_input form_textarea" id="claim_draft_content"></textarea>
-                </div>
+
             </div>
+
             <div class="add_claim_form_footer">
-                <p class="form_error" id="claim_form_error"></p>
                 <div class="add_claim_form_actions">
-                    <button class="secondary_btn" id="cancel_claim_btn" type="button">Отмена</button>
-                    <button class="primary_btn" id="save_claim_btn" type="button">Создать</button>
+                    <p class="form_error" id="claim_form_error"></p>
+                    <button class="secondary_btn" id="cancel_claim_btn">Отмена</button>
+                    <button class="primary_btn" id="save_claim_btn">Создать</button>
                 </div>
             </div>
-        </section>
+        </div>
         <div class="claims_table">
             <div class="claims_table_head">
                 <div class="claims_table_head_t">Клиент</div>

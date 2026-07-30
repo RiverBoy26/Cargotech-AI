@@ -200,6 +200,29 @@ async function logout() {
   }
 }
 
+function bindLogoutButton() {
+  const button = document.getElementById('logout_btn');
+  if (!button || button.dataset.bound === 'true') return;
+
+  button.dataset.bound = 'true';
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    button.textContent = 'Выход...';
+    try {
+      await logout();
+    } catch (_) {
+      // logout() очищает локальную сессию и перенаправляет на страницу входа
+      // даже при временной недоступности auth-service.
+    }
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bindLogoutButton);
+} else {
+  bindLogoutButton();
+}
+
 async function getMe() {
   return apiRequest('/auth/me');
 }

@@ -31,6 +31,21 @@ header {
   font-size: 16px;
 }
 
+.logout_btn {
+  margin-right: auto;
+  padding: 10px 16px;
+  color: #1B2A4A;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.logout_btn:hover { background: #F6C9A6; }
+.logout_btn:disabled { cursor: wait; opacity: 0.7; }
+
 .topbar_usename { font-size: 15px; }
 .topbar_user_role { font-size: 14px; }
 
@@ -83,6 +98,33 @@ header {
 }
 
 /* форма */
+
+.primary_btn {
+  background: #F26522;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.primary_btn:hover {
+  background: #D9531A;
+}
+
+.secondary_btn {
+  font-family: inherit;
+  font-size: 14px;
+  background: transparent;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 8px;
+  padding: 12px 18px;
+  cursor: pointer;
+}
+
+.secondary_btn:hover { background: #F6C9A6; }
 
 .add_user_form {
   display: none;
@@ -220,11 +262,9 @@ header {
   border: 1px solid rgba(0,0,0,0.25);
 }
 
-.role-pill--lawyer    { background: #E7ECF3;
-  color: #3D5A80;}
-.role-pill--accountant { background: #E6F0EA;
-  color: #2E7D5B; }
-.role-pill--admin     { background: #d3c4f0; color: #3d2768; }
+.role-pill-lawyer    { background: #E7ECF3; color: #3D5A80;}
+.role-pill-accountant { background: #E6F0EA; color: #2E7D5B; }
+.role-pill-admin     { background: #d3c4f0; color: #3d2768; }
 
 /* пилюли-статусы */
 
@@ -239,8 +279,8 @@ header {
   border: 1px solid rgba(0,0,0,0.25);
 }
 
-.status-pill--active  { background: #c3e8bd; color: #44743c; }
-.status-pill--blocked { background: #f5c6c3; color: #a26661; }
+.status-pill-active  { background: #c3e8bd; color: #44743c; }
+.status-pill-blocked { background: #f5c6c3; color: #a26661; }
 
 /* кнопки */
 
@@ -284,8 +324,8 @@ header {
 }
 
 .modal {
-  background: #d6d6d6;
-  border: 1px solid #1a1a1a;
+  background: #F4F6F8;
+  border: 2px solid #DDE1E6;
   border-radius: 12px;
   width: 480px;
   max-width: 90vw;
@@ -313,7 +353,10 @@ header {
   padding: 4px;
 }
 
-.modal_close_btn:hover { color: #1a1a1a; }
+.modal_close_btn:hover {
+  background: #C0C0C0;
+  border: 1px solid #DDE1E6;
+ }
 
 .modal_body { padding: 20px 24px; }
 
@@ -376,9 +419,124 @@ header {
   margin: 0;
 }
 
+/* экспедиторы */
+
+.add_entity_form {
+  display: none;
+  background: #FFFFFF;
+  border: 1px solid #E6E9ED;
+  border-radius: 10px;
+  padding: 24px 28px;
+  margin-bottom: 20px;
+}
+
+.add_entity_form_title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.add_entity_form_fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.entity_table {
+  background: #FFFFFF;
+  border: 2px solid #E6E9ED;
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.add_user_form_visible {
+  display: block;
+}
+
+.add_expeditor_form_visible {
+  display: block;
+}
+
+.expeditors_table_head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
+  background: #FCEADF;
+}
+
+.expeditors_table_head_t { padding: 16px 20px; font-size: 14px; color: #8A93A0;}
+
+.expeditors_row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
+  align-items: center;
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 14px;
+  padding: 16px 20px;
+}
+
+.expeditors_row:hover {
+  background: #cacaca;
+}
+
+.expeditors_row:last-child { border-bottom: none; }
+
+/* Таблица экспедиторов в стиле дашборда претензий */
+
+.organizations_table {
+  background: #FFFFFF;
+  border: 2px solid #E6E9ED;
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.organizations_table_head,
+.organization_row {
+  display: grid;
+  grid-template-columns: 1.5fr 0.8fr 0.8fr 1.3fr 1.4fr;
+  align-items: center;
+}
+
+.organizations_table_head {
+  background: #FCEADF;
+}
+
+.organizations_table_head_t {
+  padding: 16px 20px;
+  color: #8A93A0;
+  font-size: 14px;
+}
+
+.organization_row {
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 14px;
+  cursor: default;
+}
+
+.organization_row:last-child {
+  border-bottom: none;
+}
+
+.organization_row:hover {
+  background: #FFFFFF;
+}
+
+.organization_row > div {
+  min-width: 0;
+  padding: 16px 20px;
+  overflow-wrap: anywhere;
+}
+
+.organization_row .user_row_name {
+  padding: 0;
+  font-weight: 700;
+}
+
 .organization_meta {
   margin-top: 4px;
-  color: #666;
+  color: #8A93A0;
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -386,6 +544,7 @@ header {
 .organization_actions {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -393,3 +552,113 @@ header {
 .organization_sync {
   white-space: nowrap;
 }
+
+.organization_empty_row {
+  padding: 24px;
+  color: #8A93A0;
+  text-align: center;
+}
+
+.status-pill-success {
+  background: #E6F0EA;
+  color: #2E7D5B;
+}
+
+.status-pill-danger {
+  background: #F5E5E2;
+  color: #B23A2F;
+}
+
+@media (max-width: 900px) {
+  .organizations_table {
+    overflow-x: auto;
+  }
+
+  .organizations_table_head,
+  .organization_row {
+    min-width: 850px;
+  }
+}
+
+/* договоры */
+
+.add_contract_form_visible {
+  display: block;
+}
+
+.contracts_table_head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
+  background: #FCEADF;
+}
+
+.contracts_table_head_t { padding: 16px 20px; font-size: 14px; color: #8A93A0;}
+
+.contracts_row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
+  align-items: center;
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 14px;
+  padding: 16px 20px;
+}
+
+.contracts_row:hover {
+  background: #cacaca;
+}
+
+.contracts_row:last-child { border-bottom: none; }
+
+.add_client_form_visible {
+  display: block;
+}
+
+.clients_table_head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
+  background: #FCEADF;
+}
+
+.clients_table_head_t { padding: 16px 20px; font-size: 14px; color: #8A93A0;}
+
+.clients_row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
+  align-items: center;
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 14px;
+  padding: 16px 20px;
+}
+
+.clients_row:hover {
+  background: #cacaca;
+}
+
+.clients_row:last-child { border-bottom: none; }
+
+.add_shipment_form_visible {
+  display: block;
+}
+
+.shipments_table_head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+  background: #FCEADF;
+}
+
+.shipments_table_head_t { padding: 16px 20px; font-size: 14px; color: #8A93A0;}
+
+.shipments_row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+  align-items: center;
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 14px;
+  padding: 16px 20px;
+}
+
+.shipments_row:hover {
+  background: #cacaca;
+}
+
+.shipments_row:last-child { border-bottom: none; }

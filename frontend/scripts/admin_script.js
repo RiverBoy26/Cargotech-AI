@@ -95,13 +95,17 @@ async function loadParties() {
   try {
     const page = await getParties();
     list.innerHTML = (page.content || []).map((party) => `
-      <div class="user_row">
+      <div class="admin_entity_row">
         <div>${escapeAdmin(party.name)}</div>
         <div>${escapeAdmin(party.type)}</div>
         <div>${escapeAdmin(party.inn)}</div>
         <div>${escapeAdmin(party.email)}</div>
-        <div>${party.active ? 'Активен' : 'Архивирован'}</div>
-      </div>`).join('') || '<div class="user_row">Контрагентов пока нет</div>';
+        <div>
+          <span class="status-pill ${party.active ? 'status-pill-active' : 'status-pill-blocked'}">
+            ${party.active ? 'Активен' : 'Архивирован'}
+          </span>
+        </div>
+      </div>`).join('') || '<div class="admin_entity_empty">Контрагентов пока нет</div>';
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
 }
 
@@ -111,13 +115,21 @@ async function loadContracts() {
   try {
     const page = await getContracts();
     list.innerHTML = (page.content || []).map((contract) => `
-      <div class="user_row">
+      <div class="admin_entity_row">
         <div>${escapeAdmin(contract.number)}</div>
         <div>${escapeAdmin(contract.clientName)}</div>
         <div>${escapeAdmin(contract.expeditorName)}</div>
-        <div>${escapeAdmin(contract.status)}</div>
+        <div>
+          <span class="status-pill ${
+            contract.status === 'ACTIVE'
+              ? 'status-pill-active'
+              : ['EXPIRED', 'TERMINATED', 'ARCHIVED'].includes(contract.status)
+                ? 'status-pill-blocked'
+                : 'status-pill-neutral'
+          }">${escapeAdmin(contract.status)}</span>
+        </div>
         <div>${contract.paymentDays ?? 0} дней</div>
-      </div>`).join('') || '<div class="user_row">Договоров пока нет</div>';
+      </div>`).join('') || '<div class="admin_entity_empty">Договоров пока нет</div>';
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
 }
 
@@ -127,27 +139,67 @@ async function loadShipments() {
   try {
     const page = await getShipments();
     list.innerHTML = (page.content || []).map((shipment) => `
-      <div class="user_row">
+      <div class="admin_entity_row">
         <div>${escapeAdmin(shipment.orderNumber)}</div>
         <div>${escapeAdmin(shipment.clientName)}</div>
         <div>${escapeAdmin(shipment.contractNumber)}</div>
         <div>${formatMoney(shipment.serviceAmount)}</div>
-        <div>${escapeAdmin(shipment.status)}</div>
-      </div>`).join('') || '<div class="user_row">Рейсов пока нет</div>';
+        <div>
+          <span class="status-pill ${
+            shipment.status === 'COMPLETED'
+              ? 'status-pill-active'
+              : shipment.status === 'CANCELLED'
+                ? 'status-pill-blocked'
+                : 'status-pill-neutral'
+          }">${escapeAdmin(shipment.status)}</span>
+        </div>
+      </div>`).join('') || '<div class="admin_entity_empty">Рейсов пока нет</div>';
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
 }
 
-document.getElementById('add_party_btn').addEventListener('click', async () => {
-  const name = prompt('Наименование контрагента:');
-  if (!name) return;
-  const type = prompt('Тип: CLIENT, CARRIER или THIRD_PARTY:', 'CLIENT');
-  if (!type) return;
-  const inn = prompt('ИНН:', '') || null;
-  const email = prompt('Email:', '') || null;
+const partyForm = document.getElementById('party_form');
+const partyFieldIds = [
+  'party_type', 'party_name', 'party_inn', 'party_kpp', 'party_ogrn',
+  'party_email', 'party_phone', 'party_legal_address', 'party_postal_address',
+];
+
+function resetPartyForm() {
+  partyForm.classList.remove('add_user_form_visible');
+  partyFieldIds.forEach((id) => { document.getElementById(id).value = ''; });
+  document.getElementById('party_form_error').textContent = '';
+}
+
+document.getElementById('add_party_btn').addEventListener('click', () => {
+  partyForm.classList.add('add_user_form_visible');
+  document.getElementById('party_name').focus();
+});
+
+document.getElementById('cancel_party_btn').addEventListener('click', resetPartyForm);
+
+document.getElementById('save_party_btn').addEventListener('click', async () => {
+  const payload = {
+    type: document.getElementById('party_type').value,
+    name: document.getElementById('party_name').value.trim(),
+    inn: document.getElementById('party_inn').value.trim() || null,
+    kpp: document.getElementById('party_kpp').value.trim() || null,
+    ogrn: document.getElementById('party_ogrn').value.trim() || null,
+    email: document.getElementById('party_email').value.trim() || null,
+    phone: document.getElementById('party_phone').value.trim() || null,
+    legalAddress: document.getElementById('party_legal_address').value.trim() || null,
+    postalAddress: document.getElementById('party_postal_address').value.trim() || null,
+  };
+  const errorElement = document.getElementById('party_form_error');
+  if (!payload.type || !payload.name) {
+    errorElement.textContent = 'Тип и наименование контрагента обязательны';
+    return;
+  }
   try {
-    await createParty({ type: type.toUpperCase(), name, inn, email });
+    await createParty(payload);
+    resetPartyForm();
     await loadParties();
-  } catch (error) { alert(error.message); }
+  } catch (error) {
+    errorElement.textContent = error.message;
+  }
 });
 
 const contractForm = document.getElementById('contract_form');
@@ -187,7 +239,7 @@ async function loadContractClients() {
 }
 
 function resetContractForm() {
-  contractForm.classList.remove('entity_form_visible');
+  contractForm.classList.remove('add_user_form_visible');
   document.getElementById('contract_number').value = '';
   document.getElementById('contract_client_id').value = '';
   document.getElementById('contract_status').value = 'ACTIVE';
@@ -205,7 +257,7 @@ function resetContractForm() {
 }
 
 document.getElementById('add_contract_btn').addEventListener('click', async () => {
-  contractForm.classList.add('entity_form_visible');
+  contractForm.classList.add('add_user_form_visible');
   document.getElementById('contract_form_error').textContent = '';
   try {
     await loadContractClients();
@@ -312,7 +364,7 @@ async function loadShipmentContracts() {
 }
 
 function resetShipmentForm() {
-  shipmentForm.classList.remove('entity_form_visible');
+  shipmentForm.classList.remove('add_user_form_visible');
   document.getElementById('shipment_order_number').value = '';
   document.getElementById('shipment_contract_id').value = '';
   document.getElementById('shipment_client_name').value = 'Выберите договор';
@@ -329,7 +381,7 @@ function resetShipmentForm() {
 }
 
 document.getElementById('add_shipment_btn').addEventListener('click', async () => {
-  shipmentForm.classList.add('entity_form_visible');
+  shipmentForm.classList.add('add_user_form_visible');
   document.getElementById('shipment_form_error').textContent = '';
   try {
     await loadShipmentContracts();

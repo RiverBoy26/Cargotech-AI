@@ -10,6 +10,7 @@
 </head>
 <body>
     <header>
+        <button class="logout_btn" id="logout_btn" type="button">Выйти из аккаунта</button>
         <div class="topbar_user">
             <div class="topbar_usename">Администратор платформы</div>
             <div class="topbar_user_role">суперадмин</div>
@@ -38,20 +39,20 @@
                 <div class="add_user_form_title">Новый пользователь</div>
                 <div class="add_user_form_fields">
                     <div class="form_field">
-                        <label class="form_label" for="field_fullname">ФИО</label>
-                        <input class="form_input" id="field_fullname" type="text" placeholder="Иванов Иван Иванович">
+                        <label class="form_label" for="field_fullname">ФИО *</label>
+                        <input class="form_input" id="field_fullname" type="text" required placeholder="Иванов Иван Иванович">
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="field_email">Email</label>
-                        <input class="form_input" id="field_email" type="email" placeholder="ivanov@expeditor.ru">
+                        <label class="form_label" for="field_email">Email *</label>
+                        <input class="form_input" id="field_email" type="email" required placeholder="ivanov@expeditor.ru">
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="field_password">Пароль</label>
-                        <input class="form_input" id="field_password" type="password" placeholder="••••••••">
+                        <label class="form_label" for="field_password">Пароль *</label>
+                        <input class="form_input" id="field_password" type="password" required minlength="8" placeholder="••••••••">
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="field_role">Роль</label>
-                        <select class="form_input form_select" id="field_role">
+                        <label class="form_label" for="field_role">Роль *</label>
+                        <select class="form_input form_select" id="field_role" required>
                             <option value="">— выберите роль —</option>
                             <option value="LAWYER">Юрист</option>
                             <option value="ACCOUNTANT">Бухгалтер</option>
@@ -62,8 +63,8 @@
                     <!-- Суперадмин добавляет пользователя к любому экспедитору.
                          Пока список захардкожен  -->
                     <div class="form_field">
-                        <label class="form_label" for="field_expeditor">Экспедитор</label>
-                        <select class="form_input form_select" id="field_expeditor">
+                        <label class="form_label" for="field_expeditor">Экспедитор *</label>
+                        <select class="form_input form_select" id="field_expeditor" required>
                             <option value="">— выберите экспедитора —</option>
                         </select>
                     </div>
@@ -88,12 +89,12 @@
                 <div class="add_user_form_title">Новая организация-экспедитор</div>
                 <div class="add_user_form_fields">
                     <div class="form_field">
-                        <label class="form_label" for="organization_name">Название</label>
-                        <input class="form_input" id="organization_name" type="text" placeholder="ООО «Экспедитор»">
+                        <label class="form_label" for="organization_name">Название *</label>
+                        <input class="form_input" id="organization_name" type="text" required maxlength="255" placeholder="ООО «Экспедитор»">
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="organization_inn">ИНН</label>
-                        <input class="form_input" id="organization_inn" type="text" maxlength="12">
+                        <label class="form_label" for="organization_inn">ИНН *</label>
+                        <input class="form_input" id="organization_inn" type="text" required maxlength="12">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="organization_kpp">КПП</label>
@@ -126,7 +127,16 @@
                 </div>
             </div>
 
-            <div class="users_list" id="organizations_list"></div>
+            <div class="organizations_table">
+                <div class="organizations_table_head">
+                    <div class="organizations_table_head_t">Экспедитор</div>
+                    <div class="organizations_table_head_t">ИНН</div>
+                    <div class="organizations_table_head_t">КПП</div>
+                    <div class="organizations_table_head_t">Email</div>
+                    <div class="organizations_table_head_t">Статус и действие</div>
+                </div>
+                <div class="organizations_list" id="organizations_list"></div>
+            </div>
         </section>
 
     </main>

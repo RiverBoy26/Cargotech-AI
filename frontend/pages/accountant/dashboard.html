@@ -10,6 +10,7 @@
 </head>
 <body>
     <header>
+        <button class="logout_btn" id="logout_btn" type="button">Выйти из аккаунта</button>
         <div class="topbar_user">
             <div class="topbar_usename">Кузнецова Мария Геннадьевна</div>
             <div class="topbar_user_role">бухгалтер</div>
@@ -75,14 +76,14 @@
                 <div class="payment_form_grid payment_form_grid_import">
                     <div class="form_field">
                         <label class="form_label" for="payment_import_source">Источник *</label>
-                        <select class="form_input" id="payment_import_source">
+                        <select class="form_input form_select" id="payment_import_source" required>
                             <option value="BANK_STATEMENT">Банковская выписка</option>
                             <option value="ONE_C">Выгрузка из 1С</option>
                         </select>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_import_file">Файл XLSX *</label>
-                        <input class="form_input form_file" id="payment_import_file" type="file"
+                        <input class="form_input form_file" id="payment_import_file" type="file" required
                                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
                     </div>
                 </div>
@@ -109,15 +110,15 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_date">Дата платежа *</label>
-                        <input class="form_input" id="payment_date" type="date">
+                        <input class="form_input" id="payment_date" type="date" required>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_amount">Сумма *</label>
-                        <input class="form_input" id="payment_amount" type="number" step="0.01" placeholder="150000,00">
+                        <input class="form_input" id="payment_amount" type="number" required min="0.01" step="0.01" placeholder="150000,00">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_currency">Валюта *</label>
-                        <select class="form_input" id="payment_currency">
+                        <select class="form_input form_select" id="payment_currency" required>
                             <option value="RUB">RUB — российский рубль</option>
                             <option value="USD">USD — доллар США</option>
                             <option value="EUR">EUR — евро</option>

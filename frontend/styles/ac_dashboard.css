@@ -31,6 +31,21 @@ header {
   font-size: 16px;
 }
 
+.logout_btn {
+  margin-right: auto;
+  padding: 10px 16px;
+  color: #1B2A4A;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.logout_btn:hover { background: #F6C9A6; }
+.logout_btn:disabled { cursor: wait; opacity: 0.7; }
+
 .page_title_row {
   margin-bottom: 18px;
 }

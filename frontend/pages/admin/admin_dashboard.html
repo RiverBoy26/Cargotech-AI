@@ -10,6 +10,7 @@
 </head>
 <body>
     <header>
+        <button class="logout_btn" id="logout_btn" type="button">Выйти из аккаунта</button>
         <div class="topbar_user">
             <div class="topbar_usename">Громова Елена Викторовна</div>
             <div class="topbar_user_role">администратор экспедитора</div>
@@ -41,20 +42,20 @@
                 <div class="add_user_form_title">Новый пользователь</div>
                 <div class="add_user_form_fields">
                     <div class="form_field">
-                        <label class="form_label" for="field_fullname">ФИО</label>
-                        <input class="form_input" id="field_fullname" type="text" placeholder="Иванов Иван Иванович">
+                        <label class="form_label" for="field_fullname">ФИО *</label>
+                        <input class="form_input" id="field_fullname" type="text" required placeholder="Иванов Иван Иванович">
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="field_email">Email</label>
-                        <input class="form_input" id="field_email" type="email" placeholder="ivanov@expeditor.ru">
+                        <label class="form_label" for="field_email">Email *</label>
+                        <input class="form_input" id="field_email" type="email" required placeholder="ivanov@expeditor.ru">
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="field_password">Пароль</label>
-                        <input class="form_input" id="field_password" type="password" placeholder="мин. 8 символов">
+                        <label class="form_label" for="field_password">Пароль *</label>
+                        <input class="form_input" id="field_password" type="password" required minlength="8" placeholder="мин. 8 символов">
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="field_role">Роль</label>
-                        <select class="form_input form_select" id="field_role">
+                        <label class="form_label" for="field_role">Роль *</label>
+                        <select class="form_input form_select" id="field_role" required>
                             <option value="">— выберите роль —</option>
                             <option value="LAWYER">Юрист</option>
                             <option value="ACCOUNTANT">Бухгалтер</option>
@@ -85,7 +86,67 @@
                 <p class="panel_subtitle">Кредиторы, должники и прочие контрагенты организации</p>
                 <button class="primary_btn" id="add_party_btn">+ Добавить контрагента</button>
             </div>
-            <div class="users_list" id="parties_list"></div>
+            <div class="add_user_form" id="party_form">
+                <div class="add_user_form_title">Новый контрагент</div>
+                <div class="add_user_form_fields">
+                    <div class="form_field">
+                        <label class="form_label" for="party_type">Тип контрагента *</label>
+                        <select class="form_input form_select" id="party_type" required>
+                            <option value="">— выберите тип —</option>
+                            <option value="CLIENT">Клиент</option>
+                            <option value="CARRIER">Перевозчик</option>
+                            <option value="THIRD_PARTY">Третье лицо</option>
+                        </select>
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="party_name">Наименование *</label>
+                        <input class="form_input" id="party_name" type="text" required maxlength="500" placeholder="ООО «Клиент»">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="party_inn">ИНН</label>
+                        <input class="form_input" id="party_inn" type="text" maxlength="12" placeholder="7701234567">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="party_kpp">КПП</label>
+                        <input class="form_input" id="party_kpp" type="text" maxlength="9" placeholder="770000001">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="party_ogrn">ОГРН</label>
+                        <input class="form_input" id="party_ogrn" type="text" maxlength="15" placeholder="1027700000000">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="party_email">Email</label>
+                        <input class="form_input" id="party_email" type="email" maxlength="320" placeholder="mail@example.org">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="party_phone">Телефон</label>
+                        <input class="form_input" id="party_phone" type="text" maxlength="64" placeholder="+7 (999) 111-22-33">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="party_legal_address">Юридический адрес</label>
+                        <input class="form_input" id="party_legal_address" type="text" placeholder="г. Новосибирск, ул. Тестовая, д. 1">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="party_postal_address">Почтовый адрес</label>
+                        <input class="form_input" id="party_postal_address" type="text" placeholder="г. Новосибирск, ул. Тестовая, д. 1">
+                    </div>
+                </div>
+                <div class="add_user_form_actions">
+                    <p class="form_error" id="party_form_error" role="alert"></p>
+                    <button class="secondary_btn" id="cancel_party_btn" type="button">Отмена</button>
+                    <button class="primary_btn" id="save_party_btn" type="button">Создать</button>
+                </div>
+            </div>
+            <div class="admin_entity_table">
+                <div class="admin_entity_table_head">
+                    <div class="admin_entity_table_head_t">Наименование</div>
+                    <div class="admin_entity_table_head_t">Тип</div>
+                    <div class="admin_entity_table_head_t">ИНН</div>
+                    <div class="admin_entity_table_head_t">Email</div>
+                    <div class="admin_entity_table_head_t">Статус</div>
+                </div>
+                <div class="admin_entity_list" id="parties_list"></div>
+            </div>
         </section>
 
         <section class="tab_panel" id="tab_panel_contracts">
@@ -93,17 +154,17 @@
                 <p class="panel_subtitle">Договоры между экспедитором и клиентами</p>
                 <button class="primary_btn" id="add_contract_btn">+ Добавить договор</button>
             </div>
-            <section class="entity_form" id="contract_form" aria-labelledby="contract_form_title">
-                <div class="entity_form_title" id="contract_form_title">Новый договор</div>
-                <div class="entity_form_hint">Экспедитор определяется автоматически по вашей организации.</div>
-                <div class="entity_form_fields">
+            <section class="add_user_form" id="contract_form" aria-labelledby="contract_form_title">
+                <div class="add_user_form_title" id="contract_form_title">Новый договор</div>
+                <div class="panel_subtitle">Экспедитор определяется автоматически по вашей организации.</div>
+                <div class="add_user_form_fields">
                     <div class="form_field">
                         <label class="form_label" for="contract_number">Номер договора *</label>
-                        <input class="form_input" id="contract_number" maxlength="128" placeholder="ДЭ-2026/001">
+                        <input class="form_input" id="contract_number" required maxlength="128" placeholder="ДЭ-2026/001">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="contract_client_id">Клиент *</label>
-                        <select class="form_input form_select" id="contract_client_id">
+                        <select class="form_input form_select" id="contract_client_id" required>
                             <option value="">— выберите клиента —</option>
                         </select>
                     </div>
@@ -131,7 +192,7 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="contract_payment_days">Срок оплаты, дней *</label>
-                        <input class="form_input" id="contract_payment_days" type="number" min="0" step="1" value="0">
+                        <input class="form_input" id="contract_payment_days" type="number" required min="0" step="1" value="0">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="contract_payment_start_event">Отсчёт срока оплаты *</label>
@@ -156,22 +217,29 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="contract_claim_response_days">Срок ответа, дней *</label>
-                        <input class="form_input" id="contract_claim_response_days" type="number" min="0" step="1" value="10">
+                        <input class="form_input" id="contract_claim_response_days" type="number" required min="0" step="1" value="10">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="contract_jurisdiction">Подсудность</label>
                         <input class="form_input" id="contract_jurisdiction" maxlength="255" placeholder="Арбитражный суд Новосибирской области">
                     </div>
                 </div>
-                <div class="entity_form_footer">
+                <div class="add_user_form_actions">
                     <p class="form_error" id="contract_form_error" role="alert"></p>
-                    <div class="entity_form_actions">
-                        <button class="secondary_btn" id="cancel_contract_btn" type="button">Отмена</button>
-                        <button class="primary_btn" id="save_contract_btn" type="button">Создать договор</button>
-                    </div>
+                    <button class="secondary_btn" id="cancel_contract_btn" type="button">Отмена</button>
+                    <button class="primary_btn" id="save_contract_btn" type="button">Создать договор</button>
                 </div>
             </section>
-            <div class="users_list" id="contracts_list"></div>
+            <div class="admin_entity_table">
+                <div class="admin_entity_table_head">
+                    <div class="admin_entity_table_head_t">Номер</div>
+                    <div class="admin_entity_table_head_t">Клиент</div>
+                    <div class="admin_entity_table_head_t">Экспедитор</div>
+                    <div class="admin_entity_table_head_t">Статус</div>
+                    <div class="admin_entity_table_head_t">Срок оплаты</div>
+                </div>
+                <div class="admin_entity_list" id="contracts_list"></div>
+            </div>
         </section>
 
         <section class="tab_panel" id="tab_panel_shipments">
@@ -179,17 +247,17 @@
                 <p class="panel_subtitle">Рейсы, на основании которых создаются претензии</p>
                 <button class="primary_btn" id="add_shipment_btn">+ Добавить рейс</button>
             </div>
-            <section class="entity_form" id="shipment_form" aria-labelledby="shipment_form_title">
-                <div class="entity_form_title" id="shipment_form_title">Новый рейс</div>
-                <div class="entity_form_hint">Клиент и экспедитор подставляются автоматически из выбранного договора.</div>
-                <div class="entity_form_fields">
+            <section class="add_user_form" id="shipment_form" aria-labelledby="shipment_form_title">
+                <div class="add_user_form_title" id="shipment_form_title">Новый рейс</div>
+                <div class="panel_subtitle">Клиент и экспедитор подставляются автоматически из выбранного договора.</div>
+                <div class="add_user_form_fields">
                     <div class="form_field">
                         <label class="form_label" for="shipment_order_number">Номер рейса *</label>
-                        <input class="form_input" id="shipment_order_number" maxlength="128" placeholder="РЕЙС-2026/001">
+                        <input class="form_input" id="shipment_order_number" required maxlength="128" placeholder="РЕЙС-2026/001">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_contract_id">Договор *</label>
-                        <select class="form_input form_select" id="shipment_contract_id">
+                        <select class="form_input form_select" id="shipment_contract_id" required>
                             <option value="">— выберите договор —</option>
                         </select>
                     </div>
@@ -228,7 +296,7 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_service_amount">Стоимость перевозки *</label>
-                        <input class="form_input" id="shipment_service_amount" type="number" min="0" step="0.01" placeholder="0,00">
+                        <input class="form_input" id="shipment_service_amount" type="number" required min="0" step="0.01" placeholder="0,00">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_currency">Валюта *</label>
@@ -243,15 +311,22 @@
                         <input class="form_input" id="shipment_external_id" maxlength="255" placeholder="ID из учётной системы">
                     </div>
                 </div>
-                <div class="entity_form_footer">
+                <div class="add_user_form_actions">
                     <p class="form_error" id="shipment_form_error" role="alert"></p>
-                    <div class="entity_form_actions">
-                        <button class="secondary_btn" id="cancel_shipment_btn" type="button">Отмена</button>
-                        <button class="primary_btn" id="save_shipment_btn" type="button">Создать рейс</button>
-                    </div>
+                    <button class="secondary_btn" id="cancel_shipment_btn" type="button">Отмена</button>
+                    <button class="primary_btn" id="save_shipment_btn" type="button">Создать рейс</button>
                 </div>
             </section>
-            <div class="users_list" id="shipments_list"></div>
+            <div class="admin_entity_table">
+                <div class="admin_entity_table_head">
+                    <div class="admin_entity_table_head_t">Рейс</div>
+                    <div class="admin_entity_table_head_t">Клиент</div>
+                    <div class="admin_entity_table_head_t">Договор</div>
+                    <div class="admin_entity_table_head_t">Стоимость</div>
+                    <div class="admin_entity_table_head_t">Статус</div>
+                </div>
+                <div class="admin_entity_list" id="shipments_list"></div>
+            </div>
         </section>
 
     </main>

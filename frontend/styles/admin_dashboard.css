@@ -31,6 +31,21 @@ header {
   font-size: 16px;
 }
 
+.logout_btn {
+  margin-right: auto;
+  padding: 10px 16px;
+  color: #1B2A4A;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.logout_btn:hover { background: #F6C9A6; }
+.logout_btn:disabled { cursor: wait; opacity: 0.7; }
+
 .topbar_usename { font-size: 15px; }
 .topbar_user_role { font-size: 14px; }
 
@@ -168,74 +183,6 @@ header {
   gap: 10px;
 }
 
-/* формы договоров и рейсов */
-
-.entity_form {
-  display: none;
-  background: #FFFFFF;
-  border: 1px solid #E6E9ED;
-  border-radius: 10px;
-  padding: 24px 28px;
-  margin-bottom: 20px;
-  box-shadow: 0 8px 24px rgba(27, 42, 74, 0.06);
-}
-
-.entity_form_visible {
-  display: block;
-}
-
-.entity_form_title {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.entity_form_hint {
-  color: #8A93A0;
-  font-size: 13px;
-  margin-bottom: 18px;
-}
-
-.entity_form_fields {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.entity_form_footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 42px;
-}
-
-.entity_form_actions {
-  display: flex;
-  gap: 10px;
-  margin-left: auto;
-}
-
-.form_error {
-  color: #C0392B;
-  font-size: 13px;
-  margin: 0;
-}
-
-.form_input[readonly],
-.form_input:disabled {
-  background: #F1F3F5;
-  border-color: #DDE1E6;
-  color: #69727D;
-}
-
-.primary_btn:disabled,
-.secondary_btn:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
 /* таблица */
 
 .users_table {
@@ -268,10 +215,6 @@ header {
 
 .user_row:last-child { border-bottom: none; }
 
-.users_list > .user_row > div {
-  padding: 16px 20px;
-}
-
 .user_row_name,
 .user_row_email { padding: 16px 20px; }
 
@@ -296,11 +239,11 @@ header {
   border: 1px solid rgba(0,0,0,0.25);
 }
 
-.role-pill--lawyer    { background: #E7ECF3;
+.role-pill-lawyer    { background: #E7ECF3;
   color: #3D5A80;}
-.role-pill--accountant { background: #E6F0EA;
+.role-pill-accountant { background: #E6F0EA;
   color: #2E7D5B; }
-.role-pill--admin     { background: #d3c4f0; color: #3d2768; }
+.role-pill-admin     { background: #d3c4f0; color: #3d2768; }
 
 /* пилюли-статуса */
 
@@ -315,8 +258,9 @@ header {
   border: 1px solid rgba(0,0,0,0.25);
 }
 
-.status-pill--active  { background: #a9e0a0; color: #1f5c14; }
-.status-pill--blocked { background: #f4a8a3; color: #6b1f1a; }
+.status-pill-active  { background: #a9e0a0; color: #1f5c14; }
+.status-pill-blocked { background: #f4a8a3; color: #6b1f1a; }
+.status-pill-neutral { background: #F6EEDD; color: #C0832B; }
 
 /* кнопки */
 
@@ -358,8 +302,8 @@ header {
 }
 
 .modal {
-  background: #d6d6d6;
-  border: 1px solid #1a1a1a;
+  background: #F4F6F8;
+  border: 2px solid #DDE1E6;
   border-radius: 12px;
   width: 480px;
   max-width: 90vw;
@@ -387,7 +331,10 @@ header {
   padding: 4px;
 }
 
-.modal_close_btn:hover { color: #1a1a1a; }
+.modal_close_btn:hover {
+  background: #C0C0C0;
+  border: 1px solid #DDE1E6;
+ }
 
 .modal_body { padding: 20px 24px; }
 
@@ -450,38 +397,87 @@ header {
   margin: 0;
 }
 
-@media (max-width: 1000px) {
-  .entity_form_fields,
-  .add_user_form_fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.add_user_form .panel_subtitle {
+  margin-bottom: 16px;
 }
 
-@media (max-width: 680px) {
-  main {
-    padding: 18px 14px 36px;
-  }
+.form_field_wide {
+  grid-column: 1 / -1;
+}
 
-  .tabs_row {
+.form_error {
+  color: #c0392b;
+  font-size: 13px;
+  margin: 0;
+}
+
+/* Контрагенты, договоры и рейсы в стиле таблицы претензий */
+
+.admin_entity_table {
+  background: #FFFFFF;
+  border: 2px solid #E6E9ED;
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.admin_entity_table_head,
+.admin_entity_row {
+  display: grid;
+  grid-template-columns: 1.3fr 1.1fr 1fr 1.2fr 1fr;
+  align-items: center;
+}
+
+.admin_entity_table_head {
+  background: #FCEADF;
+}
+
+.admin_entity_table_head_t {
+  padding: 16px 20px;
+  color: #8A93A0;
+  font-size: 14px;
+  text-align: center;
+}
+
+.admin_entity_row {
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 14px;
+  cursor: default;
+}
+
+.admin_entity_row:last-child {
+  border-bottom: none;
+}
+
+.admin_entity_row > div {
+  min-width: 0;
+  padding: 18px 20px;
+  overflow-wrap: anywhere;
+}
+
+.admin_entity_empty {
+  padding: 24px;
+  color: #8A93A0;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .admin_entity_table {
     overflow-x: auto;
   }
 
-  .panel_header_row,
-  .entity_form_footer {
-    align-items: stretch;
-    flex-direction: column;
+  .admin_entity_table_head,
+  .admin_entity_row {
+    min-width: 800px;
   }
+}
 
-  .entity_form_fields,
+@media (max-width: 760px) {
   .add_user_form_fields {
     grid-template-columns: 1fr;
   }
 
-  .entity_form {
-    padding: 20px 18px;
-  }
-
-  .entity_form_actions {
-    margin-left: 0;
+  .add_user_form_actions {
+    flex-wrap: wrap;
   }
 }
