@@ -62,13 +62,37 @@ public class ClaimGenerationPipelineService {
         );
         GigaChatChatResponse chatResponse = callResult.response();
 
-        String rawModelResponse = chatResponse.firstContent();
-        if (rawModelResponse == null || rawModelResponse.isBlank()) {
-            throw new IllegalStateException("GigaChat returned empty claim generation response");
-        }
-
+        String rawModelResponse = requireContent(
+                chatResponse,
+                "GigaChat returned empty claim generation response"
+        );
         GenerateClaimResponse generatedClaim = claimResponseParser.parse(rawModelResponse);
         GuardrailResult guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
+        GigaChatChatResponse.Usage totalUsage = chatResponse.usage();
+        String requestId = callResult.requestId();
+
+        if (enrichedRequest.caseFacts().claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE
+                && guardrailResult.decision() == GuardrailDecision.BLOCK) {
+            List<GigaChatMessage> repairMessages = buildRepairMessages(
+                    messages,
+                    rawModelResponse,
+                    guardrailResult.errors()
+            );
+            GigaChatClient.ChatCallResult repairCall = gigaChatClient.sendChatWithTrace(
+                    repairMessages,
+                    enrichedRequest.caseFacts().claimId(),
+                    operationName(enrichedRequest.caseFacts().claimType()) + "_REPAIR"
+            );
+            GigaChatChatResponse repairResponse = repairCall.response();
+            String repairedRaw = requireContent(
+                    repairResponse,
+                    "GigaChat returned empty claim repair response"
+            );
+            generatedClaim = claimResponseParser.parse(repairedRaw);
+            guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
+            totalUsage = mergeUsage(totalUsage, repairResponse.usage());
+            requestId = repairCall.requestId();
+        }
 
         return new GenerateClaimPipelineResponse(
                 guardrailResult.decision() != GuardrailDecision.BLOCK,
@@ -76,12 +100,64 @@ public class ClaimGenerationPipelineService {
                 enrichedRequest.caseFacts().claimType(),
                 ragUsed,
                 List.copyOf(ragWarnings),
-                callResult.requestId(),
-                chatResponse.usage(),
+                requestId,
+                totalUsage,
                 generatedClaim,
                 guardrailResult,
                 Instant.now()
         );
+    }
+
+    private String requireContent(GigaChatChatResponse response, String errorMessage) {
+        String content = response == null ? null : response.firstContent();
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException(errorMessage);
+        }
+        return content;
+    }
+
+    private List<GigaChatMessage> buildRepairMessages(
+            List<GigaChatMessage> originalMessages,
+            String blockedResponse,
+            List<String> errors
+    ) {
+        List<GigaChatMessage> messages = new ArrayList<>(originalMessages);
+        messages.add(new GigaChatMessage("assistant", blockedResponse));
+        messages.add(new GigaChatMessage(
+                "user",
+                """
+                Предыдущий JSON заблокирован детерминированными проверками.
+
+                Исправь полный JSON-ответ, устранив каждую ошибку из списка:
+                - %s
+
+                Обязательные правила ремонта:
+                1. Верни полный объект GenerateClaimResponse, а не фрагмент и не объяснение.
+                2. Сохрани только факты из исходного входного JSON и RAG-контекста.
+                3. Дословно перенеси все обязательные номера, даты, маршрут, адрес, временное окно и суммы.
+                4. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
+                5. Не используй термин «непредставление транспортного средства».
+                6. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
+                7. Верни только валидный JSON без markdown и текста вне JSON.
+                """.formatted(String.join("\n- ", errors == null ? List.of() : errors))
+        ));
+        return messages;
+    }
+
+    private GigaChatChatResponse.Usage mergeUsage(
+            GigaChatChatResponse.Usage first,
+            GigaChatChatResponse.Usage second
+    ) {
+        return new GigaChatChatResponse.Usage(
+                sum(first == null ? null : first.promptTokens(), second == null ? null : second.promptTokens()),
+                sum(first == null ? null : first.completionTokens(), second == null ? null : second.completionTokens()),
+                sum(first == null ? null : first.totalTokens(), second == null ? null : second.totalTokens())
+        );
+    }
+
+    private Integer sum(Integer first, Integer second) {
+        if (first == null && second == null) return null;
+        return (first == null ? 0 : first) + (second == null ? 0 : second);
     }
 
     private GenerateClaimRequest buildEnrichedRequest(

@@ -23,6 +23,55 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
+    void passesWhenTtnAndInvoiceArePresentOnlyInAttachments() {
+        String text = """
+                От: ООО Экспедитор, ИНН 7800000000.
+                Кому: ООО Клиент, ИНН 7700000000.
+                Претензия по договору №45/2026 от 10.01.2026.
+                Перевозка по маршруту Санкт-Петербург — Москва.
+                Услуги подтверждены актом №157 от 01.05.2026.
+                Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
+                неустойка — 2 400 руб., итого к оплате — 242 400 руб.
+                """;
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksAttachmentWithWrongTtnNumber() {
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
+                validText(),
+                "Просрочка оплаты по договору",
+                List.of(new GenerateClaimResponse.UsedContractClause("4.2", "contract-payment", "срок оплаты")),
+                List.of(new GenerateClaimResponse.UsedLawArticle("law-309", "ГК РФ", "309", "надлежащее исполнение")),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        10,
+                        "RUB"
+                ),
+                List.of(
+                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.ACT, "Акт 157", true),
+                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.TTN, "ТТН-999", true),
+                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.INVOICE, "INV-157", true)
+                ),
+                List.of(),
+                true
+        );
+
+        GuardrailResult result = service.check(paymentRequest(true), response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("shipment.ttn_number"));
+    }
+
+    @Test
     void blocksUnknownInnInsideClaimText() {
         String text = validText() + " Дополнительный получатель: ИНН 7812345678.";
         GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
@@ -70,6 +119,120 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
+    void acceptsReorderedLoadingAddressAndVerbalTimeWindow() {
+        GuardrailResult result = service.check(
+                detailedLoadingRequest(),
+                detailedLoadingResponse(detailedLoadingText())
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksDifferentWarehouseNumber() {
+        String text = detailedLoadingText().replace("складе №4", "складе №5");
+        GuardrailResult result = service.check(detailedLoadingRequest(), detailedLoadingResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("shipment.loading_address"));
+    }
+
+    @Test
+    void blocksDifferentLoadingTimeWindow() {
+        String text = detailedLoadingText().replace("с 09:00 до 12:00", "с 10:00 до 13:00");
+        GuardrailResult result = service.check(detailedLoadingRequest(), detailedLoadingResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("shipment.loading_time_window"));
+    }
+
+    @Test
+    void blocksLoadingFailureConfirmationSubstitution() {
+        String text = detailedLoadingText().replace(
+                "Факт непредоставления транспортного средства подтверждён",
+                "Факт неподтверждения подачи транспортного средства установлен"
+        );
+
+        GuardrailResult result = service.check(detailedLoadingRequest(), detailedLoadingResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("absence of confirmation"));
+    }
+
+    @Test
+    void blocksInventedVehicleIdentityAndIncidentCause() {
+        String text = detailedLoadingText()
+                .replace("требовался тент 20 т", "требовалось транспортное средство марки «тент» 20 т")
+                + " Водитель опоздал из-за поломки.";
+
+        GuardrailResult result = service.check(detailedLoadingRequest(), detailedLoadingResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("vehicle identity detail"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("cause or incident circumstance"));
+    }
+
+    @Test
+    void blocksContractPenaltyReclassifiedAsCompensation() {
+        String text = detailedLoadingText().replace(
+                "просим оплатить штраф 15 000 руб.",
+                "просим выплатить компенсацию 15 000 руб."
+        );
+
+        GuardrailResult result = service.check(detailedLoadingRequest(), detailedLoadingResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("changes CONTRACT_PENALTY"));
+    }
+
+    @Test
+    void acceptsInflectedNonProvisionPhraseWithoutNominativeForm() {
+        GenerateClaimResponse base = detailedLoadingResponse(detailedLoadingText());
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                "Претензия составлена по факту непредоставления транспортного средства",
+                base.usedContractClauses(),
+                base.usedLawArticles(),
+                base.backendCalculationUsed(),
+                base.attachments(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+
+        GuardrailResult result = service.check(detailedLoadingRequest(), response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksOptionalLoadingFailureActWhenActFactsExist() {
+        GenerateClaimResponse base = detailedLoadingResponse(detailedLoadingText());
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                base.summaryForLawyer(),
+                base.usedContractClauses(),
+                base.usedLawArticles(),
+                base.backendCalculationUsed(),
+                List.of(new GenerateClaimResponse.Attachment(
+                        GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT,
+                        "Акт о срыве погрузки № ACT-LF-200 от 12.06.2026",
+                        false
+                )),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+
+        GuardrailResult result = service.check(detailedLoadingRequest(), response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("required LOADING_FAILURE_ACT"));
+    }
+
+    @Test
     void blocksUnconfirmedLoadingFailure() {
         GenerateClaimRequest request = loadingRequest(false);
         GenerateClaimResponse response = new GenerateClaimResponse(
@@ -100,6 +263,97 @@ class RuleBasedGuardrailServiceTest {
         GuardrailResult result = service.check(request, response);
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
         assertThat(result.errors()).anyMatch(error -> error.contains("confirmed by dispatcher"));
+    }
+
+    private GenerateClaimRequest detailedLoadingRequest() {
+        return new GenerateClaimRequest(
+                new GenerateClaimRequest.CaseFacts(
+                        "claim-lf-detailed",
+                        GenerateClaimRequest.ClaimType.LOADING_FAILURE,
+                        new GenerateClaimRequest.Party("ООО Клиент-Заказчик", "7700000000", "Москва"),
+                        new GenerateClaimRequest.Party("ООО Перевозчик", "7800000000", "Санкт-Петербург"),
+                        new GenerateClaimRequest.ContractFacts("LF-77/2026", "05.02.2026"),
+                        new GenerateClaimRequest.ShipmentFacts(
+                                "ORD-LF-200", "Москва - Казань", "ACT-LF-200", "12.06.2026", null, null,
+                                "12.06.2026", "Москва, склад №4", "09:00-12:00", "тент 20 т",
+                                "ООО Перевозчик", true
+                        ),
+                        null,
+                        "13.06.2026"
+                ),
+                new GenerateClaimRequest.BackendCalculation(
+                        BigDecimal.ZERO,
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        "фиксированный штраф",
+                        0,
+                        new BigDecimal("15000"),
+                        new BigDecimal("15000"),
+                        "RUB",
+                        "15000"
+                ),
+                List.of(
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "chunk_lf_contract_001", "5.1", "Подача ТС", "Перевозчик обязан предоставить ТС"
+                        ),
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "chunk_lf_contract_002", "6.4", "Штраф", "Штраф 15000 рублей"
+                        )
+                ),
+                List.of(new GenerateClaimRequest.LegalContextItem(
+                        "chunk_lf_legal_gk_330", "ГК РФ", "330", "неустойка", "Понятие неустойки",
+                        "ст. 330 ГК РФ", "2026-07-30", "LOADING_FAILURE"
+                )),
+                new GenerateClaimRequest.TemplateContext(
+                        "tpl-lf", "Претензия", GenerateClaimRequest.ClaimType.LOADING_FAILURE, List.of("Факты", "Требование")
+                ),
+                List.of()
+        );
+    }
+
+    private GenerateClaimResponse detailedLoadingResponse(String text) {
+        return new GenerateClaimResponse(
+                GenerateClaimRequest.ClaimType.LOADING_FAILURE,
+                text,
+                "Претензия за непредоставление транспортного средства",
+                List.of(
+                        new GenerateClaimResponse.UsedContractClause(
+                                "5.1", "chunk_lf_contract_001", "обязанность предоставить ТС"
+                        ),
+                        new GenerateClaimResponse.UsedContractClause(
+                                "6.4", "chunk_lf_contract_002", "штраф за непредоставление ТС"
+                        )
+                ),
+                List.of(new GenerateClaimResponse.UsedLawArticle(
+                        "chunk_lf_legal_gk_330", "ГК РФ", "330", "основание неустойки"
+                )),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        BigDecimal.ZERO,
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        new BigDecimal("15000"),
+                        new BigDecimal("15000"),
+                        0,
+                        "RUB"
+                ),
+                List.of(new GenerateClaimResponse.Attachment(
+                        GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT,
+                        "Акт о срыве погрузки № ACT-LF-200 от 12.06.2026",
+                        true
+                )),
+                List.of(),
+                true
+        );
+    }
+
+    private String detailedLoadingText() {
+        return """
+                От: ООО Клиент-Заказчик, ИНН 7700000000, Москва.
+                Кому: ООО Перевозчик, ИНН 7800000000, Санкт-Петербург.
+                Претензия по договору № LF-77/2026 от 05.02.2026.
+                По заявке № ORD-LF-200 от 12.06.2026 требовался тент 20 т по маршруту Москва-Казань.
+                Погрузка была назначена на складе №4 в Москве с 09:00 до 12:00.
+                Факт непредоставления транспортного средства подтверждён актом № ACT-LF-200 от 12.06.2026.
+                На основании нарушения просим оплатить штраф 15 000 руб.
+                """;
     }
 
     private GenerateClaimRequest paymentRequest(boolean confirmed) {

@@ -21,6 +21,9 @@ public record GenerateDocumentResponse(
         @JsonProperty("used_contract_clauses")
         List<GenerateClaimResponse.UsedContractClause> usedContractClauses,
 
+        @JsonProperty("used_law_articles")
+        List<GenerateClaimResponse.UsedLawArticle> usedLawArticles,
+
         List<GenerateClaimResponse.Attachment> attachments,
 
         List<String> warnings,

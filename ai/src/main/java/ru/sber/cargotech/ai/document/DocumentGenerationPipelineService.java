@@ -73,13 +73,38 @@ public class DocumentGenerationPipelineService {
                 "GENERATE_DOCUMENT_" + documentType.name()
         );
         GigaChatChatResponse chatResponse = callResult.response();
-        String raw = chatResponse.firstContent();
-        if (raw == null || raw.isBlank()) {
-            throw new IllegalStateException("GigaChat returned empty document generation response");
-        }
+        String raw = requireContent(
+                chatResponse,
+                "GigaChat returned empty document generation response"
+        );
 
         GenerateDocumentResponse generated = parser.parse(raw);
         GuardrailResult guardrail = guardrailService.check(enrichedRequest, generated, documentType);
+        GigaChatChatResponse.Usage totalUsage = chatResponse.usage();
+        String requestId = callResult.requestId();
+
+        if (guardrail.decision() == GuardrailDecision.BLOCK) {
+            List<GigaChatMessage> repairMessages = buildRepairMessages(
+                    messages,
+                    raw,
+                    guardrail.errors(),
+                    documentType
+            );
+            GigaChatClient.ChatCallResult repairCall = gigaChatClient.sendChatWithTrace(
+                    repairMessages,
+                    enrichedRequest.caseFacts().claimId(),
+                    "GENERATE_DOCUMENT_" + documentType.name() + "_REPAIR"
+            );
+            GigaChatChatResponse repairResponse = repairCall.response();
+            String repairedRaw = requireContent(
+                    repairResponse,
+                    "GigaChat returned empty document repair response"
+            );
+            generated = parser.parse(repairedRaw);
+            guardrail = guardrailService.check(enrichedRequest, generated, documentType);
+            totalUsage = mergeUsage(totalUsage, repairResponse.usage());
+            requestId = repairCall.requestId();
+        }
 
         return new GenerateDocumentPipelineResponse(
                 guardrail.decision() != GuardrailDecision.BLOCK,
@@ -87,12 +112,86 @@ public class DocumentGenerationPipelineService {
                 documentType,
                 ragUsed,
                 List.copyOf(ragWarnings),
-                callResult.requestId(),
-                chatResponse.usage(),
+                requestId,
+                totalUsage,
                 generated,
                 guardrail,
                 Instant.now()
         );
+    }
+
+    private String requireContent(GigaChatChatResponse response, String errorMessage) {
+        String content = response == null ? null : response.firstContent();
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException(errorMessage);
+        }
+        return content;
+    }
+
+    private List<GigaChatMessage> buildRepairMessages(
+            List<GigaChatMessage> originalMessages,
+            String blockedResponse,
+            List<String> errors,
+            GenerateClaimResponse.DocumentType documentType
+    ) {
+        List<GigaChatMessage> messages = new ArrayList<>(originalMessages);
+        messages.add(new GigaChatMessage("assistant", blockedResponse));
+
+        String typeRules = documentType == GenerateClaimResponse.DocumentType.NOTIFICATION
+                ? """
+                Для NOTIFICATION:
+                - укажи дату уведомления строго из case_facts.claim_date;
+                - обязательно укажи точный shipment.route;
+                - напиши, что отправитель намерен составить акт в будущем;
+                - не используй shipment.act_number и shipment.act_date.
+                """
+                : """
+                Для LOADING_FAILURE_ACT:
+                - document_title должен быть ровно «Акт о непредоставлении транспортного средства»;
+                - обязательно укажи точный shipment.act_number и дату shipment.act_date;
+                - прямо напиши, что акт в одностороннем порядке составлен case_facts.creditor.
+                """;
+
+        messages.add(new GigaChatMessage(
+                "user",
+                """
+                Предыдущий JSON заблокирован детерминированными проверками.
+
+                Исправь полный JSON-ответ, устранив каждую ошибку:
+                - %s
+
+                Общие правила ремонта:
+                1. Верни полный объект GenerateDocumentResponse.
+                2. Сохрани только факты из исходного входного JSON и RAG-контекста.
+                3. Дословно перенеси обязательные номера, даты, маршрут, адрес и временное окно.
+                4. Используй точную формулировку «транспортное средство не было предоставлено к погрузке».
+                5. Не используй термин «непредставление транспортного средства».
+                6. Не выдумывай представителей, водителя, марку, модель, госномер и причины нарушения.
+                7. Верни только валидный JSON без markdown и текста вне JSON.
+
+                %s
+                """.formatted(
+                        String.join("\n- ", errors == null ? List.of() : errors),
+                        typeRules
+                )
+        ));
+        return messages;
+    }
+
+    private GigaChatChatResponse.Usage mergeUsage(
+            GigaChatChatResponse.Usage first,
+            GigaChatChatResponse.Usage second
+    ) {
+        return new GigaChatChatResponse.Usage(
+                sum(first == null ? null : first.promptTokens(), second == null ? null : second.promptTokens()),
+                sum(first == null ? null : first.completionTokens(), second == null ? null : second.completionTokens()),
+                sum(first == null ? null : first.totalTokens(), second == null ? null : second.totalTokens())
+        );
+    }
+
+    private Integer sum(Integer first, Integer second) {
+        if (first == null && second == null) return null;
+        return (first == null ? 0 : first) + (second == null ? 0 : second);
     }
 
     private GenerateClaimRequest enrich(

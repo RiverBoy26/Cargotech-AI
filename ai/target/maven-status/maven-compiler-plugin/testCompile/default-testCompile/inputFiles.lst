@@ -1,6 +1,7 @@
 C:\Users\aramb\projects\Cargotech-AI\ai\src\test\java\ru\sber\cargotech\ai\AiApplicationTests.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\test\java\ru\sber\cargotech\ai\claim\guardrail\RuleBasedGuardrailServiceTest.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\test\java\ru\sber\cargotech\ai\document\guardrail\DocumentGuardrailServiceTest.java
+C:\Users\aramb\projects\Cargotech-AI\ai\src\test\java\ru\sber\cargotech\ai\GenerationRepairPipelineTest.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\test\java\ru\sber\cargotech\ai\rag\RagIndexRequestMapperTest.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\test\java\ru\sber\cargotech\ai\rag\RagSearchServiceTenantIsolationTest.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\test\java\ru\sber\cargotech\ai\security\SensitiveDataMaskerTest.java

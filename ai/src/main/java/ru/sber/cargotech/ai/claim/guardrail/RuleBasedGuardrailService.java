@@ -380,7 +380,10 @@ public class RuleBasedGuardrailService {
     }
 
     private void validateForbiddenText(GenerateClaimResponse response, List<String> errors) {
-        String text = response.claimText() == null ? "" : response.claimText().toLowerCase(Locale.ROOT);
+        String text = ((response.claimText() == null ? "" : response.claimText())
+                + "\n"
+                + (response.summaryForLawyer() == null ? "" : response.summaryForLawyer()))
+                .toLowerCase(Locale.ROOT);
 
         List<String> forbiddenPhrases = List.of(
                 "обратиться в суд",
