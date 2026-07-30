@@ -13,6 +13,7 @@ import ru.sber.cargotech.ai.document.parser.DocumentResponseParser;
 import ru.sber.cargotech.ai.document.prompt.LoadingFailureActPromptBuilder;
 import ru.sber.cargotech.ai.document.prompt.LoadingFailureNotificationPromptBuilder;
 import ru.sber.cargotech.ai.gigachat.GigaChatClient;
+import ru.sber.cargotech.ai.guardrail.GeneratedOutputNormalizer;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatResponse;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
 import ru.sber.cargotech.ai.rag.RagSearchService;
@@ -22,6 +23,8 @@ import java.util.*;
 
 @Service
 public class DocumentGenerationPipelineService {
+
+    private static final int MAX_REPAIR_ATTEMPTS = 2;
 
     private final RagSearchService ragSearchService;
     private final LoadingFailureNotificationPromptBuilder notificationPromptBuilder;
@@ -78,29 +81,39 @@ public class DocumentGenerationPipelineService {
                 "GigaChat returned empty document generation response"
         );
 
-        GenerateDocumentResponse generated = parser.parse(raw);
+        GenerateDocumentResponse generated = GeneratedOutputNormalizer.normalizeDocument(
+                enrichedRequest,
+                parser.parse(raw),
+                documentType
+        );
         GuardrailResult guardrail = guardrailService.check(enrichedRequest, generated, documentType);
         GigaChatChatResponse.Usage totalUsage = chatResponse.usage();
         String requestId = callResult.requestId();
 
-        if (guardrail.decision() == GuardrailDecision.BLOCK) {
+        int repairAttempt = 0;
+        while (shouldRepair(guardrail) && repairAttempt < MAX_REPAIR_ATTEMPTS) {
+            repairAttempt++;
             List<GigaChatMessage> repairMessages = buildRepairMessages(
                     messages,
                     raw,
-                    guardrail.errors(),
+                    repairIssues(guardrail),
                     documentType
             );
             GigaChatClient.ChatCallResult repairCall = gigaChatClient.sendChatWithTrace(
                     repairMessages,
                     enrichedRequest.caseFacts().claimId(),
-                    "GENERATE_DOCUMENT_" + documentType.name() + "_REPAIR"
+                    "GENERATE_DOCUMENT_" + documentType.name() + "_REPAIR_" + repairAttempt
             );
             GigaChatChatResponse repairResponse = repairCall.response();
-            String repairedRaw = requireContent(
+            raw = requireContent(
                     repairResponse,
                     "GigaChat returned empty document repair response"
             );
-            generated = parser.parse(repairedRaw);
+            generated = GeneratedOutputNormalizer.normalizeDocument(
+                    enrichedRequest,
+                    parser.parse(raw),
+                    documentType
+            );
             guardrail = guardrailService.check(enrichedRequest, generated, documentType);
             totalUsage = mergeUsage(totalUsage, repairResponse.usage());
             requestId = repairCall.requestId();
@@ -162,12 +175,19 @@ public class DocumentGenerationPipelineService {
 
                 Общие правила ремонта:
                 1. Верни полный объект GenerateDocumentResponse.
-                2. Сохрани только факты из исходного входного JSON и RAG-контекста.
-                3. Дословно перенеси обязательные номера, даты, маршрут, адрес и временное окно.
-                4. Используй точную формулировку «транспортное средство не было предоставлено к погрузке».
-                5. Не используй термин «непредставление транспортного средства».
-                6. Не выдумывай представителей, водителя, марку, модель, госномер и причины нарушения.
-                7. Верни только валидный JSON без markdown и текста вне JSON.
+                2. Исправь весь объект, включая document_title, document_text, summary_for_lawyer,
+                   used_contract_clauses, used_law_articles, attachments и warnings.
+                3. Сохрани только факты из исходного входного JSON и RAG-контекста.
+                4. Дословно перенеси обязательные номера, даты, маршрут, адрес и временное окно.
+                4.1. Не смешивай кириллицу и латиницу внутри идентификаторов.
+                5. Во всех текстовых полях описывай подтверждённый факт:
+                   «транспортное средство не было предоставлено к погрузке».
+                6. Ни в одном поле, включая summary_for_lawyer, не пиши
+                   «неподтверждение подачи», «неподтверждение предоставления»
+                   или «отсутствие подтверждения».
+                7. Не используй термин «непредставление транспортного средства».
+                8. Не выдумывай представителей, водителя, марку, модель, госномер и причины нарушения.
+                9. Верни только валидный JSON без markdown и текста вне JSON.
 
                 %s
                 """.formatted(
@@ -176,6 +196,18 @@ public class DocumentGenerationPipelineService {
                 )
         ));
         return messages;
+    }
+
+    private boolean shouldRepair(GuardrailResult result) {
+        return result != null && result.decision() != GuardrailDecision.PASS;
+    }
+
+    private List<String> repairIssues(GuardrailResult result) {
+        List<String> issues = new ArrayList<>();
+        if (result == null) return issues;
+        if (result.errors() != null) issues.addAll(result.errors());
+        if (result.warnings() != null) issues.addAll(result.warnings());
+        return List.copyOf(issues);
     }
 
     private GigaChatChatResponse.Usage mergeUsage(

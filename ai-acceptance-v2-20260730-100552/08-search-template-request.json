@@ -1,0 +1,1 @@
+{"query":"шаблон претензии просрочка оплаты приложения расчет","min_score":0,"limit":5,"filters":{"rag_collection":"TEMPLATE_CONTEXT","claim_type":"PAYMENT_DELAY","is_current":true}}

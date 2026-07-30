@@ -6,6 +6,7 @@ import ru.sber.cargotech.ai.claim.dto.GenerateClaimResponse;
 import ru.sber.cargotech.ai.claim.guardrail.GuardrailDecision;
 import ru.sber.cargotech.ai.claim.guardrail.GuardrailResult;
 import ru.sber.cargotech.ai.document.dto.GenerateDocumentResponse;
+import ru.sber.cargotech.ai.guardrail.CitationTextMatcher;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -128,18 +129,18 @@ public class DocumentGuardrailService {
             List<String> errors,
             List<String> warnings
     ) {
+        String title = response.documentTitle() == null ? "" : response.documentTitle();
         String text = response.documentText() == null ? "" : response.documentText();
         String summary = response.summaryForLawyer() == null ? "" : response.summaryForLawyer();
-        String narrative = text + "\n" + summary;
+        String narrative = title + "\n" + text + "\n" + summary;
         String normalized = normalize(text);
-        String normalizedTitle = normalize(response.documentTitle());
+        String normalizedTitle = normalize(title);
 
-        if (expectedType == GenerateClaimResponse.DocumentType.NOTIFICATION) {
-            if (!normalizedTitle.contains("уведомлен")) {
-                errors.add("document_title does not identify a notification");
-            }
-        } else if (!normalizedTitle.contains("акт") || !normalizedTitle.contains("непредоставлен")) {
-            errors.add("document_title does not identify an act of vehicle non-provision");
+        String expectedTitle = expectedType == GenerateClaimResponse.DocumentType.NOTIFICATION
+                ? "Уведомление о составлении акта о непредоставлении транспортного средства"
+                : "Акт о непредоставлении транспортного средства";
+        if (!normalizedTitle.equals(normalize(expectedTitle))) {
+            errors.add("document_title must be exactly: " + expectedTitle);
         }
 
         if (request != null && request.caseFacts() != null) {
@@ -197,6 +198,14 @@ public class DocumentGuardrailService {
         if (UNSUPPORTED_DISPATCHER_ATTRIBUTION.matcher(narrative).find()) {
             errors.add("Document attributes dispatcher confirmation to a party not identified in case_facts");
         }
+        if (CitationTextMatcher.containsUnsupportedInstanceQualifier(
+                title,
+                text,
+                summary,
+                attachmentNames(response.attachments())
+        )) {
+            errors.add("Document invents document instance type (original/copy) absent from case_facts");
+        }
 
         if (RUB_AMOUNT.matcher(narrative).find()) {
             errors.add("Fixation document contains a monetary amount");
@@ -241,6 +250,10 @@ public class DocumentGuardrailService {
                 errors.add("Document used unknown contract chunk_id: " + used.chunkId());
             } else if (!Objects.equals(normalize(source.clauseNumber()), normalize(used.clauseNumber()))) {
                 errors.add("Document contract chunk_id and clause_number do not match: " + used.chunkId());
+            } else if (!CitationTextMatcher.containsContractClauseReference(
+                    response.documentText(), used.clauseNumber())) {
+                errors.add("Document declared contract clause not mentioned in document_text: "
+                        + used.clauseNumber());
             }
         }
     }
@@ -281,6 +294,10 @@ public class DocumentGuardrailService {
             if (!Objects.equals(normalize(source.lawCode()), normalize(article.lawCode()))
                     || !Objects.equals(normalize(source.article()), normalize(article.article()))) {
                 errors.add("Document legal chunk_id does not match law_code/article: " + article.chunkId());
+            } else if (!CitationTextMatcher.containsLegalReference(
+                    response.documentText(), article.lawCode(), article.article())) {
+                errors.add("Document declared law article not mentioned in document_text: "
+                        + article.lawCode() + " " + article.article());
             }
         }
         if (!used.isEmpty() && allowed.isEmpty()) {
@@ -316,6 +333,17 @@ public class DocumentGuardrailService {
             }
         }
         if (response.attachments() == null) warnings.add("response.attachments is null");
+    }
+
+    private String attachmentNames(List<GenerateClaimResponse.Attachment> attachments) {
+        StringBuilder result = new StringBuilder();
+        for (GenerateClaimResponse.Attachment attachment : safeList(attachments)) {
+            if (attachment != null && hasText(attachment.documentName())) {
+                if (!result.isEmpty()) result.append('\n');
+                result.append(attachment.documentName());
+            }
+        }
+        return result.toString();
     }
 
     private void requireOrderReference(

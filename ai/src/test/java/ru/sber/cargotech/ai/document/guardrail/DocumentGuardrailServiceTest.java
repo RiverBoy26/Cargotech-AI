@@ -306,6 +306,83 @@ class DocumentGuardrailServiceTest {
         assertThat(result.errors()).anyMatch(error -> error.contains("attendance instructions"));
     }
 
+    @Test
+    void blocksIncorrectNotificationTitleTerm() {
+        GenerateDocumentResponse base = response(validText(), GenerateClaimResponse.DocumentType.NOTIFICATION);
+        GenerateDocumentResponse wrongTitle = new GenerateDocumentResponse(
+                base.documentType(),
+                "Уведомление о составлении акта о непредставлении транспортного средства",
+                base.documentText(),
+                base.summaryForLawyer(),
+                base.usedContractClauses(),
+                base.usedLawArticles(),
+                base.attachments(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+
+        GuardrailResult result = service.check(
+                request(true), wrongTitle, GenerateClaimResponse.DocumentType.NOTIFICATION
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("document_title must be exactly"));
+    }
+
+    @Test
+    void blocksUnsupportedOriginalOrCopyQualifier() {
+        String text = validText() + " Приложение: заявка ORD-1, копия прилагается.";
+
+        GuardrailResult result = service.check(
+                request(true),
+                response(text, GenerateClaimResponse.DocumentType.NOTIFICATION),
+                GenerateClaimResponse.DocumentType.NOTIFICATION
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("original/copy"));
+    }
+
+    @Test
+    void blocksDeclaredContractClauseMissingFromDocumentText() {
+        String text = validText().replace("Согласно п. 5.1 договора", "По условиям договора");
+
+        GuardrailResult result = service.check(
+                request(true),
+                response(text, GenerateClaimResponse.DocumentType.NOTIFICATION),
+                GenerateClaimResponse.DocumentType.NOTIFICATION
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("contract clause not mentioned"));
+    }
+
+    @Test
+    void blocksDeclaredLawArticleMissingFromDocumentText() {
+        GenerateClaimRequest legalRequest = requestWithLegalContext();
+        GenerateDocumentResponse base = response(validText(), GenerateClaimResponse.DocumentType.NOTIFICATION);
+        GenerateDocumentResponse response = new GenerateDocumentResponse(
+                base.documentType(),
+                base.documentTitle(),
+                base.documentText(),
+                base.summaryForLawyer(),
+                base.usedContractClauses(),
+                List.of(new GenerateClaimResponse.UsedLawArticle(
+                        "law-330", "ГК РФ", "330", "понятие неустойки"
+                )),
+                base.attachments(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+
+        GuardrailResult result = service.check(
+                legalRequest, response, GenerateClaimResponse.DocumentType.NOTIFICATION
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("law article not mentioned"));
+    }
+
     private GenerateClaimRequest requestWithLegalContext() {
         GenerateClaimRequest base = request(true);
         return new GenerateClaimRequest(
@@ -407,7 +484,7 @@ class DocumentGuardrailServiceTest {
         return new GenerateDocumentResponse(
                 type,
                 type == GenerateClaimResponse.DocumentType.NOTIFICATION
-                        ? "Уведомление о составлении акта"
+                        ? "Уведомление о составлении акта о непредоставлении транспортного средства"
                         : "Акт о непредоставлении транспортного средства",
                 documentText,
                 "Факт срыва погрузки зафиксирован",
@@ -427,7 +504,7 @@ class DocumentGuardrailServiceTest {
         return """
                 От: ООО Экспедитор, ИНН 7800000000.
                 Кому: ООО Перевозчик, ИНН 7700000000.
-                По договору LF-1 и заявке ORD-1 транспортное средство не предоставлено.
+                Согласно п. 5.1 договора LF-1 и заявке ORD-1 транспортное средство не предоставлено.
                 Требования к ТС: тент 20 тонн.
                 Погрузка была назначена на 10.06.2026 по адресу: г. Москва, Складская улица, 1,
                 во временной интервал 09:00–11:00, маршрут Москва — Тверь.

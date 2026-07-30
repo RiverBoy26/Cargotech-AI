@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: ru.sber.cargotech.ai.claim.guardrail.RuleBasedGuardrailServiceTest
 -------------------------------------------------------------------------------
-Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.271 s -- in ru.sber.cargotech.ai.claim.guardrail.RuleBasedGuardrailServiceTest
+Tests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.465 s -- in ru.sber.cargotech.ai.claim.guardrail.RuleBasedGuardrailServiceTest

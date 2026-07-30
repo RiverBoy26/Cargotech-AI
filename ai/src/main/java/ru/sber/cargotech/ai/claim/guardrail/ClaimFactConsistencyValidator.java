@@ -36,6 +36,16 @@ public class ClaimFactConsistencyValidator {
     private static final Pattern UNSUPPORTED_INCIDENT_CIRCUMSTANCE_PATTERN = Pattern.compile(
             "(?iu)(?<![\\p{L}\\p{N}_])(?:поломк\\p{L}*|неисправност\\p{L}*|дтп|пробк\\p{L}*|опоздал\\p{L}*|покинул\\p{L}*|не\\s+дождал\\p{L}*|отказал\\p{L}*)(?![\\p{L}\\p{N}_])"
     );
+    private static final Pattern DISPATCHER_ATTRIBUTION_PATTERN = Pattern.compile(
+            "(?iu)диспетчер\\p{L}*\\s+(?:ООО|ИП|перевозчик\\p{L}*|заказчик\\p{L}*|"
+                    + "кредитор\\p{L}*|должник\\p{L}*|нашей\\s+организаци\\p{L}*|"
+                    + "вашей\\s+организаци\\p{L}*|своей\\s+организаци\\p{L}*)"
+    );
+    private static final Pattern PENALTY_PERIOD_PATTERN = Pattern.compile(
+            "(?iu)за\\s+период\\s+с\\s+(\\d{2}\\.\\d{2}\\.\\d{4})(?:\\s*г\\.)?\\s+по\\s+"
+                    + "(\\d{2}\\.\\d{2}\\.\\d{4})"
+    );
+
     private static final Pattern EXPLICIT_NON_PROVISION_PATTERN = Pattern.compile(
             "(?iu)(?:непредоставлени\\p{L}*\\s+(?:транспортн\\p{L}*\\s+средств\\p{L}*|тс)"
                     + "|срыв\\p{L}*\\s+погрузк\\p{L}*"
@@ -80,6 +90,7 @@ public class ClaimFactConsistencyValidator {
 
         if (facts.claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
             validatePaymentDelayFacts(facts, text, errors);
+            validatePenaltyPeriod(request, text, errors);
         } else if (facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
             validateLoadingFailureFacts(facts, request.backendCalculation(), text, narrative, errors, warnings);
         }
@@ -253,10 +264,103 @@ public class ClaimFactConsistencyValidator {
             validateAttachmentIdentity(attachment, facts, errors);
         }
 
+        validateRequiredPaymentAttachments(request, response.attachments(), errors);
         validateRequiredLoadingFailureAct(facts, response.attachments(), errors);
+        validateRequiredLoadingFailureOrder(facts, response.attachments(), errors);
 
         if (response.attachments() == null || response.attachments().isEmpty()) {
             warnings.add("Model returned no attachments");
+        }
+    }
+
+    private void validateRequiredPaymentAttachments(
+            GenerateClaimRequest request,
+            List<GenerateClaimResponse.Attachment> attachments,
+            List<String> errors
+    ) {
+        if (request == null || request.caseFacts() == null
+                || request.caseFacts().claimType() != GenerateClaimRequest.ClaimType.PAYMENT_DELAY) return;
+        GenerateClaimRequest.CaseFacts facts = request.caseFacts();
+        GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
+        if (facts.contract() != null && hasText(facts.contract().contractNumber())) {
+            requireAttachment(attachments, GenerateClaimResponse.DocumentType.CONTRACT,
+                    facts.contract().contractNumber(), null, errors);
+        }
+        if (shipment != null) {
+            if (hasText(shipment.actNumber()) || hasText(shipment.actDate())) {
+                requireAttachment(attachments, GenerateClaimResponse.DocumentType.ACT,
+                        shipment.actNumber(), shipment.actDate(), errors);
+            }
+            if (hasText(shipment.ttnNumber())) {
+                requireAttachment(attachments, GenerateClaimResponse.DocumentType.TTN,
+                        shipment.ttnNumber(), null, errors);
+            }
+            if (hasText(shipment.invoiceNumber())) {
+                requireAttachment(attachments, GenerateClaimResponse.DocumentType.INVOICE,
+                        shipment.invoiceNumber(), null, errors);
+            }
+        }
+        if (request.backendCalculation() != null) {
+            requireAttachment(attachments, GenerateClaimResponse.DocumentType.CALCULATION, null, null, errors);
+        }
+    }
+
+    private void validateRequiredLoadingFailureOrder(
+            GenerateClaimRequest.CaseFacts facts,
+            List<GenerateClaimResponse.Attachment> attachments,
+            List<String> errors
+    ) {
+        if (facts == null || facts.claimType() != GenerateClaimRequest.ClaimType.LOADING_FAILURE
+                || facts.shipment() == null || !hasText(facts.shipment().orderNumber())) return;
+        requireAttachment(attachments, GenerateClaimResponse.DocumentType.TRANSPORT_ORDER,
+                facts.shipment().orderNumber(), null, errors);
+    }
+
+    private void requireAttachment(
+            List<GenerateClaimResponse.Attachment> attachments,
+            GenerateClaimResponse.DocumentType type,
+            String identifier,
+            String date,
+            List<String> errors
+    ) {
+        for (GenerateClaimResponse.Attachment attachment : safeList(attachments)) {
+            if (attachment == null || attachment.documentType() != type
+                    || !Boolean.TRUE.equals(attachment.required()) || !hasText(attachment.documentName())) continue;
+            boolean identifierOk = !hasText(identifier)
+                    || normalize(attachment.documentName()).contains(normalize(identifier));
+            boolean dateOk = !hasText(date) || containsDate(attachment.documentName(), date);
+            if (identifierOk && dateOk) return;
+        }
+        errors.add("Claim must include required attachment " + type
+                + (hasText(identifier) ? " matching " + identifier : ""));
+    }
+
+    private void validatePenaltyPeriod(
+            GenerateClaimRequest request,
+            String text,
+            List<String> errors
+    ) {
+        if (request == null || request.caseFacts() == null || request.caseFacts().payment() == null
+                || request.backendCalculation() == null || !hasText(text)) return;
+        String dueValue = request.caseFacts().payment().paymentDueDate();
+        String claimValue = request.caseFacts().claimDate();
+        Integer overdueDays = request.backendCalculation().overdueDays();
+        if (!hasText(dueValue) || !hasText(claimValue) || overdueDays == null || overdueDays <= 0) return;
+
+        Matcher matcher = PENALTY_PERIOD_PATTERN.matcher(text);
+        if (!matcher.find()) return;
+        try {
+            LocalDate due = LocalDate.parse(dueValue, INPUT_DATE);
+            LocalDate claim = LocalDate.parse(claimValue, INPUT_DATE);
+            LocalDate actualStart = LocalDate.parse(matcher.group(1), INPUT_DATE);
+            LocalDate actualEnd = LocalDate.parse(matcher.group(2), INPUT_DATE);
+            LocalDate expectedStart = due.plusDays(1);
+            long actualInclusiveDays = java.time.temporal.ChronoUnit.DAYS.between(actualStart, actualEnd) + 1;
+            if (!actualStart.equals(expectedStart) || !actualEnd.equals(claim) || actualInclusiveDays != overdueDays) {
+                errors.add("claim_text contains penalty period inconsistent with payment_due_date, claim_date and overdue_days");
+            }
+        } catch (DateTimeParseException ignored) {
+            errors.add("claim_text contains an unparsable penalty period");
         }
     }
 
@@ -415,6 +519,9 @@ public class ClaimFactConsistencyValidator {
                 || normalized.contains("возместить ущерб")
                 || normalized.contains("убытк"))) {
             errors.add("claim_text changes CONTRACT_PENALTY into compensation, damages or loss recovery");
+        }
+        if (DISPATCHER_ATTRIBUTION_PATTERN.matcher(text).find()) {
+            errors.add("claim_text attributes dispatcher to a party although case_facts only confirms an unspecified dispatcher");
         }
         if (normalized.contains("непредставлен")) {
             warnings.add("Use the legal term «непредоставление транспортного средства», not «непредставление»");

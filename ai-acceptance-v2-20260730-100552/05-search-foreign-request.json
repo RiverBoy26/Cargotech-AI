@@ -1,0 +1,1 @@
+{"query":"штраф 50000 за непредоставление","min_score":0,"limit":10,"filters":{"rag_collection":"CONTRACT_CONTEXT","claim_type":"LOADING_FAILURE","is_current":true,"chunk_type":"LOADING_FAILURE_PENALTY","contract_id":"acc_contract_loading_2026","client_id":"acc_client_marshall"}}

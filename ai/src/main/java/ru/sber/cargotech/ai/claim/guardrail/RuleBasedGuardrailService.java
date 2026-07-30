@@ -3,6 +3,7 @@ package ru.sber.cargotech.ai.claim.guardrail;
 import org.springframework.stereotype.Service;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimRequest;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimResponse;
+import ru.sber.cargotech.ai.guardrail.CitationTextMatcher;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -29,6 +30,7 @@ public class RuleBasedGuardrailService {
             validateUsedContractClauses(request, response, errors, warnings);
             validateUsedLawArticles(request, response, errors, warnings);
             validateForbiddenText(response, errors);
+            validateUnsupportedInstanceQualifiers(response, errors);
             validateManualReview(response, errors);
             factConsistencyValidator.validate(request, response, errors, warnings);
         }
@@ -322,6 +324,11 @@ public class RuleBasedGuardrailService {
 
             if (!sameText(allowed.clauseNumber(), used.clauseNumber())) {
                 errors.add("Model contract chunk_id and clause_number do not match: " + used.chunkId());
+                continue;
+            }
+
+            if (!CitationTextMatcher.containsContractClauseReference(response.claimText(), used.clauseNumber())) {
+                errors.add("Model declared contract clause not mentioned in claim_text: " + used.clauseNumber());
             }
         }
     }
@@ -358,6 +365,7 @@ public class RuleBasedGuardrailService {
                 continue;
             }
 
+            boolean sourceValidated = false;
             if (!allowedByChunkId.isEmpty()) {
                 if (isBlank(used.chunkId())) {
                     errors.add("Model law citation must contain chunk_id");
@@ -372,10 +380,35 @@ public class RuleBasedGuardrailService {
 
                 if (!sameText(allowed.lawCode(), used.lawCode()) || !sameText(allowed.article(), used.article())) {
                     errors.add("Model legal chunk_id does not match law_code/article: " + used.chunkId());
+                    continue;
                 }
-            } else if (!legacyAllowedPairs.contains(normalizeKey(used.lawCode(), used.article()))) {
+                sourceValidated = true;
+            } else if (legacyAllowedPairs.contains(normalizeKey(used.lawCode(), used.article()))) {
+                sourceValidated = true;
+            } else {
                 errors.add("Model used law article not present in legal_context: " + used.lawCode() + " " + used.article());
             }
+
+            if (sourceValidated && !CitationTextMatcher.containsLegalReference(
+                    response.claimText(), used.lawCode(), used.article())) {
+                errors.add("Model declared law article not mentioned in claim_text: "
+                        + used.lawCode() + " " + used.article());
+            }
+        }
+    }
+
+    private void validateUnsupportedInstanceQualifiers(
+            GenerateClaimResponse response,
+            List<String> errors
+    ) {
+        List<String> values = new ArrayList<>();
+        values.add(response.claimText());
+        values.add(response.summaryForLawyer());
+        for (GenerateClaimResponse.Attachment attachment : safeList(response.attachments())) {
+            if (attachment != null) values.add(attachment.documentName());
+        }
+        if (CitationTextMatcher.containsUnsupportedInstanceQualifier(values.toArray(String[]::new))) {
+            errors.add("Model invents document instance type (original/copy) absent from case_facts");
         }
     }
 

@@ -20,6 +20,7 @@ ru\sber\cargotech\ai\claim\dto\GenerateClaimRequest.class
 ru\sber\cargotech\ai\rag\dto\IndexRagChunksRequest$IndexRagChunk.class
 ru\sber\cargotech\ai\rag\dto\PaymentDelayRagContextResponse.class
 ru\sber\cargotech\ai\claim\guardrail\GuardrailDecision.class
+ru\sber\cargotech\ai\guardrail\GeneratedOutputNormalizer.class
 ru\sber\cargotech\ai\gigachat\dto\GigaChatEmbeddingsRequest.class
 ru\sber\cargotech\ai\document\guardrail\DocumentGuardrailService$TimeMention.class
 ru\sber\cargotech\ai\gigachat\dto\GigaChatEmbeddingsResponse$Usage.class
@@ -34,6 +35,7 @@ ru\sber\cargotech\ai\claim\dto\GenerateClaimRequest$ClaimType.class
 ru\sber\cargotech\ai\claim\dto\GenerateClaimRequest$TemplateContext.class
 ru\sber\cargotech\ai\claim\guardrail\ClaimFactConsistencyValidator$1.class
 ru\sber\cargotech\ai\config\AiDiagnosticsProperties.class
+ru\sber\cargotech\ai\guardrail\CitationTextMatcher.class
 ru\sber\cargotech\ai\gigachat\GigaChatEmbeddingClient.class
 ru\sber\cargotech\ai\rag\RagChunk.class
 ru\sber\cargotech\ai\AiApplication.class

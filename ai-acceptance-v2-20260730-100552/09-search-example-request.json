@@ -1,0 +1,1 @@
+{"query":"стилевой пример срыв погрузки","min_score":0,"limit":5,"filters":{"rag_collection":"SIMILAR_EXAMPLE","claim_type":"LOADING_FAILURE","is_current":true}}

@@ -51,6 +51,8 @@ public class PaymentDelayPromptBuilder {
                 17. Тон документа — официальный, сухой, юридически нейтральный.
                 18. Верни только валидный JSON без markdown, без пояснений и без текста вне JSON.
                 19. Поле manual_review_required всегда устанавливай в true.
+                20. Не называй приложение оригиналом или копией: тип экземпляра документа во входных данных отсутствует.
+                21. В used_contract_clauses и used_law_articles включай только источники, которые прямо процитированы в claim_text.
                 """;
     }
 
@@ -126,12 +128,14 @@ public class PaymentDelayPromptBuilder {
                 1. Каждый clause_number должен существовать в contract_context.
                 2. Каждый chunk_id должен существовать в contract_context.
                 3. Не включай неиспользованные пункты договора.
+                4. Каждый указанный clause_number явно напиши в claim_text в форме «п. <номер>» или «пункт <номер>».
 
                 Требования к used_law_articles:
                 1. Каждая статья должна существовать в legal_context.
                 2. Каждый chunk_id должен существовать в legal_context и соответствовать указанным law_code и article.
                 3. Не добавляй статьи самостоятельно.
                 4. Не включай неиспользованные статьи.
+                5. Каждую указанную норму явно процитируй в claim_text вместе с номером статьи и названием закона, например «ст. 309 ГК РФ».
 
                 Требования к backend_calculation_used:
                 1. Скопируй значения из backend_calculation без пересчёта.
@@ -144,6 +148,7 @@ public class PaymentDelayPromptBuilder {
                 3. Если документ упомянут в claim_text как приложение, он должен присутствовать в attachments.
                 4. document_type выбирай только из списка: CONTRACT, ACT, TTN, INVOICE, CALCULATION, PAYMENT_EXTRACT, TRANSPORT_ORDER, LOADING_FAILURE_ACT, NOTIFICATION, OTHER.
                 5. Для товарно-транспортной накладной / ТТН всегда используй document_type = TTN. Не используй TIR_TRANSPORT_DOCUMENT, WAYBILL или TRANSPORT_WAYBILL.
+                6. Не добавляй к названию документа слова «оригинал», «копия», «оригинал прилагается» или «копия прилагается».
                 """.replace("{INPUT_JSON}", inputJson);
     }
 

@@ -44,6 +44,8 @@ C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\gigac
 C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\gigachat\GigaChatAuthService.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\gigachat\GigaChatClient.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\gigachat\GigaChatEmbeddingClient.java
+C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\guardrail\CitationTextMatcher.java
+C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\guardrail\GeneratedOutputNormalizer.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\llm\logging\LlmCallLog.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\llm\logging\LlmCallStatus.java
 C:\Users\aramb\projects\Cargotech-AI\ai\src\main\java\ru\sber\cargotech\ai\llm\logging\LlmLogController.java

@@ -12,6 +12,7 @@ import ru.sber.cargotech.ai.claim.parser.ClaimResponseParser;
 import ru.sber.cargotech.ai.claim.prompt.LoadingFailurePromptBuilder;
 import ru.sber.cargotech.ai.claim.prompt.PaymentDelayPromptBuilder;
 import ru.sber.cargotech.ai.gigachat.GigaChatClient;
+import ru.sber.cargotech.ai.guardrail.GeneratedOutputNormalizer;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatResponse;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
 import ru.sber.cargotech.ai.rag.RagSearchService;
@@ -66,17 +67,19 @@ public class ClaimGenerationPipelineService {
                 chatResponse,
                 "GigaChat returned empty claim generation response"
         );
-        GenerateClaimResponse generatedClaim = claimResponseParser.parse(rawModelResponse);
+        GenerateClaimResponse generatedClaim = GeneratedOutputNormalizer.normalizeClaim(
+                enrichedRequest,
+                claimResponseParser.parse(rawModelResponse)
+        );
         GuardrailResult guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
         GigaChatChatResponse.Usage totalUsage = chatResponse.usage();
         String requestId = callResult.requestId();
 
-        if (enrichedRequest.caseFacts().claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE
-                && guardrailResult.decision() == GuardrailDecision.BLOCK) {
+        if (shouldRepair(guardrailResult)) {
             List<GigaChatMessage> repairMessages = buildRepairMessages(
                     messages,
                     rawModelResponse,
-                    guardrailResult.errors()
+                    repairIssues(guardrailResult)
             );
             GigaChatClient.ChatCallResult repairCall = gigaChatClient.sendChatWithTrace(
                     repairMessages,
@@ -88,7 +91,10 @@ public class ClaimGenerationPipelineService {
                     repairResponse,
                     "GigaChat returned empty claim repair response"
             );
-            generatedClaim = claimResponseParser.parse(repairedRaw);
+            generatedClaim = GeneratedOutputNormalizer.normalizeClaim(
+                    enrichedRequest,
+                    claimResponseParser.parse(repairedRaw)
+            );
             guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
             totalUsage = mergeUsage(totalUsage, repairResponse.usage());
             requestId = repairCall.requestId();
@@ -119,29 +125,64 @@ public class ClaimGenerationPipelineService {
     private List<GigaChatMessage> buildRepairMessages(
             List<GigaChatMessage> originalMessages,
             String blockedResponse,
-            List<String> errors
+            List<String> issues
     ) {
         List<GigaChatMessage> messages = new ArrayList<>(originalMessages);
         messages.add(new GigaChatMessage("assistant", blockedResponse));
         messages.add(new GigaChatMessage(
                 "user",
                 """
-                Предыдущий JSON заблокирован детерминированными проверками.
+                Предыдущий JSON не прошёл детерминированные проверки.
 
-                Исправь полный JSON-ответ, устранив каждую ошибку из списка:
+                Исправь полный JSON-ответ, устранив каждую ошибку и предупреждение из списка:
                 - %s
 
                 Обязательные правила ремонта:
                 1. Верни полный объект GenerateClaimResponse, а не фрагмент и не объяснение.
                 2. Сохрани только факты из исходного входного JSON и RAG-контекста.
                 3. Дословно перенеси все обязательные номера, даты, маршрут, адрес, временное окно и суммы.
+                3.1. Не смешивай кириллицу и латиницу внутри идентификаторов: ТТН, номера договора, заявки, акта и счёта должны совпадать с исходным JSON посимвольно.
                 4. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
                 5. Не используй термин «непредставление транспортного средства».
                 6. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
-                7. Верни только валидный JSON без markdown и текста вне JSON.
-                """.formatted(String.join("\n- ", errors == null ? List.of() : errors))
+                7. Не называй приложения оригиналами или копиями, если тип экземпляра не передан во входных данных.
+                8. Каждый элемент used_contract_clauses должен быть явно процитирован в claim_text как «п. <номер>» или «пункт <номер>»; иначе удали его из массива.
+                9. Каждый элемент used_law_articles должен быть явно процитирован в claim_text вместе с номером статьи и названием закона; иначе удали его из массива.
+                10. Верни только валидный JSON без markdown и текста вне JSON.
+                """.formatted(String.join("\n- ", issues == null ? List.of() : issues))
         ));
         return messages;
+    }
+
+    private boolean shouldRepair(GuardrailResult result) {
+        if (result == null) {
+            return false;
+        }
+        if (result.decision() == GuardrailDecision.BLOCK) {
+            return true;
+        }
+        if (result.decision() != GuardrailDecision.REVIEW) {
+            return false;
+        }
+        return result.warnings() != null && result.warnings().stream()
+                .filter(java.util.Objects::nonNull)
+                .map(this::normalize)
+                .anyMatch(warning -> warning.contains("непредставлен")
+                        || warning.contains("use the legal term"));
+    }
+
+    private List<String> repairIssues(GuardrailResult result) {
+        List<String> issues = new ArrayList<>();
+        if (result == null) {
+            return issues;
+        }
+        if (result.errors() != null) {
+            issues.addAll(result.errors());
+        }
+        if (result.warnings() != null) {
+            issues.addAll(result.warnings());
+        }
+        return List.copyOf(issues);
     }
 
     private GigaChatChatResponse.Usage mergeUsage(

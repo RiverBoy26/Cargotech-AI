@@ -30,8 +30,9 @@ class RuleBasedGuardrailServiceTest {
                 Претензия по договору №45/2026 от 10.01.2026.
                 Перевозка по маршруту Санкт-Петербург — Москва.
                 Услуги подтверждены актом №157 от 01.05.2026.
-                Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
-                неустойка — 2 400 руб., итого к оплате — 242 400 руб.
+                В соответствии с п. 4.2 договора и ст. 309 ГК РФ срок оплаты истёк 31.05.2026.
+                Основной долг составляет 240 000 руб., неустойка — 2 400 руб.,
+                итого к оплате — 242 400 руб.
                 """;
 
         GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
@@ -87,6 +88,36 @@ class RuleBasedGuardrailServiceTest {
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
         assertThat(result.errors()).anyMatch(error -> error.contains("amount not present"));
+    }
+
+    @Test
+    void blocksUnsupportedOriginalOrCopyQualifier() {
+        String text = validText() + " Приложение: акт №157, оригинал прилагается.";
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("original/copy"));
+    }
+
+    @Test
+    void blocksDeclaredContractClauseMissingFromClaimText() {
+        String text = validText().replace("п. 4.2 договора", "условиями договора");
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("contract clause not mentioned"));
+    }
+
+    @Test
+    void blocksDeclaredLawArticleMissingFromClaimText() {
+        String text = validText().replace("и ст. 309 ГК РФ", "");
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("law article not mentioned"));
     }
 
     @Test
@@ -184,6 +215,50 @@ class RuleBasedGuardrailServiceTest {
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
         assertThat(result.errors()).anyMatch(error -> error.contains("changes CONTRACT_PENALTY"));
+    }
+
+    @Test
+    void blocksDispatcherAttributionToCarrier() {
+        String text = detailedLoadingText().replace(
+                "подтверждён актом",
+                "подтверждён диспетчером ООО Перевозчик и актом"
+        );
+
+        GuardrailResult result = service.check(detailedLoadingRequest(), detailedLoadingResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("attributes dispatcher to a party"));
+    }
+
+    @Test
+    void blocksIncorrectPenaltyPeriodWhenItIsExplicitlyStated() {
+        String text = validText() + " Неустойка рассчитана за период с 31.05.2026 по 10.06.2026.";
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("penalty period inconsistent"));
+    }
+
+    @Test
+    void blocksIncompletePaymentAttachmentPackage() {
+        GenerateClaimResponse base = validPaymentResponse(validText());
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                base.claimType(), base.claimText(), base.summaryForLawyer(),
+                base.usedContractClauses(), base.usedLawArticles(), base.backendCalculationUsed(),
+                List.of(new GenerateClaimResponse.Attachment(
+                        GenerateClaimResponse.DocumentType.ACT, "Акт 157 от 01.05.2026", true
+                )),
+                base.warnings(), base.manualReviewRequired()
+        );
+
+        GuardrailResult result = service.check(paymentRequest(true), response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("required attachment CONTRACT"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("required attachment TTN"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("required attachment INVOICE"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("required attachment CALCULATION"));
     }
 
     @Test
@@ -334,11 +409,18 @@ class RuleBasedGuardrailServiceTest {
                         0,
                         "RUB"
                 ),
-                List.of(new GenerateClaimResponse.Attachment(
-                        GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT,
-                        "Акт о срыве погрузки № ACT-LF-200 от 12.06.2026",
-                        true
-                )),
+                List.of(
+                        new GenerateClaimResponse.Attachment(
+                                GenerateClaimResponse.DocumentType.TRANSPORT_ORDER,
+                                "Транспортная заявка № ORD-LF-200",
+                                true
+                        ),
+                        new GenerateClaimResponse.Attachment(
+                                GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT,
+                                "Акт о срыве погрузки № ACT-LF-200 от 12.06.2026",
+                                true
+                        )
+                ),
                 List.of(),
                 true
         );
@@ -351,8 +433,9 @@ class RuleBasedGuardrailServiceTest {
                 Претензия по договору № LF-77/2026 от 05.02.2026.
                 По заявке № ORD-LF-200 от 12.06.2026 требовался тент 20 т по маршруту Москва-Казань.
                 Погрузка была назначена на складе №4 в Москве с 09:00 до 12:00.
+                В соответствии с п. 5.1 договора транспортное средство должно было быть предоставлено к погрузке.
                 Факт непредоставления транспортного средства подтверждён актом № ACT-LF-200 от 12.06.2026.
-                На основании нарушения просим оплатить штраф 15 000 руб.
+                На основании п. 6.4 договора и ст. 330 ГК РФ просим оплатить штраф 15 000 руб.
                 """;
     }
 
@@ -452,7 +535,7 @@ class RuleBasedGuardrailServiceTest {
                 ),
                 List.of(
                         new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.CONTRACT, "Договор 45/2026", true),
-                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.ACT, "Акт 157", true),
+                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.ACT, "Акт 157 от 01.05.2026", true),
                         new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.TTN, "ТТН-157", true),
                         new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.INVOICE, "INV-157", true),
                         new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.CALCULATION, "Расчёт", true)
@@ -469,8 +552,9 @@ class RuleBasedGuardrailServiceTest {
                 Претензия по договору №45/2026 от 10.01.2026.
                 Перевозка по маршруту Санкт-Петербург — Москва, заказ ORD-157.
                 Услуги подтверждены актом №157 от 01.05.2026, ТТН-157 и счётом INV-157.
-                Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
-                неустойка — 2 400 руб., итого к оплате — 242 400 руб.
+                В соответствии с п. 4.2 договора и ст. 309 ГК РФ срок оплаты истёк 31.05.2026.
+                Основной долг составляет 240 000 руб., неустойка — 2 400 руб.,
+                итого к оплате — 242 400 руб.
                 """;
     }
 }
