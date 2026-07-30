@@ -2,6 +2,7 @@ package ru.sber.cargotech.ai.rag;
 
 import org.springframework.stereotype.Service;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimRequest;
+import ru.sber.cargotech.ai.config.RagSearchProperties;
 import ru.sber.cargotech.ai.gigachat.GigaChatEmbeddingClient;
 import ru.sber.cargotech.ai.qdrant.QdrantRestClient;
 import ru.sber.cargotech.ai.rag.dto.PaymentDelayRagContextRequest;
@@ -20,13 +21,16 @@ public class RagSearchService {
 
     private final GigaChatEmbeddingClient embeddingClient;
     private final QdrantRestClient qdrantRestClient;
+    private final RagSearchProperties searchProperties;
 
     public RagSearchService(
             GigaChatEmbeddingClient embeddingClient,
-            QdrantRestClient qdrantRestClient
+            QdrantRestClient qdrantRestClient,
+            RagSearchProperties searchProperties
     ) {
         this.embeddingClient = embeddingClient;
         this.qdrantRestClient = qdrantRestClient;
+        this.searchProperties = searchProperties;
     }
 
     public SearchRagChunksResponse searchRequest(SearchRagChunksRequest request) {
@@ -37,15 +41,12 @@ public class RagSearchService {
         int limit = normalizeLimit(request.limit());
         double minScore = request.minScore() == null ? 0.0 : request.minScore();
 
-        List<RagSearchHit> hits = search(
+        List<RagSearchHit> filteredHits = search(
                 request.query(),
                 request.filters() == null ? Map.of() : request.filters(),
-                limit
+                limit,
+                minScore
         );
-
-        List<RagSearchHit> filteredHits = hits.stream()
-                .filter(hit -> hit.score() == null || hit.score() >= minScore)
-                .toList();
 
         List<String> warnings = new ArrayList<>();
 
@@ -67,14 +68,27 @@ public class RagSearchService {
     }
 
     public List<RagSearchHit> search(String query, Map<String, Object> filters, int limit) {
+        return search(query, filters, limit, null);
+    }
+
+    public List<RagSearchHit> search(
+            String query,
+            Map<String, Object> filters,
+            int limit,
+            Double minScore
+    ) {
         if (query == null || query.isBlank()) {
             throw new IllegalArgumentException("RAG query is blank");
+        }
+
+        if (minScore != null && (minScore < 0.0 || minScore > 1.0)) {
+            throw new IllegalArgumentException("RAG minScore must be between 0 and 1");
         }
 
         int normalizedLimit = normalizeLimit(limit);
 
         List<Double> vector = embeddingClient.embedOne(query);
-        Object raw = qdrantRestClient.queryPoints(vector, filters, normalizedLimit);
+        Object raw = qdrantRestClient.queryPoints(vector, filters, normalizedLimit, minScore);
 
         return parseHits(raw);
     }
@@ -128,18 +142,22 @@ public class RagSearchService {
             throw new IllegalArgumentException("contractId is required");
         }
 
+        if (clientId == null || clientId.isBlank()) {
+            throw new IllegalArgumentException("clientId is required for tenant-isolated contract retrieval");
+        }
+
         if (claimType == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
-            return retrievePaymentDelayClaimContext(contractId);
+            return retrievePaymentDelayClaimContext(contractId, clientId);
         }
 
         if (claimType == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
-            return retrieveLoadingFailureClaimContext(contractId);
+            return retrieveLoadingFailureClaimContext(contractId, clientId);
         }
 
         throw new IllegalArgumentException("Unsupported claimType for RAG context: " + claimType);
     }
 
-    private ClaimRagContext retrievePaymentDelayClaimContext(String contractId) {
+    private ClaimRagContext retrievePaymentDelayClaimContext(String contractId, String clientId) {
         List<RagSearchHit> contractHits = new ArrayList<>();
 
         contractHits.addAll(search(
@@ -148,10 +166,12 @@ public class RagSearchService {
                         "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
                         "claim_type", "PAYMENT_DELAY",
                         "contract_id", contractId,
+                        "client_id", clientId,
                         "chunk_type", RagChunkType.PAYMENT_TERM.name(),
                         "is_current", true
                 ),
-                2
+                2,
+                searchProperties.getContractMinScore()
         ));
 
         contractHits.addAll(search(
@@ -160,10 +180,12 @@ public class RagSearchService {
                         "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
                         "claim_type", "PAYMENT_DELAY",
                         "contract_id", contractId,
+                        "client_id", clientId,
                         "chunk_type", RagChunkType.CONTRACT_PENALTY.name(),
                         "is_current", true
                 ),
-                2
+                2,
+                searchProperties.getContractMinScore()
         ));
 
         contractHits.addAll(search(
@@ -172,10 +194,12 @@ public class RagSearchService {
                         "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
                         "claim_type", "PAYMENT_DELAY",
                         "contract_id", contractId,
+                        "client_id", clientId,
                         "chunk_type", RagChunkType.PRETRIAL_ORDER.name(),
                         "is_current", true
                 ),
-                2
+                2,
+                searchProperties.getContractMinScore()
         ));
 
         List<RagSearchHit> legalHits = search(
@@ -185,7 +209,8 @@ public class RagSearchService {
                         "claim_type", "PAYMENT_DELAY",
                         "is_current", true
                 ),
-                4
+                4,
+                searchProperties.getLegalMinScore()
         );
 
         List<RagSearchHit> templateHits = search(
@@ -195,7 +220,8 @@ public class RagSearchService {
                         "claim_type", "PAYMENT_DELAY",
                         "is_current", true
                 ),
-                1
+                1,
+                searchProperties.getTemplateMinScore()
         );
 
         List<RagSearchHit> exampleHits = search(
@@ -205,7 +231,8 @@ public class RagSearchService {
                         "claim_type", "PAYMENT_DELAY",
                         "is_current", true
                 ),
-                1
+                1,
+                searchProperties.getExampleMinScore()
         );
 
         return toClaimContext(
@@ -217,7 +244,7 @@ public class RagSearchService {
         );
     }
 
-    private ClaimRagContext retrieveLoadingFailureClaimContext(String contractId) {
+    private ClaimRagContext retrieveLoadingFailureClaimContext(String contractId, String clientId) {
         List<RagSearchHit> contractHits = new ArrayList<>();
 
         contractHits.addAll(search(
@@ -226,10 +253,12 @@ public class RagSearchService {
                         "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
                         "claim_type", "LOADING_FAILURE",
                         "contract_id", contractId,
+                        "client_id", clientId,
                         "chunk_type", RagChunkType.VEHICLE_SUPPLY_DUTY.name(),
                         "is_current", true
                 ),
-                2
+                2,
+                searchProperties.getContractMinScore()
         ));
 
         contractHits.addAll(search(
@@ -238,10 +267,12 @@ public class RagSearchService {
                         "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
                         "claim_type", "LOADING_FAILURE",
                         "contract_id", contractId,
+                        "client_id", clientId,
                         "chunk_type", RagChunkType.LOADING_FAILURE_PENALTY.name(),
                         "is_current", true
                 ),
-                2
+                2,
+                searchProperties.getContractMinScore()
         ));
 
         contractHits.addAll(search(
@@ -250,10 +281,12 @@ public class RagSearchService {
                         "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
                         "claim_type", "LOADING_FAILURE",
                         "contract_id", contractId,
+                        "client_id", clientId,
                         "chunk_type", RagChunkType.PRETRIAL_ORDER.name(),
                         "is_current", true
                 ),
-                2
+                2,
+                searchProperties.getContractMinScore()
         ));
 
         List<RagSearchHit> legalHits = search(
@@ -263,7 +296,8 @@ public class RagSearchService {
                         "claim_type", "LOADING_FAILURE",
                         "is_current", true
                 ),
-                4
+                4,
+                searchProperties.getLegalMinScore()
         );
 
         List<RagSearchHit> templateHits = search(
@@ -273,7 +307,8 @@ public class RagSearchService {
                         "claim_type", "LOADING_FAILURE",
                         "is_current", true
                 ),
-                1
+                1,
+                searchProperties.getTemplateMinScore()
         );
 
         List<RagSearchHit> exampleHits = search(
@@ -283,7 +318,8 @@ public class RagSearchService {
                         "claim_type", "LOADING_FAILURE",
                         "is_current", true
                 ),
-                1
+                1,
+                searchProperties.getExampleMinScore()
         );
 
         return toClaimContext(
@@ -318,9 +354,14 @@ public class RagSearchService {
                 .map(RagSearchHit::chunk)
                 .filter(Objects::nonNull)
                 .map(chunk -> new GenerateClaimRequest.LegalContextItem(
+                        chunk.chunkId(),
                         str(chunk.extra().get("law_code")),
                         str(chunk.extra().get("article")),
-                        str(chunk.extra().get("purpose"))
+                        str(chunk.extra().get("purpose")),
+                        chunk.text(),
+                        chunk.citation(),
+                        str(chunk.extra().get("verified_at")),
+                        str(chunk.extra().get("applicability"))
                 ))
                 .distinct()
                 .toList();

@@ -16,6 +16,7 @@ public class RagIndexRequestMapper {
     private static final Pattern CARD = Pattern.compile("\\b\\d{4}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b");
     private static final Pattern PHONE = Pattern.compile("(?:\\+7|8)[\\s(-]?\\d{3}[\\s)-]?\\d{3}[\\s-]?\\d{2}[\\s-]?\\d{2}");
     private static final Pattern EMAIL = Pattern.compile("\\b[\\w.+-]+@[\\w-]+\\.[\\w.-]+\\b");
+    private static final Pattern VEHICLE_NUMBER = Pattern.compile("(?iu)(?<![А-ЯA-Z0-9])[АВЕКМНОРСТУХABEKMHOPCTYX]\\s?\\d{3}\\s?[АВЕКМНОРСТУХABEKMHOPCTYX]{2}\\s?\\d{2,3}(?![А-ЯA-Z0-9])");
 
     public List<RagChunk> toChunks(IndexRagChunksRequest request) {
         List<String> errors = new ArrayList<>();
@@ -51,7 +52,11 @@ public class RagIndexRequestMapper {
             }
 
             if (input != null) {
-                validateNoRawPii(input.text(), prefix, errors);
+                validateNoRawPii(input.sourceTitle(), prefix + ".source_title", errors);
+                validateNoRawPii(input.sectionTitle(), prefix + ".section_title", errors);
+                validateNoRawPii(input.text(), prefix + ".text", errors);
+                validateNoRawPii(input.citation(), prefix + ".citation", errors);
+                validateNoRawPiiInObject(input.extra(), prefix + ".extra", errors);
                 validateNoBrokenEncoding(input.chunkId(), prefix + ".chunk_id", errors);
                 validateNoBrokenEncoding(input.claimType(), prefix + ".claim_type", errors);
                 validateNoBrokenEncoding(input.clientId(), prefix + ".client_id", errors);
@@ -114,6 +119,7 @@ public class RagIndexRequestMapper {
         }
 
         if (chunk.ragCollection() == RagCollection.CONTRACT_CONTEXT) {
+            require(chunk.clientId(), prefix + ".client_id", errors);
             require(chunk.contractId(), prefix + ".contract_id", errors);
             require(chunk.contractNumber(), prefix + ".contract_number", errors);
             require(chunk.contractDate(), prefix + ".contract_date", errors);
@@ -192,23 +198,53 @@ public class RagIndexRequestMapper {
         }
 
         if (PASSPORT.matcher(text).find()) {
-            errors.add(prefix + ".text contains possible raw passport data. Mask PII before embeddings.");
+            errors.add(prefix + " contains possible raw passport data. Mask PII before embeddings.");
         }
 
         if (PHONE.matcher(text).find()) {
-            errors.add(prefix + ".text contains possible raw phone. Mask PII before embeddings.");
+            errors.add(prefix + " contains possible raw phone. Mask PII before embeddings.");
         }
 
         if (EMAIL.matcher(text).find()) {
-            errors.add(prefix + ".text contains possible raw email. Mask PII before embeddings.");
+            errors.add(prefix + " contains possible raw email. Mask PII before embeddings.");
         }
 
         if (CARD.matcher(text).find()) {
-            errors.add(prefix + ".text contains possible raw bank card. Mask PII before embeddings.");
+            errors.add(prefix + " contains possible raw bank card. Mask PII before embeddings.");
         }
 
         if (BANK_ACCOUNT.matcher(text).find()) {
-            errors.add(prefix + ".text contains possible raw bank account. Mask PII before embeddings.");
+            errors.add(prefix + " contains possible raw bank account. Mask PII before embeddings.");
+        }
+
+        if (VEHICLE_NUMBER.matcher(text).find()) {
+            errors.add(prefix + " contains possible raw vehicle number. Mask PII before embeddings.");
+        }
+    }
+
+    private void validateNoRawPiiInObject(Object value, String field, List<String> errors) {
+        if (value == null) {
+            return;
+        }
+
+        if (value instanceof String stringValue) {
+            validateNoRawPii(stringValue, field, errors);
+            return;
+        }
+
+        if (value instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                validateNoRawPiiInObject(entry.getValue(), field + "." + entry.getKey(), errors);
+            }
+            return;
+        }
+
+        if (value instanceof Iterable<?> iterable) {
+            int i = 0;
+            for (Object item : iterable) {
+                validateNoRawPiiInObject(item, field + "[" + i + "]", errors);
+                i++;
+            }
         }
     }
 

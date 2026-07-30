@@ -79,11 +79,24 @@ public class QdrantRestClient {
             Map<String, Object> exactFilters,
             int limit
     ) {
+        return queryPoints(queryVector, exactFilters, limit, null);
+    }
+
+    public Object queryPoints(
+            List<Double> queryVector,
+            Map<String, Object> exactFilters,
+            int limit,
+            Double scoreThreshold
+    ) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("query", queryVector);
         body.put("limit", limit);
         body.put("with_payload", true);
         body.put("with_vector", false);
+
+        if (scoreThreshold != null) {
+            body.put("score_threshold", scoreThreshold);
+        }
 
         Map<String, Object> filter = buildFilter(exactFilters);
 

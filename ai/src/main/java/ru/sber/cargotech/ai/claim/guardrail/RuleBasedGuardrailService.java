@@ -10,6 +10,12 @@ import java.util.*;
 @Service
 public class RuleBasedGuardrailService {
 
+    private final ClaimFactConsistencyValidator factConsistencyValidator;
+
+    public RuleBasedGuardrailService(ClaimFactConsistencyValidator factConsistencyValidator) {
+        this.factConsistencyValidator = factConsistencyValidator;
+    }
+
     public GuardrailResult check(GenerateClaimRequest request, GenerateClaimResponse response) {
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
@@ -24,6 +30,7 @@ public class RuleBasedGuardrailService {
             validateUsedLawArticles(request, response, errors, warnings);
             validateForbiddenText(response, errors);
             validateManualReview(response, errors);
+            factConsistencyValidator.validate(request, response, errors, warnings);
         }
 
         GuardrailDecision decision;
@@ -98,8 +105,10 @@ public class RuleBasedGuardrailService {
             return;
         }
 
-        if (request.caseFacts().payment().paymentStatus() != GenerateClaimRequest.PaymentStatus.UNPAID) {
-            errors.add("payment_status must be UNPAID for PAYMENT_DELAY claim");
+        GenerateClaimRequest.PaymentStatus paymentStatus = request.caseFacts().payment().paymentStatus();
+        if (paymentStatus != GenerateClaimRequest.PaymentStatus.UNPAID
+                && paymentStatus != GenerateClaimRequest.PaymentStatus.PARTIALLY_PAID) {
+            errors.add("payment_status must be UNPAID or PARTIALLY_PAID for PAYMENT_DELAY claim");
         }
 
         if (!Boolean.TRUE.equals(request.caseFacts().payment().paymentConfirmedByAccountant())) {
@@ -132,7 +141,7 @@ public class RuleBasedGuardrailService {
         }
 
         if (!Boolean.TRUE.equals(shipment.failureConfirmedByDispatcher())) {
-            warnings.add("loading failure is not confirmed by dispatcher");
+            errors.add("loading failure must be confirmed by dispatcher before a monetary claim is generated");
         }
     }
 
@@ -166,6 +175,13 @@ public class RuleBasedGuardrailService {
 
         if (calculation.overdueDays() != null && calculation.overdueDays() < 0) {
             errors.add("backend_calculation.overdue_days must be zero or positive");
+        }
+
+        if (calculation.principalDebt() != null
+                && calculation.penaltyAmount() != null
+                && calculation.totalAmount() != null
+                && calculation.principalDebt().add(calculation.penaltyAmount()).compareTo(calculation.totalAmount()) != 0) {
+            errors.add("backend_calculation.total_amount must equal principal_debt + penalty_amount");
         }
 
         if (claimType == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
@@ -277,16 +293,11 @@ public class RuleBasedGuardrailService {
             List<String> errors,
             List<String> warnings
     ) {
-        Set<String> allowedChunkIds = new HashSet<>();
-        Set<String> allowedClauseNumbers = new HashSet<>();
+        Map<String, GenerateClaimRequest.ContractContextChunk> allowedByChunkId = new HashMap<>();
 
         for (GenerateClaimRequest.ContractContextChunk chunk : safeList(request.contractContext())) {
-            if (!isBlank(chunk.chunkId())) {
-                allowedChunkIds.add(chunk.chunkId());
-            }
-
-            if (!isBlank(chunk.clauseNumber())) {
-                allowedClauseNumbers.add(chunk.clauseNumber());
+            if (chunk != null && !isBlank(chunk.chunkId())) {
+                allowedByChunkId.put(chunk.chunkId(), chunk);
             }
         }
 
@@ -298,12 +309,19 @@ public class RuleBasedGuardrailService {
         }
 
         for (GenerateClaimResponse.UsedContractClause used : usedClauses) {
-            if (!isBlank(used.chunkId()) && !allowedChunkIds.contains(used.chunkId())) {
-                errors.add("Model used unknown contract chunk_id: " + used.chunkId());
+            if (used == null || isBlank(used.chunkId())) {
+                errors.add("Model contract citation must contain chunk_id");
+                continue;
             }
 
-            if (!isBlank(used.clauseNumber()) && !allowedClauseNumbers.contains(used.clauseNumber())) {
-                errors.add("Model used unknown contract clause_number: " + used.clauseNumber());
+            GenerateClaimRequest.ContractContextChunk allowed = allowedByChunkId.get(used.chunkId());
+            if (allowed == null) {
+                errors.add("Model used unknown contract chunk_id: " + used.chunkId());
+                continue;
+            }
+
+            if (!sameText(allowed.clauseNumber(), used.clauseNumber())) {
+                errors.add("Model contract chunk_id and clause_number do not match: " + used.chunkId());
             }
         }
     }
@@ -314,11 +332,16 @@ public class RuleBasedGuardrailService {
             List<String> errors,
             List<String> warnings
     ) {
-        Set<String> allowedArticles = new HashSet<>();
+        Map<String, GenerateClaimRequest.LegalContextItem> allowedByChunkId = new HashMap<>();
+        Set<String> legacyAllowedPairs = new HashSet<>();
 
         for (GenerateClaimRequest.LegalContextItem item : safeList(request.legalContext())) {
-            if (!isBlank(item.lawCode()) && !isBlank(item.article())) {
-                allowedArticles.add(normalizeKey(item.lawCode(), item.article()));
+            if (item == null || isBlank(item.lawCode()) || isBlank(item.article())) {
+                continue;
+            }
+            legacyAllowedPairs.add(normalizeKey(item.lawCode(), item.article()));
+            if (!isBlank(item.chunkId())) {
+                allowedByChunkId.put(item.chunkId(), item);
             }
         }
 
@@ -330,9 +353,27 @@ public class RuleBasedGuardrailService {
         }
 
         for (GenerateClaimResponse.UsedLawArticle used : usedArticles) {
-            String key = normalizeKey(used.lawCode(), used.article());
+            if (used == null) {
+                errors.add("response.used_law_articles contains null item");
+                continue;
+            }
 
-            if (!allowedArticles.contains(key)) {
+            if (!allowedByChunkId.isEmpty()) {
+                if (isBlank(used.chunkId())) {
+                    errors.add("Model law citation must contain chunk_id");
+                    continue;
+                }
+
+                GenerateClaimRequest.LegalContextItem allowed = allowedByChunkId.get(used.chunkId());
+                if (allowed == null) {
+                    errors.add("Model used unknown legal chunk_id: " + used.chunkId());
+                    continue;
+                }
+
+                if (!sameText(allowed.lawCode(), used.lawCode()) || !sameText(allowed.article(), used.article())) {
+                    errors.add("Model legal chunk_id does not match law_code/article: " + used.chunkId());
+                }
+            } else if (!legacyAllowedPairs.contains(normalizeKey(used.lawCode(), used.article()))) {
                 errors.add("Model used law article not present in legal_context: " + used.lawCode() + " " + used.article());
             }
         }

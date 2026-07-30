@@ -55,11 +55,12 @@ public class ClaimGenerationPipelineService {
         GenerateClaimRequest enrichedRequest = buildEnrichedRequest(request, ragUsed, ragWarnings);
         List<GigaChatMessage> messages = buildPrompt(enrichedRequest);
 
-        GigaChatChatResponse chatResponse = gigaChatClient.sendChat(
+        GigaChatClient.ChatCallResult callResult = gigaChatClient.sendChatWithTrace(
                 messages,
                 enrichedRequest.caseFacts().claimId(),
                 operationName(enrichedRequest.caseFacts().claimType())
         );
+        GigaChatChatResponse chatResponse = callResult.response();
 
         String rawModelResponse = chatResponse.firstContent();
         if (rawModelResponse == null || rawModelResponse.isBlank()) {
@@ -75,8 +76,8 @@ public class ClaimGenerationPipelineService {
                 enrichedRequest.caseFacts().claimType(),
                 ragUsed,
                 List.copyOf(ragWarnings),
-                messages,
-                rawModelResponse,
+                callResult.requestId(),
+                chatResponse.usage(),
                 generatedClaim,
                 guardrailResult,
                 Instant.now()
@@ -101,22 +102,35 @@ public class ClaimGenerationPipelineService {
             return base;
         }
 
-        RagSearchService.ClaimRagContext ragContext = ragSearchService.retrieveClaimContext(
-                request.caseFacts().claimType(),
-                ragOptions.contractId(),
-                ragOptions.clientId()
-        );
+        RagSearchService.ClaimRagContext ragContext;
+        try {
+            ragContext = ragSearchService.retrieveClaimContext(
+                    request.caseFacts().claimType(),
+                    ragOptions.contractId(),
+                    ragOptions.clientId()
+            );
+        } catch (RuntimeException exception) {
+            if (hasProvidedContractContext(request)) {
+                ragWarnings.add("RAG retrieval failed; trusted provided context was used");
+                return base;
+            }
+            throw new IllegalStateException("RAG retrieval failed and no provided contract_context is available", exception);
+        }
 
         ragWarnings.addAll(ragContext.warnings());
 
         return new GenerateClaimRequest(
                 request.caseFacts(),
                 request.backendCalculation(),
-                choose(ragContext.contractContext(), request.contractContext()),
-                choose(ragContext.legalContext(), request.legalContext()),
-                ragContext.templateContext() == null ? request.templateContext() : ragContext.templateContext(),
-                choose(ragContext.similarExamples(), request.similarExamples())
+                mergeContractContext(request.contractContext(), ragContext.contractContext()),
+                mergeLegalContext(request.legalContext(), ragContext.legalContext()),
+                request.templateContext() == null ? ragContext.templateContext() : request.templateContext(),
+                mergeSimilarExamples(request.similarExamples(), ragContext.similarExamples())
         );
+    }
+
+    private boolean hasProvidedContractContext(GenerateClaimPipelineRequest request) {
+        return request.contractContext() != null && !request.contractContext().isEmpty();
     }
 
     private List<GigaChatMessage> buildPrompt(GenerateClaimRequest request) {
@@ -153,6 +167,15 @@ public class ClaimGenerationPipelineService {
         if (request.backendCalculation() == null) {
             throw new IllegalArgumentException("backend_calculation is required");
         }
+
+        if (ragEnabled(request)) {
+            if (request.ragOptions() == null || isBlank(request.ragOptions().contractId())) {
+                throw new IllegalArgumentException("rag_options.contract_id is required when RAG is enabled");
+            }
+            if (isBlank(request.ragOptions().clientId())) {
+                throw new IllegalArgumentException("rag_options.client_id is required when RAG is enabled");
+            }
+        }
     }
 
     private String operationName(GenerateClaimRequest.ClaimType claimType) {
@@ -171,12 +194,60 @@ public class ClaimGenerationPipelineService {
         return "PASSED";
     }
 
-    private <T> List<T> choose(List<T> preferred, List<T> fallback) {
-        if (preferred != null && !preferred.isEmpty()) {
-            return preferred;
+    private List<GenerateClaimRequest.ContractContextChunk> mergeContractContext(
+            List<GenerateClaimRequest.ContractContextChunk> primary,
+            List<GenerateClaimRequest.ContractContextChunk> secondary
+    ) {
+        java.util.LinkedHashMap<String, GenerateClaimRequest.ContractContextChunk> merged = new java.util.LinkedHashMap<>();
+        for (GenerateClaimRequest.ContractContextChunk item : concat(primary, secondary)) {
+            if (item == null) continue;
+            String key = !isBlank(item.chunkId())
+                    ? "id:" + item.chunkId()
+                    : "clause:" + item.clauseNumber() + ":" + item.text();
+            merged.putIfAbsent(key, item);
         }
+        return List.copyOf(merged.values());
+    }
 
-        return fallback == null ? List.of() : fallback;
+    private List<GenerateClaimRequest.LegalContextItem> mergeLegalContext(
+            List<GenerateClaimRequest.LegalContextItem> primary,
+            List<GenerateClaimRequest.LegalContextItem> secondary
+    ) {
+        java.util.LinkedHashMap<String, GenerateClaimRequest.LegalContextItem> merged = new java.util.LinkedHashMap<>();
+        for (GenerateClaimRequest.LegalContextItem item : concat(primary, secondary)) {
+            if (item == null) continue;
+            String key = !isBlank(item.chunkId())
+                    ? "id:" + item.chunkId()
+                    : "law:" + normalize(item.lawCode()) + ":" + normalize(item.article());
+            merged.putIfAbsent(key, item);
+        }
+        return List.copyOf(merged.values());
+    }
+
+    private List<GenerateClaimRequest.SimilarExample> mergeSimilarExamples(
+            List<GenerateClaimRequest.SimilarExample> primary,
+            List<GenerateClaimRequest.SimilarExample> secondary
+    ) {
+        java.util.LinkedHashMap<String, GenerateClaimRequest.SimilarExample> merged = new java.util.LinkedHashMap<>();
+        for (GenerateClaimRequest.SimilarExample item : concat(primary, secondary)) {
+            if (item == null) continue;
+            String key = !isBlank(item.exampleId())
+                    ? item.exampleId()
+                    : String.valueOf(item.structureSummary());
+            merged.putIfAbsent(key, item);
+        }
+        return List.copyOf(merged.values());
+    }
+
+    private <T> List<T> concat(List<T> first, List<T> second) {
+        List<T> result = new ArrayList<>();
+        if (first != null) result.addAll(first);
+        if (second != null) result.addAll(second);
+        return result;
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private boolean isBlank(String value) {

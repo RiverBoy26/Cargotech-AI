@@ -1,5 +1,6 @@
 package ru.sber.cargotech.ai.api;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 import ru.sber.cargotech.ai.api.dto.EmbeddingTestRequest;
 import ru.sber.cargotech.ai.config.GigaChatProperties;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
+@ConditionalOnProperty(prefix = "ai.diagnostics", name = "endpoints-enabled", havingValue = "true")
 public class GigaChatEmbeddingController {
 
     private final GigaChatEmbeddingClient embeddingClient;

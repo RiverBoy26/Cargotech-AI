@@ -1,0 +1,6 @@
+ru\sber\cargotech\ai\AiApplicationTests.class
+ru\sber\cargotech\ai\document\guardrail\DocumentGuardrailServiceTest.class
+ru\sber\cargotech\ai\claim\guardrail\RuleBasedGuardrailServiceTest.class
+ru\sber\cargotech\ai\rag\RagSearchServiceTenantIsolationTest.class
+ru\sber\cargotech\ai\security\SensitiveDataMaskerTest.class
+ru\sber\cargotech\ai\rag\RagIndexRequestMapperTest.class
