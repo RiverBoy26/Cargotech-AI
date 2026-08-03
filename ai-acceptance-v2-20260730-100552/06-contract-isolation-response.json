@@ -1,1 +1,0 @@
-{"success":true,"query":"срок оплаты","filters":{"rag_collection":"CONTRACT_CONTEXT","claim_type":"PAYMENT_DELAY","is_current":true,"chunk_type":"PAYMENT_TERM","contract_id":"unknown_contract","client_id":"acc_client_agro"},"limit":10,"min_score":0.0,"hits_count":0,"hits":[],"warnings":["RAG search returned no chunks"],"checked_at":"2026-07-30T07:05:58.935894Z"}

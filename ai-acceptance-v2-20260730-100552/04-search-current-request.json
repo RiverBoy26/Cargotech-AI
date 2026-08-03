@@ -1,1 +1,0 @@
-{"query":"срок оплаты 15 календарных дней после акта","min_score":0,"limit":10,"filters":{"rag_collection":"CONTRACT_CONTEXT","claim_type":"PAYMENT_DELAY","is_current":true,"chunk_type":"PAYMENT_TERM","contract_id":"acc_contract_agro_2026","client_id":"acc_client_agro"}}
