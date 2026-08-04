@@ -46,7 +46,7 @@ UPDATE
 
 -- DROP TABLE cargotech.outbox_events;
 
-CREATE TABLE cargotech.outbox_events (
+CREATE TABLE IF NOT EXISTS cargotech.outbox_events (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	module_name varchar(64) NOT NULL,
 	aggregate_type varchar(128) NOT NULL,
@@ -63,8 +63,8 @@ CREATE TABLE cargotech.outbox_events (
 	CONSTRAINT outbox_events_pkey PRIMARY KEY (id),
 	CONSTRAINT outbox_events_status_check CHECK (((status)::text = ANY ((ARRAY['NEW'::character varying, 'PUBLISHED'::character varying, 'FAILED'::character varying])::text[])))
 );
-CREATE INDEX idx_outbox_aggregate ON cargotech.outbox_events USING btree (aggregate_id);
-CREATE INDEX idx_outbox_pending ON cargotech.outbox_events USING btree (status, created_at) WHERE ((status)::text = ANY ((ARRAY['NEW'::character varying, 'FAILED'::character varying])::text[]));
+CREATE INDEX IF NOT EXISTS idx_outbox_aggregate ON cargotech.outbox_events USING btree (aggregate_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON cargotech.outbox_events USING btree (status, created_at) WHERE ((status)::text = ANY ((ARRAY['NEW'::character varying, 'FAILED'::character varying])::text[]));
 
 
 -- cargotech.claim_contracts определение

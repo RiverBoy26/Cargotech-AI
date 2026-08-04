@@ -1,0 +1,177 @@
+name: cargotech
+
+x-database-environment: &database-environment
+  POSTGRES_USER: ${POSTGRES_USER:-cargotech}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  POSTGRES_DB: ${POSTGRES_DB:-cargotech}
+
+x-app-database-environment: &app-database-environment
+  AUTH_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  AUTH_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  AUTH_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  CLAIM_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  CLAIM_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  CLAIM_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  PAYMENT_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  PAYMENT_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  PAYMENT_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  DOCUMENT_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  DOCUMENT_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  DOCUMENT_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+
+x-jwt-environment: &jwt-environment
+  JWT_ISSUER: ${JWT_ISSUER:-cargotech-auth}
+  JWT_SECRET_BASE64: ${JWT_SECRET_BASE64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+
+services:
+  database:
+    image: postgres:17-alpine
+    environment: *database-environment
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/00-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+      - ./db/auth.sql:/docker-entrypoint-initdb.d/10-auth.sql:ro
+      - ./db/claim.sql:/docker-entrypoint-initdb.d/20-claim.sql:ro
+      - ./db/payment.sql:/docker-entrypoint-initdb.d/30-payment.sql:ro
+      - ./db/document.sql:/docker-entrypoint-initdb.d/40-document.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cargotech} -d ${POSTGRES_DB:-cargotech}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  auth:
+    build:
+      context: ./auth
+    environment:
+      <<: [*app-database-environment, *jwt-environment]
+      SERVER_PORT: 8081
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-PT15M}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-P30D}
+      BCRYPT_STRENGTH: ${BCRYPT_STRENGTH:-12}
+      AUTH_BOOTSTRAP_ENABLED: ${AUTH_BOOTSTRAP_ENABLED:-false}
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@cargotech.local}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-ChangeMe123!}
+      AUTH_BOOTSTRAP_FULL_NAME: ${AUTH_BOOTSTRAP_FULL_NAME:-CargoTech Administrator}
+      AUTH_BOOTSTRAP_ORGANIZATION_NAME: ${AUTH_BOOTSTRAP_ORGANIZATION_NAME:-CargoTech}
+      AUTH_BOOTSTRAP_ORGANIZATION_INN: ${AUTH_BOOTSTRAP_ORGANIZATION_INN:-7700000000}
+      CLAIM_SERVICE_URL: http://claim:8083
+    ports:
+      - "${AUTH_PORT:-8081}:8081"
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  payment:
+    build:
+      context: ./payment
+    environment:
+      <<: [*app-database-environment, *jwt-environment]
+      SERVER_PORT: 8082
+      CLAIM_SERVICE_URL: http://claim:8083
+    ports:
+      - "${PAYMENT_PORT:-8082}:8082"
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ai:
+    build:
+      context: ./ai
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      GIGACHAT_CLIENT_ID: ${GIGACHAT_CLIENT_ID:-}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      AI_DIAGNOSTICS_ENDPOINTS_ENABLED: ${AI_DIAGNOSTICS_ENDPOINTS_ENABLED:-false}
+    ports:
+      - "${AI_PORT:-8084}:8084"
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+  claim:
+    build:
+      context: ./claim
+    environment:
+      <<: [*app-database-environment, *jwt-environment]
+      SERVER_PORT: 8083
+      PAYMENT_SERVICE_URL: http://payment:8082
+      AI_SERVICE_URL: http://ai:8084
+    ports:
+      - "${CLAIM_PORT:-8083}:8083"
+    depends_on:
+      database:
+        condition: service_healthy
+      payment:
+        condition: service_started
+      ai:
+        condition: service_started
+    restart: unless-stopped
+
+  document:
+    build:
+      context: ./document
+    environment:
+      <<: [*app-database-environment, *jwt-environment]
+      SERVER_PORT: 8085
+      DOCUMENT_LOCAL_STORAGE_PATH: /app/storage/documents
+      DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID:-dev-seed-v1}
+      MAILTRAP_SMTP_HOST: ${MAILTRAP_SMTP_HOST:-sandbox.smtp.mailtrap.io}
+      MAILTRAP_SMTP_PORT: ${MAILTRAP_SMTP_PORT:-2525}
+      MAILTRAP_SMTP_USERNAME: ${MAILTRAP_SMTP_USERNAME:-}
+      MAILTRAP_SMTP_PASSWORD: ${MAILTRAP_SMTP_PASSWORD:-}
+    ports:
+      - "${DOCUMENT_PORT:-8085}:8085"
+    volumes:
+      - document-storage:/app/storage/documents
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ./gateway
+    environment:
+      SERVER_PORT: 8080
+      AUTH_SERVICE_URL: http://auth:8081
+      PAYMENT_SERVICE_URL: http://payment:8082
+      CLAIM_SERVICE_URL: http://claim:8083
+      DOCUMENT_SERVICE_URL: http://document:8085
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      - auth
+      - payment
+      - claim
+      - document
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  document-storage:
