@@ -29,11 +29,29 @@ public class AuthOrganization {
     @GeneratedValue
     private UUID id;
 
-    @Column(name = "name", nullable = false)
+    @Column(name = "name", nullable = false, length = 255)
     private String name;
 
     @Column(name = "inn")
     private String inn;
+
+    @Column(name = "kpp", length = 9)
+    private String kpp;
+
+    @Column(name = "ogrn", length = 15)
+    private String ogrn;
+
+    @Column(name = "legal_address")
+    private String legalAddress;
+
+    @Column(name = "postal_address")
+    private String postalAddress;
+
+    @Column(name = "email", length = 320)
+    private String email;
+
+    @Column(name = "phone", length = 64)
+    private String phone;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)

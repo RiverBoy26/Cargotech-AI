@@ -1,5 +1,6 @@
 package ru.sber.cargotech.ai.claim.api;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimResponse;
 import ru.sber.cargotech.ai.claim.parser.ClaimResponseParser;
@@ -8,6 +9,7 @@ import java.time.Instant;
 import java.util.Map;
 
 @RestController
+@ConditionalOnProperty(prefix = "ai.diagnostics", name = "endpoints-enabled", havingValue = "true")
 @RequestMapping("/api/ai/claims")
 public class ClaimParserTestController {
 

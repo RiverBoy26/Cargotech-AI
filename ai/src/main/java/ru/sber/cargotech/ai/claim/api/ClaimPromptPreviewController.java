@@ -1,5 +1,6 @@
 package ru.sber.cargotech.ai.claim.api;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimRequest;
 import ru.sber.cargotech.ai.claim.prompt.LoadingFailurePromptBuilder;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
+@ConditionalOnProperty(prefix = "ai.diagnostics", name = "endpoints-enabled", havingValue = "true")
 @RequestMapping("/api/ai/claims")
 public class ClaimPromptPreviewController {
 

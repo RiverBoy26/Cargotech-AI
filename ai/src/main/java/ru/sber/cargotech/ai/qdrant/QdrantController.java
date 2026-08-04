@@ -1,5 +1,6 @@
 package ru.sber.cargotech.ai.qdrant;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 import ru.sber.cargotech.ai.config.QdrantProperties;
 
@@ -7,6 +8,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@ConditionalOnProperty(prefix = "ai.diagnostics", name = "endpoints-enabled", havingValue = "true")
 @RestController
 @RequestMapping("/api/ai/qdrant")
 public class QdrantController {

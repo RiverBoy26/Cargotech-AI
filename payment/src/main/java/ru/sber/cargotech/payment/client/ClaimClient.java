@@ -199,6 +199,28 @@ public class ClaimClient {
         }
     }
 
+    public void markPaid(UUID claimId) {
+        try {
+            restClient
+                .post()
+                .uri(
+                    "/internal/api/v1/claims/{claimId}/mark-paid",
+                    claimId
+                )
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientResponseException exception) {
+            throw PaymentException.conflict(
+                "Оплата зафиксирована, но claim не принял статус PAID: "
+                    + exception.getStatusCode()
+            );
+        } catch (ResourceAccessException exception) {
+            throw PaymentException.conflict(
+                "Модуль claim недоступен для фиксации статуса PAID"
+            );
+        }
+    }
+
     private static String currentBearerToken() {
         Authentication authentication = SecurityContextHolder
                 .getContext()

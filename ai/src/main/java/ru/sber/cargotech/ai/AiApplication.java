@@ -5,11 +5,15 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import ru.sber.cargotech.ai.config.GigaChatProperties;
 import ru.sber.cargotech.ai.config.QdrantProperties;
+import ru.sber.cargotech.ai.config.RagSearchProperties;
+import ru.sber.cargotech.ai.config.AiDiagnosticsProperties;
 
 @SpringBootApplication
 @EnableConfigurationProperties({
         GigaChatProperties.class,
-        QdrantProperties.class
+        QdrantProperties.class,
+        RagSearchProperties.class,
+        AiDiagnosticsProperties.class
 })
 public class AiApplication {
 

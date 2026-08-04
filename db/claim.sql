@@ -490,3 +490,68 @@ ALTER TABLE cargotech.claim_snapshots ADD CONSTRAINT claim_snapshots_claim_id_fk
 -- cargotech.claim_status_history внешние включи
 
 ALTER TABLE cargotech.claim_status_history ADD CONSTRAINT claim_status_history_claim_id_fkey FOREIGN KEY (claim_id) REFERENCES cargotech.claim_claims(id) ON DELETE CASCADE;
+
+
+-- Normalize legacy expeditor references after organizations from auth-service
+-- have been synchronized into claim_parties. A system EXPEDITOR uses
+-- organization_id as its party id.
+UPDATE cargotech.claim_contracts contract
+SET expeditor_id = contract.organization_id,
+    updated_at = CURRENT_TIMESTAMP
+WHERE contract.expeditor_id <> contract.organization_id
+  AND EXISTS (
+      SELECT 1
+      FROM cargotech.claim_parties projection
+      WHERE projection.id = contract.organization_id
+        AND projection.organization_id = contract.organization_id
+        AND projection.type = 'EXPEDITOR'
+        AND projection.deleted_at IS NULL
+  );
+
+UPDATE cargotech.claim_shipments shipment
+SET expeditor_id = shipment.organization_id,
+    updated_at = CURRENT_TIMESTAMP
+WHERE shipment.expeditor_id <> shipment.organization_id
+  AND EXISTS (
+      SELECT 1
+      FROM cargotech.claim_parties projection
+      WHERE projection.id = shipment.organization_id
+        AND projection.organization_id = shipment.organization_id
+        AND projection.type = 'EXPEDITOR'
+        AND projection.deleted_at IS NULL
+  );
+
+UPDATE cargotech.claim_claims claim
+SET creditor_id = claim.organization_id,
+    updated_at = CURRENT_TIMESTAMP
+WHERE claim.creditor_id <> claim.organization_id
+  AND EXISTS (
+      SELECT 1
+      FROM cargotech.claim_parties old_expeditor
+      WHERE old_expeditor.id = claim.creditor_id
+        AND old_expeditor.organization_id = claim.organization_id
+        AND old_expeditor.type = 'EXPEDITOR'
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM cargotech.claim_parties projection
+      WHERE projection.id = claim.organization_id
+        AND projection.organization_id = claim.organization_id
+        AND projection.type = 'EXPEDITOR'
+        AND projection.deleted_at IS NULL
+  );
+
+UPDATE cargotech.claim_parties old_expeditor
+SET active = false,
+    deleted_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE old_expeditor.type = 'EXPEDITOR'
+  AND old_expeditor.id <> old_expeditor.organization_id
+  AND EXISTS (
+      SELECT 1
+      FROM cargotech.claim_parties projection
+      WHERE projection.id = old_expeditor.organization_id
+        AND projection.organization_id = old_expeditor.organization_id
+        AND projection.type = 'EXPEDITOR'
+        AND projection.deleted_at IS NULL
+  );

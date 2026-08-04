@@ -1,5 +1,6 @@
 package ru.sber.cargotech.ai.rag;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -7,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@ConditionalOnProperty(prefix = "ai.diagnostics", name = "endpoints-enabled", havingValue = "true")
 @RestController
 @RequestMapping("/api/ai/rag")
 public class RagController {

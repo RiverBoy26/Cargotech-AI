@@ -47,14 +47,15 @@ public class ShipmentService {
 
     @Transactional
     public ShipmentResponse create(CurrentClaimUser user, ShipmentRequest request) {
-        log.debug("Создание рейса: organizationId={}, userId={}, orderNumber={}, clientId={}, expeditorId={}, contractId={}, serviceAmount={}, status={}", user.organizationId(), user.userId(), request.orderNumber(), request.clientId(), request.expeditorId(), request.contractId(), request.serviceAmount(), request.status());
+        UUID expeditorId = user.organizationId();
+        log.debug("Создание рейса: organizationId={}, userId={}, orderNumber={}, clientId={}, expeditorId={}, contractId={}, serviceAmount={}, status={}", user.organizationId(), user.userId(), request.orderNumber(), request.clientId(), expeditorId, request.contractId(), request.serviceAmount(), request.status());
 
-        validateReferences(user.organizationId(), request);
+        validateReferences(user.organizationId(), request, expeditorId);
         ClaimShipment shipment = new ClaimShipment();
         shipment.setOrganizationId(user.organizationId());
         shipment.setCreatedBy(user.userId());
         shipment.setUpdatedBy(user.userId());
-        apply(shipment, request, user.userId());
+        apply(shipment, request, user.userId(), expeditorId);
         ClaimShipment saved = shipmentRepository.save(shipment);
         outboxWriter.write("SHIPMENT", saved.getId(), "SHIPMENT_CREATED", user.organizationId(), user.userId(), Map.of("shipmentId", saved.getId()));
         return toResponse(user.organizationId(), saved);
@@ -64,9 +65,10 @@ public class ShipmentService {
     public ShipmentResponse update(CurrentClaimUser user, UUID id, ShipmentRequest request) {
         log.debug("Обновление рейса: shipmentId={}, organizationId={}, userId={}, orderNumber={}, serviceAmount={}, status={}", id, user.organizationId(), user.userId(), request.orderNumber(), request.serviceAmount(), request.status());
 
-        validateReferences(user.organizationId(), request);
+        UUID expeditorId = user.organizationId();
+        validateReferences(user.organizationId(), request, expeditorId);
         ClaimShipment shipment = getEntity(user.organizationId(), id);
-        apply(shipment, request, user.userId());
+        apply(shipment, request, user.userId(), expeditorId);
         ClaimShipment saved = shipmentRepository.save(shipment);
         outboxWriter.write("SHIPMENT", saved.getId(), "SHIPMENT_UPDATED", user.organizationId(), user.userId(), Map.of("shipmentId", saved.getId()));
         return toResponse(user.organizationId(), saved);
@@ -77,10 +79,15 @@ public class ShipmentService {
             .orElseThrow(() -> ClaimException.notFound("Рейс не найден"));
     }
 
-    private void apply(ClaimShipment shipment, ShipmentRequest request, UUID userId) {
+    private void apply(
+        ClaimShipment shipment,
+        ShipmentRequest request,
+        UUID userId,
+        UUID expeditorId
+    ) {
         shipment.setOrderNumber(request.orderNumber());
         shipment.setClientId(request.clientId());
-        shipment.setExpeditorId(request.expeditorId());
+        shipment.setExpeditorId(expeditorId);
         shipment.setContractId(request.contractId());
         shipment.setRouteFrom(request.routeFrom());
         shipment.setRouteTo(request.routeTo());
@@ -94,14 +101,18 @@ public class ShipmentService {
         shipment.setUpdatedBy(userId);
     }
 
-    private void validateReferences(UUID organizationId, ShipmentRequest request) {
-        if (request.clientId().equals(request.expeditorId())) {
+    private void validateReferences(
+        UUID organizationId,
+        ShipmentRequest request,
+        UUID expeditorId
+    ) {
+        if (request.clientId().equals(expeditorId)) {
             throw ClaimException.validation("Клиент и экспедитор в рейсе должны быть разными контрагентами");
         }
         partyService.getEntity(organizationId, request.clientId());
-        partyService.getEntity(organizationId, request.expeditorId());
+        partyService.getEntity(organizationId, expeditorId);
         ClaimContract contract = contractService.getEntity(organizationId, request.contractId());
-        if (!contract.getClientId().equals(request.clientId()) || !contract.getExpeditorId().equals(request.expeditorId())) {
+        if (!contract.getClientId().equals(request.clientId()) || !contract.getExpeditorId().equals(expeditorId)) {
             throw ClaimException.validation("Клиент и экспедитор рейса должны совпадать с договором");
         }
     }

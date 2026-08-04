@@ -47,19 +47,20 @@ public class ContractService {
 
     @Transactional
     public ContractResponse create(CurrentClaimUser user, ContractRequest request) {
-        log.debug("Создание договора: organizationId={}, userId={}, number={}, clientId={}, expeditorId={}, paymentDays={}, penaltyType={}, penaltyRate={}", user.organizationId(), user.userId(), request.number(), request.clientId(), request.expeditorId(), request.paymentDays(), request.penaltyType(), request.penaltyRate());
+        UUID expeditorId = user.organizationId();
+        log.debug("Создание договора: organizationId={}, userId={}, number={}, clientId={}, expeditorId={}, paymentDays={}, penaltyType={}, penaltyRate={}", user.organizationId(), user.userId(), request.number(), request.clientId(), expeditorId, request.paymentDays(), request.penaltyType(), request.penaltyRate());
 
         if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNull(
             user.organizationId(), request.number()
         )) {
             throw ClaimException.conflict("Договор с таким номером уже существует");
         }
-        validateParties(user.organizationId(), request.clientId(), request.expeditorId());
+        validateParties(user.organizationId(), request.clientId(), expeditorId);
         ClaimContract contract = new ClaimContract();
         contract.setOrganizationId(user.organizationId());
         contract.setCreatedBy(user.userId());
         contract.setUpdatedBy(user.userId());
-        apply(contract, request, user.userId());
+        apply(contract, request, user.userId(), expeditorId);
         ClaimContract saved = contractRepository.save(contract);
         outboxWriter.write("CONTRACT", saved.getId(), "CONTRACT_CREATED", user.organizationId(), user.userId(), Map.of("contractId", saved.getId()));
         return toResponse(user.organizationId(), saved);
@@ -70,8 +71,9 @@ public class ContractService {
         log.debug("Обновление договора: contractId={}, organizationId={}, userId={}, number={}, paymentDays={}, penaltyType={}, penaltyRate={}", id, user.organizationId(), user.userId(), request.number(), request.paymentDays(), request.penaltyType(), request.penaltyRate());
 
         ClaimContract contract = getEntity(user.organizationId(), id);
-        validateParties(user.organizationId(), request.clientId(), request.expeditorId());
-        apply(contract, request, user.userId());
+        UUID expeditorId = user.organizationId();
+        validateParties(user.organizationId(), request.clientId(), expeditorId);
+        apply(contract, request, user.userId(), expeditorId);
         ClaimContract saved = contractRepository.save(contract);
         outboxWriter.write("CONTRACT", saved.getId(), "CONTRACT_UPDATED", user.organizationId(), user.userId(), Map.of("contractId", saved.getId()));
         return toResponse(user.organizationId(), saved);
@@ -93,10 +95,15 @@ public class ContractService {
             .orElseThrow(() -> ClaimException.notFound("Договор не найден"));
     }
 
-    private void apply(ClaimContract contract, ContractRequest request, UUID userId) {
+    private void apply(
+        ClaimContract contract,
+        ContractRequest request,
+        UUID userId,
+        UUID expeditorId
+    ) {
         contract.setNumber(request.number());
         contract.setClientId(request.clientId());
-        contract.setExpeditorId(request.expeditorId());
+        contract.setExpeditorId(expeditorId);
         contract.setSignedAt(request.signedAt());
         contract.setValidFrom(request.validFrom());
         contract.setValidTo(request.validTo());

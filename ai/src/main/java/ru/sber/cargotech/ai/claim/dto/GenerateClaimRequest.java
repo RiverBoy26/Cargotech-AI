@@ -192,12 +192,25 @@ public record GenerateClaimRequest(
     }
 
     public record LegalContextItem(
+            @JsonProperty("chunk_id")
+            String chunkId,
+
             @JsonProperty("law_code")
             String lawCode,
 
             String article,
-            String purpose
+            String purpose,
+            String text,
+            String citation,
+
+            @JsonProperty("verified_at")
+            String verifiedAt,
+
+            String applicability
     ) {
+        public LegalContextItem(String lawCode, String article, String purpose) {
+            this(null, lawCode, article, purpose, null, null, null, null);
+        }
     }
 
     public record TemplateContext(

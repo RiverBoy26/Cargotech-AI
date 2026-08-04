@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import ru.sber.cargotech.payment.dto.CreatePaymentMatchRequest;
+import ru.sber.cargotech.payment.dto.CreatePaymentRequest;
 import ru.sber.cargotech.payment.dto.PaymentDetailsResponse;
 import ru.sber.cargotech.payment.dto.PaymentImportResponse;
 import ru.sber.cargotech.payment.dto.PaymentMatchResponse;
@@ -46,6 +47,17 @@ public class PaymentController {
     private final PaymentMatchingService matchingService;
     private final PaymentReconciliationService reconciliationService;
     private final CurrentPaymentUserProvider userProvider;
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('PAYMENT_CREATE')")
+    public ResponseEntity<PaymentResponse> createPayment(
+        @RequestBody @Valid CreatePaymentRequest request
+    ) {
+        log.info("Вызов endpoint: createPayment");
+        return ResponseEntity.status(HttpStatus.CREATED).body(
+            paymentService.create(request, userProvider.getRequiredUser())
+        );
+    }
 
     @PostMapping(
         value = "/import/1c",

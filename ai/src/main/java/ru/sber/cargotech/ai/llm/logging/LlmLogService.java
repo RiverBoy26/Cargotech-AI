@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatResponse;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
+import ru.sber.cargotech.ai.security.SensitiveDataMasker;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -20,6 +21,11 @@ public class LlmLogService {
     private static final int MAX_IN_MEMORY_LOGS = 100;
 
     private final ArrayDeque<LlmCallLog> logs = new ArrayDeque<>();
+    private final SensitiveDataMasker sensitiveDataMasker;
+
+    public LlmLogService(SensitiveDataMasker sensitiveDataMasker) {
+        this.sensitiveDataMasker = sensitiveDataMasker;
+    }
 
     public String newRequestId() {
         return UUID.randomUUID().toString();
@@ -159,10 +165,7 @@ public class LlmLogService {
             return null;
         }
 
-        String cleaned = value
-                .replaceAll("(?i)authorization:\\s*basic\\s+[a-z0-9+/=._-]+", "Authorization: Basic ***")
-                .replaceAll("(?i)authorization:\\s*bearer\\s+[a-z0-9+/=._-]+", "Authorization: Bearer ***")
-                .trim();
+        String cleaned = sensitiveDataMasker.mask(value).trim();
 
         int limit = 4000;
 

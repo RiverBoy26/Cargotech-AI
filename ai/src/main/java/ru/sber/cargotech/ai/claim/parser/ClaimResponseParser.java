@@ -25,7 +25,7 @@ public class ClaimResponseParser {
             validate(response);
             return response;
         } catch (Exception e) {
-            throw new IllegalArgumentException("Failed to parse GigaChat response as GenerateClaimResponse. Raw JSON: " + json, e);
+            throw new IllegalArgumentException("Failed to parse GigaChat response as GenerateClaimResponse", e);
         }
     }
 

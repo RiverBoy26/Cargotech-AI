@@ -15,7 +15,7 @@ spring:
             - id: auth-service
               uri: ${AUTH_SERVICE_URL:http://localhost:8081}
               predicates:
-                - Path=/api/v1/auth/**,/api/v1/users/**,/api/v1/roles/**
+                - Path=/api/v1/auth/**,/api/v1/users/**,/api/v1/roles/**,/api/v1/organizations/**
 
             # Payment-сервис
             - id: payment-service
@@ -28,3 +28,9 @@ spring:
               uri: ${CLAIM_SERVICE_URL:http://localhost:8083}
               predicates:
                 - Path=/api/v1/claims/**,/api/v1/contracts/**,/api/v1/parties/**,/api/v1/shipments/**,/api/v1/calculations/**
+
+            # Document-service
+            - id: document-service
+              uri: ${DOCUMENT_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/documents/**,/api/v1/document-templates/**

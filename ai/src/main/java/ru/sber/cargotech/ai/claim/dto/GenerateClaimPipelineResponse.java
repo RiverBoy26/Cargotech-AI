@@ -2,7 +2,7 @@ package ru.sber.cargotech.ai.claim.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import ru.sber.cargotech.ai.claim.guardrail.GuardrailResult;
-import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
+import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatResponse;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,11 +21,11 @@ public record GenerateClaimPipelineResponse(
         @JsonProperty("rag_warnings")
         List<String> ragWarnings,
 
-        @JsonProperty("prompt_messages")
-        List<GigaChatMessage> promptMessages,
+        @JsonProperty("request_id")
+        String requestId,
 
-        @JsonProperty("raw_model_response")
-        String rawModelResponse,
+        @JsonProperty("token_usage")
+        GigaChatChatResponse.Usage tokenUsage,
 
         @JsonProperty("generated_claim")
         GenerateClaimResponse generatedClaim,

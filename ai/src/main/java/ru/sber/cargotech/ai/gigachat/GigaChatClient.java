@@ -38,6 +38,10 @@ public class GigaChatClient {
     }
 
     public GigaChatChatResponse sendChat(List<GigaChatMessage> messages, String caseId, String operation) {
+        return sendChatWithTrace(messages, caseId, operation).response();
+    }
+
+    public ChatCallResult sendChatWithTrace(List<GigaChatMessage> messages, String caseId, String operation) {
         String requestId = llmLogService.newRequestId();
         Instant startedAt = llmLogService.now();
 
@@ -75,7 +79,7 @@ public class GigaChatClient {
                     startedAt
             );
 
-            return response;
+            return new ChatCallResult(requestId, response);
         } catch (Exception e) {
             llmLogService.logError(
                     requestId,
@@ -90,6 +94,12 @@ public class GigaChatClient {
 
             throw e;
         }
+    }
+
+    public record ChatCallResult(
+            String requestId,
+            GigaChatChatResponse response
+    ) {
     }
 
     public String sendSimpleMessage(String userMessage) {

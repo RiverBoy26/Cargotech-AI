@@ -43,12 +43,18 @@ public record GenerateClaimResponse(
     }
 
     public record UsedLawArticle(
+            @JsonProperty("chunk_id")
+            String chunkId,
+
             @JsonProperty("law_code")
             String lawCode,
 
             String article,
             String reason
     ) {
+        public UsedLawArticle(String lawCode, String article, String reason) {
+            this(null, lawCode, article, reason);
+        }
     }
 
     public record BackendCalculationUsed(

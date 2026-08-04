@@ -33,14 +33,14 @@ public class ContractController {
     private final CurrentClaimUserProvider currentUserProvider;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('CLAIM_READ')")
+    @PreAuthorize("hasAuthority('CONTRACT_READ')")
     public PageResponse<ContractResponse> list(@PageableDefault(size = 50) Pageable pageable) {
         log.info("Вызов endpoint: list");
         return PageResponse.from(contractService.list(currentUserProvider.getRequiredUser(), pageable));
     }
 
     @GetMapping("/{contractId}")
-    @PreAuthorize("hasAuthority('CLAIM_READ')")
+    @PreAuthorize("hasAuthority('CONTRACT_READ')")
     public ContractResponse get(@PathVariable UUID contractId) {
         log.info("Вызов endpoint: get");
         return contractService.get(currentUserProvider.getRequiredUser(), contractId);
@@ -48,14 +48,14 @@ public class ContractController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('CLAIM_CREATE')")
+    @PreAuthorize("hasAuthority('CONTRACT_CREATE')")
     public ContractResponse create(@Valid @RequestBody ContractRequest request) {
         log.info("Вызов endpoint: create");
         return contractService.create(currentUserProvider.getRequiredUser(), request);
     }
 
     @PatchMapping("/{contractId}")
-    @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
+    @PreAuthorize("hasAuthority('CONTRACT_UPDATE')")
     public ContractResponse update(
         @PathVariable UUID contractId,
         @Valid @RequestBody ContractRequest request
@@ -66,7 +66,7 @@ public class ContractController {
 
     @DeleteMapping("/{contractId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAuthority('CLAIM_DELETE')")
+    @PreAuthorize("hasAuthority('CONTRACT_DELETE')")
     public void delete(@PathVariable UUID contractId) {
         log.info("Вызов endpoint: delete");
         contractService.delete(currentUserProvider.getRequiredUser(), contractId);
