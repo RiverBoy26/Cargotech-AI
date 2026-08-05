@@ -26,3 +26,5 @@
 
 .env
 storage
+
+*.crt
