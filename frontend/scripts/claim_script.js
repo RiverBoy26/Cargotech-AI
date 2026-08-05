@@ -154,8 +154,8 @@ async function loadClaimContext(claim) {
   setText('info_overdue_date', formatDate(calculation?.overdueStartDate));
   setText(
     'info_lawyer_name',
-    creator?.fullName
-      || (claim.createdBy === storedUser.userId ? storedUser.fullName : null)
+    (creator ? formatUserFullName(creator) : null)
+      || (claim.createdBy === storedUser.userId ? formatUserFullName(storedUser) : null)
       || claim.createdBy
       || '—'
   );
@@ -283,7 +283,7 @@ async function buildClaimTemplateData(claimId, generatedText = '') {
     },
     signer: {
       position: 'Юрист',
-      fullName: user.fullName || '',
+      fullName: formatUserFullName(user),
     },
   };
 }

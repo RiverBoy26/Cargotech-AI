@@ -21,7 +21,7 @@ function mapUserRow(user) {
   const role = user.roles?.[0] || '—';
   return {
     id: user.id,
-    fullName: user.fullName,
+    fullName: formatUserFullName(user),
     email: user.email,
     organizationId: user.organizationId,
     role: ROLE_LABELS[role] || role,
@@ -297,7 +297,9 @@ document.getElementById('add_user_btn').addEventListener('click', () => {
 
 document.getElementById('cancel_user_btn').addEventListener('click', () => {
   addUserForm.classList.remove('add_user_form_visible');
-  document.getElementById('field_fullname').value = '';
+  document.getElementById('field_first_name').value = '';
+  document.getElementById('field_last_name').value = '';
+  document.getElementById('field_middle_name').value = '';
   document.getElementById('field_email').value = '';
   document.getElementById('field_password').value = '';
   document.getElementById('field_role').value = '';
@@ -305,22 +307,34 @@ document.getElementById('cancel_user_btn').addEventListener('click', () => {
 });
 
 document.getElementById('save_user_btn').addEventListener('click', async () => {
-  const fullName = document.getElementById('field_fullname').value.trim();
+  const firstName = document.getElementById('field_first_name').value.trim();
+  const lastName = document.getElementById('field_last_name').value.trim();
+  const middleName = document.getElementById('field_middle_name').value.trim();
   const email = document.getElementById('field_email').value.trim();
   const password = document.getElementById('field_password').value;
   const role = document.getElementById('field_role').value;
   const organizationId = document.getElementById('field_expeditor').value;
 
-  if (!fullName || !email || !password || !role || !organizationId) {
+  if (!firstName || !lastName || !email || !password || !role || !organizationId) {
     alert('Заполните все поля');
     return;
   }
 
   try {
-    await createUser({ fullName, email, password, roles: [role], organizationId });
+    await createUser({
+      firstName,
+      lastName,
+      middleName: middleName || null,
+      email,
+      password,
+      roles: [role],
+      organizationId,
+    });
 
     addUserForm.classList.remove('add_user_form_visible');
-    document.getElementById('field_fullname').value = '';
+    document.getElementById('field_first_name').value = '';
+    document.getElementById('field_last_name').value = '';
+    document.getElementById('field_middle_name').value = '';
     document.getElementById('field_email').value = '';
     document.getElementById('field_password').value = '';
     document.getElementById('field_role').value = '';

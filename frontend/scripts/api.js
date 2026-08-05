@@ -95,7 +95,7 @@ function fillUserHeader() {
   const nameEl = document.querySelector('.topbar_usename');
   const roleEl = document.querySelector('.topbar_user_role');
 
-  if (nameEl && user.fullName) nameEl.textContent = user.fullName;
+  if (nameEl) nameEl.textContent = formatUserFullName(user);
   if (roleEl && user.roles?.[0]) {
     roleEl.textContent = ROLE_LABELS[user.roles[0]]?.toLowerCase() || user.roles[0];
   }
@@ -200,6 +200,19 @@ async function logout() {
   }
 }
 
+function formatUserFullName(user) {
+  const separatedName = [user?.lastName, user?.firstName, user?.middleName]
+    .filter((part) => typeof part === 'string' && part.trim())
+    .map((part) => part.trim())
+    .join(' ');
+
+  if (separatedName) return separatedName;
+  if (typeof user?.fullName === 'string' && user.fullName.trim()) {
+    return user.fullName.trim();
+  }
+  return '—';
+}
+
 function bindLogoutButton() {
   const button = document.getElementById('logout_btn');
   if (!button || button.dataset.bound === 'true') return;
@@ -233,7 +246,9 @@ async function syncUserProfile() {
     ...getStoredUser(),
     userId: me.id,
     organizationId: me.organizationId,
-    fullName: me.fullName,
+    firstName: me.firstName,
+    lastName: me.lastName,
+    middleName: me.middleName,
     email: me.email,
     roles: me.roles,
     permissions: me.permissions,
@@ -248,7 +263,7 @@ async function getUsers(params = {}) {
   const qs = buildQuery({
     page: params.page ?? 0,
     size: params.size ?? 50,
-    sort: params.sort ?? 'fullName,asc',
+    sort: params.sort ?? 'lastName,asc',
     search: params.search,
     active: params.active,
     role: params.role,

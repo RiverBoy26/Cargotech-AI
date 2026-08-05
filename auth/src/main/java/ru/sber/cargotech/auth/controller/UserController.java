@@ -43,7 +43,7 @@ public class UserController {
         @RequestParam(required = false) String role,
         @PageableDefault(
             size = 50,
-            sort = "fullName",
+            sort = "lastName",
             direction = Sort.Direction.ASC
         ) Pageable pageable
     ) {

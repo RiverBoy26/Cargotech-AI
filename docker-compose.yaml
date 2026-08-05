@@ -21,7 +21,7 @@ x-app-database-environment: &app-database-environment
 
 x-jwt-environment: &jwt-environment
   JWT_ISSUER: ${JWT_ISSUER:-cargotech-auth}
-  JWT_SECRET_BASE64: ${JWT_SECRET_BASE64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+  JWT_SECRET_BASE64: ${JWT_SECRET_BASE64:-}
 
 services:
   database:
@@ -64,7 +64,9 @@ services:
       AUTH_BOOTSTRAP_ENABLED: ${AUTH_BOOTSTRAP_ENABLED:-false}
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@cargotech.local}
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-ChangeMe123!}
-      AUTH_BOOTSTRAP_FULL_NAME: ${AUTH_BOOTSTRAP_FULL_NAME:-CargoTech Administrator}
+      AUTH_BOOTSTRAP_FIRST_NAME: ${AUTH_BOOTSTRAP_FIRST_NAME:-Administrator}
+      AUTH_BOOTSTRAP_LAST_NAME: ${AUTH_BOOTSTRAP_LAST_NAME:-CargoTech}
+      AUTH_BOOTSTRAP_MIDDLE_NAME: ${AUTH_BOOTSTRAP_MIDDLE_NAME:-}
       AUTH_BOOTSTRAP_ORGANIZATION_NAME: ${AUTH_BOOTSTRAP_ORGANIZATION_NAME:-CargoTech}
       AUTH_BOOTSTRAP_ORGANIZATION_INN: ${AUTH_BOOTSTRAP_ORGANIZATION_INN:-7700000000}
       CLAIM_SERVICE_URL: http://claim:8083
@@ -95,6 +97,7 @@ services:
     environment:
       QDRANT_URL: http://qdrant:6333
       GIGACHAT_CLIENT_ID: ${GIGACHAT_CLIENT_ID:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-}
       GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
       AI_DIAGNOSTICS_ENDPOINTS_ENABLED: ${AI_DIAGNOSTICS_ENDPOINTS_ENABLED:-false}
     ports:
@@ -163,6 +166,8 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: cargotech/frontend:local
+    pull_policy: build
     build:
       context: ./frontend
     ports:

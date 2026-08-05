@@ -42,8 +42,16 @@
                 <div class="add_user_form_title">Новый пользователь</div>
                 <div class="add_user_form_fields">
                     <div class="form_field">
-                        <label class="form_label" for="field_fullname">ФИО *</label>
-                        <input class="form_input" id="field_fullname" type="text" required placeholder="Иванов Иван Иванович">
+                        <label class="form_label" for="field_first_name">Имя *</label>
+                        <input class="form_input" id="field_first_name" type="text" required maxlength="100" placeholder="Иван">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="field_last_name">Фамилия *</label>
+                        <input class="form_input" id="field_last_name" type="text" required maxlength="100" placeholder="Иванов">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="field_middle_name">Отчество</label>
+                        <input class="form_input" id="field_middle_name" type="text" maxlength="100" placeholder="Иванович">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="field_email">Email *</label>
@@ -306,10 +314,6 @@
                             <option value="EUR">EUR — евро</option>
                         </select>
                     </div>
-                    <div class="form_field">
-                        <label class="form_label" for="shipment_external_id">Внешний идентификатор</label>
-                        <input class="form_input" id="shipment_external_id" maxlength="255" placeholder="ID из учётной системы">
-                    </div>
                 </div>
                 <div class="add_user_form_actions">
                     <p class="form_error" id="shipment_form_error" role="alert"></p>
@@ -366,7 +370,7 @@
         </div>
     </div>
 
-    <script src="../../scripts/api.js"></script>
-    <script src="../../scripts/admin_script.js"></script>
+    <script src="../../scripts/api.js?v=20260805-admin-user-name-fields-3"></script>
+    <script src="../../scripts/admin_script.js?v=20260805-admin-user-name-fields-3"></script>
 </body>
 </html>

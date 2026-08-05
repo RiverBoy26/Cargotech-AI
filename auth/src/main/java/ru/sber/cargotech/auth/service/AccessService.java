@@ -41,7 +41,9 @@ public class AccessService {
         return new UserAccess(
             user.getId(),
             organizationContext,
-            user.getFullName(),
+            user.getFirstName(),
+            user.getLastName(),
+            user.getMiddleName(),
             user.getEmail(),
             accessRepository.findRoleCodes(user.getId()),
             accessRepository.findPermissionCodes(user.getId())

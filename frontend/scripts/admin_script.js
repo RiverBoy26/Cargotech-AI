@@ -17,7 +17,7 @@ function mapUserRow(user) {
   const role = user.roles?.[0] || '—';
   return {
     id: user.id,
-    fullName: user.fullName,
+    displayName: formatUserFullName(user),
     email: user.email,
     role: ROLE_LABELS[role] || role,
     roleClass: ROLE_CLASS[role] || '',
@@ -37,7 +37,7 @@ function renderActionButton(user) {
 function renderUserRow(user) {
   return `
     <div class="user_row" data-id="${user.id}">
-      <div class="user_row_name">${user.fullName}</div>
+      <div class="user_row_name">${escapeAdmin(user.displayName)}</div>
       <div class="user_row_email">${user.email}</div>
       <div class="user_row_role_cell">
         <span class="role-pill ${user.roleClass}">${user.role}</span>
@@ -471,20 +471,24 @@ document.getElementById('add_user_btn').addEventListener('click', () => {
 
 document.getElementById('cancel_user_btn').addEventListener('click', () => {
   addUserForm.classList.remove('add_user_form_visible');
-  document.getElementById('field_fullname').value = '';
+  document.getElementById('field_first_name').value = '';
+  document.getElementById('field_last_name').value = '';
+  document.getElementById('field_middle_name').value = '';
   document.getElementById('field_email').value = '';
   document.getElementById('field_password').value = '';
   document.getElementById('field_role').value = '';
 });
 
 document.getElementById('save_user_btn').addEventListener('click', async () => {
-  const fullName = document.getElementById('field_fullname').value.trim();
+  const firstName = document.getElementById('field_first_name').value.trim();
+  const lastName = document.getElementById('field_last_name').value.trim();
+  const middleName = document.getElementById('field_middle_name').value.trim();
   const email = document.getElementById('field_email').value.trim();
   const password = document.getElementById('field_password').value;
   const role = document.getElementById('field_role').value;
   const user = getStoredUser();
 
-  if (!fullName || !email || !password || !role) {
+  if (!firstName || !lastName || !email || !password || !role) {
     alert('Заполните все поля');
     return;
   }
@@ -492,14 +496,18 @@ document.getElementById('save_user_btn').addEventListener('click', async () => {
   try {
     await createUser({
       organizationId: user.organizationId,
-      fullName,
+      firstName,
+      lastName,
+      middleName: middleName || null,
       email,
       password,
       roles: [role],
     });
 
     addUserForm.classList.remove('add_user_form_visible');
-    document.getElementById('field_fullname').value = '';
+    document.getElementById('field_first_name').value = '';
+    document.getElementById('field_last_name').value = '';
+    document.getElementById('field_middle_name').value = '';
     document.getElementById('field_email').value = '';
     document.getElementById('field_password').value = '';
     document.getElementById('field_role').value = '';

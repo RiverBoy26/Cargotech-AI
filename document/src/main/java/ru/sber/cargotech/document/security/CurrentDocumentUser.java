@@ -7,7 +7,9 @@ public record CurrentDocumentUser(
     UUID userId,
     UUID organizationId,
     String email,
-    String fullName,
+    String firstName,
+    String lastName,
+    String middleName,
     List<String> roles,
     List<String> permissions
 ) {

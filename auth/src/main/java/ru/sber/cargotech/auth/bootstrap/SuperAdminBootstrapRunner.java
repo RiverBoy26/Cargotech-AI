@@ -105,7 +105,9 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
     ) {
         AuthUser user = new AuthUser();
         user.setOrganizationId(organization.getId());
-        user.setFullName(bootstrap.fullName().trim());
+        user.setFirstName(bootstrap.firstName().trim());
+        user.setLastName(bootstrap.lastName().trim());
+        user.setMiddleName(blankToNull(bootstrap.middleName()));
         user.setEmail(normalizeEmail(bootstrap.email()));
         user.setPasswordHash(passwordEncoder.encode(bootstrap.password()));
         user.setActive(true);
@@ -117,8 +119,10 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
         if (bootstrap.email() == null || bootstrap.email().isBlank()
             || bootstrap.password() == null
             || bootstrap.password().length() < 8
-            || bootstrap.fullName() == null
-            || bootstrap.fullName().isBlank()
+            || bootstrap.firstName() == null
+            || bootstrap.firstName().isBlank()
+            || bootstrap.lastName() == null
+            || bootstrap.lastName().isBlank()
             || bootstrap.organizationName() == null
             || bootstrap.organizationName().isBlank()) {
             throw AuthException.validation(

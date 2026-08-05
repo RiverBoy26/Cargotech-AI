@@ -116,7 +116,9 @@ CREATE TABLE cargotech.auth_role_permissions (
 CREATE TABLE cargotech.auth_users (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	organization_id uuid NULL,
-	full_name varchar(255) NOT NULL,
+	first_name varchar(100) NOT NULL,
+	last_name varchar(100) NOT NULL,
+	middle_name varchar(100) NULL,
 	email varchar(320) NOT NULL,
 	password_hash varchar(255) NOT NULL,
 	active bool DEFAULT true NOT NULL,

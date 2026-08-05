@@ -31,7 +31,9 @@ public class CurrentDocumentUserProvider {
             readUuid(jwt, "user_id"),
             readUuid(jwt, "organization_id"),
             jwt.getClaimAsString("email"),
-            jwt.getClaimAsString("full_name"),
+            jwt.getClaimAsString("first_name"),
+            jwt.getClaimAsString("last_name"),
+            jwt.getClaimAsString("middle_name"),
             claimAsStringList(jwt, "roles"),
             claimAsStringList(jwt, "permissions")
         );
