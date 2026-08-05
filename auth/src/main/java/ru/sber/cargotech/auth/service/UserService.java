@@ -146,7 +146,7 @@ public class UserService {
 
         AuthUser user = requireUser(userId);
         Set<String> roles = accessService.roleCodes(userId);
-        policy.checkTargetUser(actor, user, roles);
+        policy.checkTargetUserRead(actor, user);
         return toResponse(user, roles);
     }
 

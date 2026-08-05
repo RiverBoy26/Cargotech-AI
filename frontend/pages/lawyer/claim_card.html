@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Карточка претензии</title>
-    <link rel="stylesheet" href="../../styles/claim_card.css">
+    <link rel="stylesheet" href="../../styles/claim_card.css?v=20260806-claim-text-lock-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
@@ -80,7 +80,7 @@
                             <button class="action_btn" id="btn_download_claim" hidden>Скачать</button>
                         </div>
 
-                        <section class="workflow_panel">
+                        <section class="workflow_panel" id="claim_text_panel">
                             <h2 class="workflow_title">Текст претензии</h2>
                             <div class="workflow_controls">
                                 <select class="workflow_input" id="template_select">
@@ -100,7 +100,7 @@
                             </div>
                         </section>
 
-                        <section class="workflow_panel">
+                        <section class="workflow_panel" id="document_delivery_panel" hidden>
                             <h2 class="workflow_title">Документы и отправка</h2>
                             <div class="workflow_controls">
                                 <select class="workflow_input" id="document_format">
@@ -111,7 +111,11 @@
                             </div>
                             <div class="document_list" id="document_list">Документы ещё не сформированы</div>
                             <div class="workflow_controls">
-                                <input class="workflow_input" id="email_to" type="email" placeholder="Email клиента">
+                                <div class="email_recipient_control">
+                                    <div class="email_recipient_value" id="email_to_display">Email клиента не указан</div>
+                                    <input class="workflow_input" id="email_to" type="email" placeholder="Email клиента" hidden>
+                                    <button class="email_edit_button" id="btn_edit_recipient_email" type="button">Изменить</button>
+                                </div>
                                 <input class="workflow_input" id="email_cc" type="email" placeholder="Копия">
                                 <input class="workflow_input" id="email_subject" placeholder="Тема письма">
                                 <button class="action_btn" id="btn_send_document">Проверить оплату и отправить</button>
@@ -138,6 +142,6 @@
     </main>
 
     <script src="../../scripts/api.js?v=20260804-user-name-fields-2"></script>
-    <script src="../../scripts/claim_script.js"></script>
+    <script src="../../scripts/claim_script.js?v=20260806-assigned-lawyer-name-1"></script>
 </body>
 </html>

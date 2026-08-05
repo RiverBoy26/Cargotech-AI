@@ -9,6 +9,7 @@ import ru.sber.cargotech.claim.dto.CreateClaimVersionRequest;
 import ru.sber.cargotech.claim.dto.VersionDiffResponse;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimVersion;
+import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.enums.ClaimVersionSource;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
@@ -17,15 +18,26 @@ import ru.sber.cargotech.claim.repository.ClaimVersionRepository;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ClaimVersionService {
+    private static final Set<ClaimStatus> TEXT_LOCKED_STATUSES = EnumSet.of(
+        ClaimStatus.SENT,
+        ClaimStatus.AWAITING_RESPONSE,
+        ClaimStatus.PAID,
+        ClaimStatus.ESCALATED_TO_COURT,
+        ClaimStatus.CANCELLED,
+        ClaimStatus.CLOSED_IN_COURT
+    );
+
     private final ClaimRepository claimRepository;
     private final ClaimVersionRepository versionRepository;
     private final ClaimOutboxWriter outboxWriter;
@@ -58,6 +70,7 @@ public class ClaimVersionService {
         log.debug("Создание версии: claimId={}, userId={}, source={}, baseVersionId={}, finalVersion={}", claimId, user.userId(), request.source(), request.baseVersionId(), request.finalVersion());
 
         ClaimEntity claim = getClaim(user, claimId);
+        ensureClaimTextEditable(claim);
         ClaimVersion version = new ClaimVersion();
         version.setClaimId(claim.getId());
         version.setVersionNumber(versionRepository.findLastVersionNumber(claim.getId()) + 1);
@@ -94,6 +107,7 @@ public class ClaimVersionService {
         log.debug("Назначение финальной версии: claimId={}, versionId={}, userId={}", claimId, versionId, user.userId());
 
         ClaimEntity claim = getClaim(user, claimId);
+        ensureClaimTextEditable(claim);
         ClaimVersion version = getVersion(claim.getId(), versionId);
         versionRepository.clearFinalFlags(claim.getId());
         version.setFinalVersion(true);
@@ -167,6 +181,14 @@ public class ClaimVersionService {
     private ClaimEntity getClaim(CurrentClaimUser user, UUID claimId) {
         return claimRepository.findByIdAndOrganizationId(claimId, user.organizationId())
             .orElseThrow(() -> ClaimException.notFound("Претензия не найдена"));
+    }
+
+    private void ensureClaimTextEditable(ClaimEntity claim) {
+        if (TEXT_LOCKED_STATUSES.contains(claim.getStatus())) {
+            throw ClaimException.conflict(
+                "Текст претензии нельзя изменять в статусе " + claim.getStatus()
+            );
+        }
     }
 
     private ClaimVersion getVersion(UUID claimId, UUID versionId) {

@@ -104,14 +104,22 @@ public class ClaimGenerationService {
     }
 
     private void validateForGeneration(GenerationContext context) {
-        if (context.claim().getStatus() != ClaimStatus.DRAFT) {
-            throw ClaimException.conflict("Генерация доступна только для претензии в статусе DRAFT");
+        if (context.claim().getStatus() != ClaimStatus.DRAFT
+                && context.claim().getStatus() != ClaimStatus.PENDING_LEGAL_REVIEW) {
+            throw ClaimException.conflict(
+                    "Генерация доступна только для черновика или претензии на юридической проверке"
+            );
         }
         if (isBlank(context.creditor().getName())) {
             throw ClaimException.validation("Не заполнено наименование кредитора");
         }
         if (isBlank(context.debtor().getName())) {
             throw ClaimException.validation("Не заполнено наименование должника");
+        }
+        if (!context.claim().isNonPaymentConfirmed()) {
+            throw ClaimException.validation(
+                    "Сначала бухгалтер должен подтвердить отсутствие оплаты"
+            );
         }
         if (context.calculation().getRemainingDebt() == null
                 || context.calculation().getRemainingDebt().signum() <= 0) {

@@ -234,6 +234,18 @@ header {
   margin-bottom: 18px;
 }
 
+.workflow_panel_locked .workflow_input:disabled,
+.workflow_panel_locked .workflow_textarea[readonly] {
+  color: #77808c;
+  background: #eceff2;
+  border-color: #d5d9de;
+  cursor: not-allowed;
+}
+
+.workflow_panel_locked .workflow_textarea[readonly] {
+  resize: none;
+}
+
 .workflow_title {
   font-size: 17px;
   margin: 0 0 14px;
@@ -260,6 +272,47 @@ header {
 .workflow_input {
   min-width: 210px;
   flex: 1;
+}
+
+.email_recipient_control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 210px;
+  flex: 1;
+}
+
+.email_recipient_control .workflow_input {
+  min-width: 0;
+  width: 100%;
+}
+
+.email_recipient_value {
+  box-sizing: border-box;
+  min-width: 0;
+  flex: 1;
+  padding: 10px 12px;
+  overflow: hidden;
+  color: #252a31;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email_edit_button {
+  padding: 3px 2px;
+  border: 0;
+  background: transparent;
+  color: #77808c;
+  font-family: inherit;
+  font-size: 12px;
+  opacity: 0.62;
+  cursor: pointer;
+}
+
+.email_edit_button:hover,
+.email_edit_button:focus-visible {
+  color: #252a31;
+  opacity: 0.9;
 }
 
 .workflow_textarea {

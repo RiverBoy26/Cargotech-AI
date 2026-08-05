@@ -119,6 +119,20 @@ public class ClaimController {
         );
     }
 
+    @PostMapping("/{claimId}/confirm-non-payment")
+    @PreAuthorize("hasAuthority('OVERDUE_CONFIRM_NON_PAYMENT')")
+    public ClaimDetailsResponse confirmNonPayment(
+            @PathVariable UUID claimId,
+            @Valid @RequestBody(required = false) StatusChangeRequest request
+    ) {
+        log.info("Подтверждение отсутствия оплаты: claimId={}", claimId);
+        return claimService.confirmNonPayment(
+                currentUserProvider.getRequiredUser(),
+                claimId,
+                request
+        );
+    }
+
     @PostMapping("/{claimId}/approve")
     @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
     public ClaimDetailsResponse approve(

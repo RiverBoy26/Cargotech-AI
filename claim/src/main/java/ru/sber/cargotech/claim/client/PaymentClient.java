@@ -12,6 +12,8 @@ import ru.sber.cargotech.claim.exception.ClaimException;
 
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -115,7 +117,14 @@ public class PaymentClient {
             BigDecimal serviceAmount,
             BigDecimal paidAmount,
             BigDecimal remainingAmount,
-            String paymentStatus
+            String paymentStatus,
+            List<PaymentAllocationResponse> allocations
+    ) {
+    }
+
+    public record PaymentAllocationResponse(
+            LocalDate paymentDate,
+            BigDecimal amount
     ) {
     }
 }

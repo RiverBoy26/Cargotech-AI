@@ -6,6 +6,7 @@ import ru.sber.cargotech.payment.entity.PaymentMatch;
 import ru.sber.cargotech.payment.enums.PaymentTargetType;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,4 +49,31 @@ public interface PaymentMatchRepository
         PaymentTargetType targetType,
         UUID targetId
     );
+
+    @Query("""
+        select payment.paymentDate as paymentDate,
+               sum(match.matchedAmount) as matchedAmount
+        from PaymentMatch match
+        join Payment payment on payment.id = match.paymentId
+        where match.active = true
+          and (
+            (match.targetType = :claimType and match.targetId = :claimId)
+            or
+            (match.targetType = :shipmentType and match.targetId = :shipmentId)
+          )
+        group by payment.paymentDate
+        order by payment.paymentDate
+        """)
+    List<PaymentAllocationView> findActiveAllocationsByTargets(
+        PaymentTargetType claimType,
+        UUID claimId,
+        PaymentTargetType shipmentType,
+        UUID shipmentId
+    );
+
+    interface PaymentAllocationView {
+        LocalDate getPaymentDate();
+
+        BigDecimal getMatchedAmount();
+    }
 }

@@ -90,6 +90,8 @@ public class InternalClaimPaymentController {
                 user.organizationId(),
                 claimId,
                 request.checkId(),
+                request.remainingPrincipalAmount(),
+                request.remainingPenaltyAmount(),
                 user.userId()
         );
 

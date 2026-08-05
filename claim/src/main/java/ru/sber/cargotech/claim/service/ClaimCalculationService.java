@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,9 +30,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class ClaimCalculationService {
-    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
-    private static final BigDecimal DAYS_IN_YEAR = new BigDecimal("365");
-
     private final ClaimRepository claimRepository;
     private final ClaimCalculationRepository calculationRepository;
     private final PaymentClient paymentClient;
@@ -57,7 +55,11 @@ public class ClaimCalculationService {
         ClaimShipment shipment = shipmentService.getEntity(user.organizationId(), claim.getShipmentId());
         ClaimContract contract = contractService.getEntity(user.organizationId(), claim.getContractId());
 
-        BigDecimal principalDebt = money(shipment.getServiceAmount());
+        BigDecimal principalDebt = calculationRepository
+            .findFirstByClaimIdOrderByCalculationVersionDesc(claim.getId())
+            .map(ClaimCalculation::getPrincipalDebt)
+            .map(ClaimCalculationService::money)
+            .orElseGet(() -> money(claim.getPrincipalDebt()));
         PaymentClient.PaymentStateResponse paymentState =
                 paymentClient.getPaymentState(
                         claim.getId(),
@@ -66,7 +68,6 @@ public class ClaimCalculationService {
                 );
 
         BigDecimal paidAmount = money(paymentState.paidAmount());
-        BigDecimal remainingDebt = money(principalDebt.subtract(paidAmount).max(BigDecimal.ZERO));
 
         LocalDate calculationDate = LocalDate.now();
         LocalDate overdueStartDate = resolveOverdueStartDate(shipment, contract);
@@ -77,12 +78,32 @@ public class ClaimCalculationService {
         BigDecimal penaltyRate = contract.getPenaltyRate() == null
             ? BigDecimal.ZERO
             : contract.getPenaltyRate();
-        BigDecimal penaltyAmount = calculatePenalty(
-            remainingDebt,
-            overdueDays,
+        List<PenaltyScheduleCalculator.Allocation> paymentAllocations =
+            paymentState.allocations() == null
+                ? List.of()
+                : paymentState.allocations().stream()
+                    .map(allocation -> new PenaltyScheduleCalculator.Allocation(
+                        allocation.paymentDate(),
+                        allocation.amount()
+                    ))
+                    .toList();
+        BigDecimal accruedPenaltyAmount = PenaltyScheduleCalculator.calculate(
+            principalDebt,
+            overdueStartDate,
+            calculationDate,
             penaltyType,
-            penaltyRate
+            penaltyRate,
+            paymentAllocations
         );
+        ClaimPaymentAllocationCalculator.AllocationResult paymentAllocation =
+                ClaimPaymentAllocationCalculator.allocate(
+                        principalDebt,
+                        accruedPenaltyAmount,
+                        paidAmount
+                );
+        BigDecimal remainingDebt = money(paymentAllocation.remainingPrincipal());
+        BigDecimal paidPenaltyAmount = money(paymentAllocation.paidPenalty());
+        BigDecimal penaltyAmount = money(paymentAllocation.remainingPenalty());
         BigDecimal totalAmount = money(remainingDebt.add(penaltyAmount));
         log.debug("Расчёт выполнен: claimId={}, principalDebt={}, paidAmount={}, remainingDebt={}, overdueStartDate={}, overdueDays={}, penaltyType={}, penaltyRate={}, penaltyAmount={}, totalAmount={}", claim.getId(), principalDebt, paidAmount, remainingDebt, overdueStartDate, overdueDays, penaltyType, penaltyRate, penaltyAmount, totalAmount);
 
@@ -100,12 +121,25 @@ public class ClaimCalculationService {
         calculation.setPenaltyRate(penaltyRate);
         calculation.setPenaltyAmount(penaltyAmount);
         calculation.setTotalAmount(totalAmount);
-        calculation.setFormula(buildFormula(penaltyType, penaltyRate, overdueDays));
+        calculation.setFormula(buildFormula(
+            penaltyType,
+            penaltyRate,
+            overdueDays,
+            paymentAllocations.size()
+        ));
         calculation.setInputSnapshot(Map.of(
             "shipmentId", shipment.getId().toString(),
             "contractId", contract.getId().toString(),
             "serviceAmount", principalDebt,
             "paidAmount", paidAmount,
+            "accruedPenaltyAmount", accruedPenaltyAmount,
+            "paidPenaltyAmount", paidPenaltyAmount,
+            "paymentAllocations", paymentAllocations.stream()
+                .map(allocation -> Map.of(
+                    "paymentDate", allocation.paymentDate().toString(),
+                    "amount", allocation.amount()
+                ))
+                .toList(),
             "paymentStartEvent", contract.getPaymentStartEvent() == null ? "" : contract.getPaymentStartEvent().name(),
             "paymentDays", contract.getPaymentDays() == null ? 0 : contract.getPaymentDays()
         ));
@@ -129,6 +163,7 @@ public class ClaimCalculationService {
                 "claimId", claim.getId(),
                 "calculationId", saved.getId(),
                 "remainingDebt", remainingDebt,
+                "paidPenaltyAmount", paidPenaltyAmount,
                 "penaltyAmount", penaltyAmount,
                 "totalAmount", totalAmount
             )
@@ -168,34 +203,22 @@ public class ClaimCalculationService {
         return Math.toIntExact(ChronoUnit.DAYS.between(overdueStartDate, calculationDate));
     }
 
-    private BigDecimal calculatePenalty(
-        BigDecimal remainingDebt,
-        int overdueDays,
-        PenaltyType penaltyType,
-        BigDecimal penaltyRate
+    private String buildFormula(
+        PenaltyType type,
+        BigDecimal rate,
+        int days,
+        int paymentCount
     ) {
-        if (remainingDebt.signum() <= 0 || overdueDays <= 0 || penaltyType == PenaltyType.NONE) {
-            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        }
-        BigDecimal days = BigDecimal.valueOf(overdueDays);
-        BigDecimal percent = penaltyRate.divide(ONE_HUNDRED, 10, RoundingMode.HALF_UP);
-        BigDecimal value;
-        if (penaltyType == PenaltyType.ARTICLE_395) {
-            value = remainingDebt.multiply(percent).multiply(days).divide(DAYS_IN_YEAR, 10, RoundingMode.HALF_UP);
-        } else {
-            value = remainingDebt.multiply(percent).multiply(days);
-        }
-        return money(value);
-    }
-
-    private String buildFormula(PenaltyType type, BigDecimal rate, int days) {
         if (type == PenaltyType.NONE) {
             return "Неустойка не начисляется";
         }
+        String base = paymentCount > 0
+            ? "Остаток долга по периодам между платежами"
+            : "Остаток долга";
         if (type == PenaltyType.ARTICLE_395) {
-            return "Остаток долга × " + rate + "% × " + days + " дней / 365";
+            return base + " × " + rate + "% × " + days + " дней / 365";
         }
-        return "Остаток долга × " + rate + "% × " + days + " дней";
+        return base + " × " + rate + "% × " + days + " дней";
     }
 
     private static BigDecimal money(BigDecimal value) {

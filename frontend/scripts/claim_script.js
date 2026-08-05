@@ -5,6 +5,15 @@ let selectedDocumentId = null;
 let currentClaimContext = {};
 let templatePreviewRequestId = 0;
 
+const CLAIM_TEXT_LOCKED_STATUSES = new Set([
+  'SENT',
+  'AWAITING_RESPONSE',
+  'PAID',
+  'ESCALATED_TO_COURT',
+  'CANCELLED',
+  'CLOSED_IN_COURT',
+]);
+
 function setText(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value ?? '—';
@@ -25,6 +34,52 @@ function setButtonState(id, visible, enabled = true) {
   button.hidden = !visible;
   button.disabled = !enabled;
   button.classList.toggle('action_btn_disabled', !enabled);
+}
+
+function isClaimTextLocked(status = currentClaim?.status) {
+  return CLAIM_TEXT_LOCKED_STATUSES.has(status);
+}
+
+function updateClaimTextPanelState() {
+  const locked = isClaimTextLocked();
+  const panel = document.getElementById('claim_text_panel');
+  const editor = document.getElementById('claim_text_editor');
+  const previewButton = document.getElementById('btn_template_preview');
+
+  if (panel) {
+    panel.classList.toggle('workflow_panel_locked', locked);
+    panel.setAttribute('aria-disabled', String(locked));
+    panel.title = locked
+      ? 'Текст претензии недоступен для изменения после отправки'
+      : '';
+  }
+
+  ['template_select', 'version_select', 'btn_template_preview'].forEach((id) => {
+    const control = document.getElementById(id);
+    if (control) control.disabled = locked;
+  });
+
+  if (previewButton) {
+    previewButton.classList.toggle('action_btn_disabled', locked);
+  }
+  if (editor) {
+    editor.readOnly = locked;
+    editor.setAttribute('aria-readonly', String(locked));
+  }
+}
+
+function setRecipientEmail(email) {
+  const input = document.getElementById('email_to');
+  const display = document.getElementById('email_to_display');
+  const editButton = document.getElementById('btn_edit_recipient_email');
+  if (!input || !display || !editButton) return;
+
+  input.value = String(email || '').trim();
+  input.hidden = true;
+  display.textContent = input.value || 'Email клиента не указан';
+  display.hidden = false;
+  editButton.textContent = 'Изменить';
+  editButton.dataset.editing = 'false';
 }
 
 function formatDate(value) {
@@ -71,7 +126,14 @@ function updateAvailableActions() {
   const approved = Boolean(currentClaim?.approvedAt)
     || ['LEGAL_APPROVED', 'SENT', 'AWAITING_RESPONSE', 'PAID', 'ESCALATED_TO_COURT', 'CLOSED_IN_COURT']
       .includes(status);
-  setButtonState('btn_compose', status === 'DRAFT' && hasPermission('CLAIM_UPDATE'));
+  const documentDeliveryPanel = document.getElementById('document_delivery_panel');
+  if (documentDeliveryPanel) documentDeliveryPanel.hidden = !approved;
+  setButtonState(
+    'btn_compose',
+    ['DRAFT', 'PENDING_LEGAL_REVIEW'].includes(status)
+      && Boolean(currentClaim?.nonPaymentConfirmed)
+      && hasPermission('CLAIM_UPDATE')
+  );
   setButtonState('btn_recalculate', editable && hasPermission('CALCULATION_GENERATE'));
   setButtonState('btn_edit', editable && hasPermission('CLAIM_UPDATE'));
   setButtonState(
@@ -104,6 +166,7 @@ function updateAvailableActions() {
   );
   setButtonState('btn_save_version', editable && hasPermission('CLAIM_UPDATE'));
   setButtonState('btn_mark_final', editable && hasPermission('CLAIM_UPDATE'));
+  updateClaimTextPanelState();
 }
 
 function fillClaimCard(claim) {
@@ -118,19 +181,20 @@ function fillClaimCard(claim) {
   setText('info_payment_term', '—');
   setText('info_completion_date', '—');
   setText('info_overdue_date', '—');
-  setText('info_lawyer_name', claim.createdBy || '—');
+  setText('info_lawyer_name', '—');
   const stripe = document.getElementById('claim_card_stripe');
   if (stripe) stripe.className = `claim_card_stripe ${status.className}`;
   updateAvailableActions();
 }
 
 async function loadClaimContext(claim) {
+  const lawyerId = claim.assignedLawyerId || claim.createdBy;
   const requests = await Promise.allSettled([
     getContract(claim.contractId),
     getShipment(claim.shipmentId),
     getClaimCalculation(claim.id),
     getParty(claim.debtorId),
-    getUser(claim.createdBy),
+    lawyerId ? getUser(lawyerId) : Promise.resolve(null),
   ]);
 
   const valueOrNull = (result) => result.status === 'fulfilled' ? result.value : null;
@@ -138,10 +202,16 @@ async function loadClaimContext(claim) {
   const shipment = valueOrNull(requests[1]);
   const calculation = valueOrNull(requests[2]);
   const debtor = valueOrNull(requests[3]);
-  const creator = valueOrNull(requests[4]);
+  const assignedLawyer = valueOrNull(requests[4]);
   const storedUser = getStoredUser() || {};
 
-  currentClaimContext = { contract, shipment, calculation, debtor, creator };
+  currentClaimContext = {
+    contract,
+    shipment,
+    calculation,
+    debtor,
+    assignedLawyer,
+  };
 
   setText(
     'info_payment_term',
@@ -154,9 +224,8 @@ async function loadClaimContext(claim) {
   setText('info_overdue_date', formatDate(calculation?.overdueStartDate));
   setText(
     'info_lawyer_name',
-    (creator ? formatUserFullName(creator) : null)
-      || (claim.createdBy === storedUser.userId ? formatUserFullName(storedUser) : null)
-      || claim.createdBy
+    (assignedLawyer ? formatUserFullName(assignedLawyer) : null)
+      || (lawyerId === storedUser.userId ? formatUserFullName(storedUser) : null)
       || '—'
   );
 
@@ -164,10 +233,7 @@ async function loadClaimContext(claim) {
     setText('claim_card_overdue_badge', `Дней просрочки ${calculation.overdueDays}`);
   }
 
-  const emailInput = document.getElementById('email_to');
-  if (emailInput && !emailInput.value.trim() && debtor?.email) {
-    emailInput.value = debtor.email;
-  }
+  setRecipientEmail(debtor?.email);
 }
 
 async function loadVersions(claimId) {
@@ -289,6 +355,8 @@ async function buildClaimTemplateData(claimId, generatedText = '') {
 }
 
 async function applySelectedClaimTemplate(claimId) {
+  if (isClaimTextLocked()) return;
+
   const select = document.getElementById('template_select');
   const editor = document.getElementById('claim_text_editor');
   const templateId = select.value;
@@ -426,6 +494,7 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_template_preview').addEventListener('click', async () => {
+    if (isClaimTextLocked()) return;
     if (!document.getElementById('template_select').value) {
       return alert('Выберите шаблон');
     }
@@ -435,6 +504,7 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_save_version').addEventListener('click', async () => {
+    if (isClaimTextLocked()) return alert('Текст этой претензии уже нельзя изменять');
     const content = document.getElementById('claim_text_editor').value.trim();
     if (!content) return alert('Введите текст претензии');
     try {
@@ -450,6 +520,7 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_mark_final').addEventListener('click', async () => {
+    if (isClaimTextLocked()) return alert('Финальную версию этой претензии уже нельзя изменять');
     const versionId = document.getElementById('version_select').value;
     if (!versionId) return alert('Выберите сохранённую версию');
     try {
@@ -487,6 +558,29 @@ async function initClaimCardPage() {
     try {
       await generateSelectedClaimDocument(claimId, false);
     } catch (error) { showError(error); }
+  });
+
+  document.getElementById('btn_edit_recipient_email').addEventListener('click', () => {
+    const input = document.getElementById('email_to');
+    const display = document.getElementById('email_to_display');
+    const button = document.getElementById('btn_edit_recipient_email');
+    const editing = button.dataset.editing === 'true';
+
+    if (!editing) {
+      display.hidden = true;
+      input.hidden = false;
+      button.textContent = 'Готово';
+      button.dataset.editing = 'true';
+      input.focus();
+      input.select();
+      return;
+    }
+
+    if (input.value && !input.checkValidity()) {
+      input.reportValidity();
+      return;
+    }
+    setRecipientEmail(input.value);
   });
 
   document.getElementById('btn_download_claim').addEventListener('click', async () => {

@@ -23,6 +23,7 @@ import ru.sber.cargotech.payment.security.CurrentPaymentUser;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -66,19 +67,34 @@ public class PaymentCheckService {
                 user.organizationId()
         );
 
+        BigDecimal remaining = ClaimOutstandingAmountCalculator.calculate(
+                claim,
+                paymentService.paidAmount(claim)
+        );
+
         Payment payment = paymentService.getPayment(
                 request.paymentId(),
                 user.organizationId()
         );
 
-        BigDecimal remaining = claim.serviceAmount()
-                .subtract(paymentService.paidAmount(claim))
-                .max(BigDecimal.ZERO);
-
         if (remaining.signum() == 0) {
-            throw PaymentException.conflict(
-                    "Перевозка по претензии уже полностью оплачена"
+            PreflightCheckResponse check = createCheck(
+                    claim,
+                    request.comment(),
+                    user,
+                    true
             );
+
+            UUID eventId = writePaymentConfirmedEvent(
+                    claim,
+                    payment,
+                    check,
+                    user
+            );
+
+            claimClient.markPaid(claim.id());
+
+            return toMarkPaidResponse(claim, payment, check, eventId);
         }
 
         if (payment.getAmount().signum() <= 0) {
@@ -121,22 +137,41 @@ public class PaymentCheckService {
             );
         }
 
-        UUID eventId = outboxWriter.write(
+        UUID eventId = writePaymentConfirmedEvent(claim, payment, check, user);
+
+        claimClient.markPaid(claim.id());
+
+        return toMarkPaidResponse(claim, payment, check, eventId);
+    }
+
+    private UUID writePaymentConfirmedEvent(
+            ClaimPaymentData claim,
+            Payment payment,
+            PreflightCheckResponse check,
+            CurrentPaymentUser user
+    ) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("paymentId", payment.getId());
+        payload.put("paymentCheckId", check.checkId());
+        payload.put("paidAmount", check.paidAmount());
+        payload.put("remainingAmount", check.remainingAmount());
+
+        return outboxWriter.write(
                 "CLAIM",
                 claim.id(),
                 "CLAIM_PAYMENT_CONFIRMED",
                 user.organizationId(),
                 user.userId(),
-                Map.of(
-                        "paymentId", payment.getId(),
-                        "paymentCheckId", check.checkId(),
-                        "paidAmount", check.paidAmount(),
-                        "remainingAmount", check.remainingAmount()
-                )
+                payload
         );
+    }
 
-        claimClient.markPaid(claim.id());
-
+    private MarkPaidResponse toMarkPaidResponse(
+            ClaimPaymentData claim,
+            Payment payment,
+            PreflightCheckResponse check,
+            UUID eventId
+    ) {
         return new MarkPaidResponse(
                 claim.id(),
                 payment.getId(),
@@ -157,13 +192,16 @@ public class PaymentCheckService {
         log.debug("Формирование проверки оплаты: claimId={}, serviceAmount={}, publishEvent={}, userId={}", claim.id(), claim.serviceAmount(), publishEvent, user.userId());
 
         BigDecimal paid = paymentService.paidAmount(claim);
-
-        BigDecimal remaining = claim.serviceAmount()
-                .subtract(paid)
-                .max(BigDecimal.ZERO);
+        ClaimOutstandingAmountCalculator.OutstandingBreakdown outstanding =
+                ClaimOutstandingAmountCalculator.calculateBreakdown(
+                claim,
+                paid
+        );
+        BigDecimal remaining = outstanding.total();
+        BigDecimal expected = paid.add(remaining);
 
         PaymentCheckStatus status = paymentService.resolvePaymentStatus(
-                claim.serviceAmount(),
+                expected,
                 paid
         );
 
@@ -171,7 +209,7 @@ public class PaymentCheckService {
         check.setOrganizationId(user.organizationId());
         check.setTargetType("CLAIM");
         check.setTargetId(claim.id());
-        check.setServiceAmount(claim.serviceAmount());
+        check.setServiceAmount(expected);
         check.setPaidAmount(paid);
         check.setRemainingAmount(remaining);
         check.setPaymentStatus(status);
@@ -186,7 +224,9 @@ public class PaymentCheckService {
         paymentService.updateLastPaymentCheck(
                 claim.id(),
                 user.organizationId(),
-                check.getId()
+                check.getId(),
+                outstanding.remainingPrincipal(),
+                outstanding.remainingPenalty()
         );
 
         if (publishEvent) {
@@ -211,7 +251,7 @@ public class PaymentCheckService {
                 check.getId(),
                 claim.id(),
                 claim.shipmentId(),
-                claim.serviceAmount(),
+                expected,
                 paid,
                 remaining,
                 status,

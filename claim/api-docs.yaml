@@ -306,6 +306,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/confirm-non-payment:
+    post:
+      tags:
+      - claim-controller
+      summary: Подтвердить отсутствие оплаты без изменения статуса претензии
+      operationId: confirmNonPayment
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
   /api/v1/claims/{claimId}/send:
     post:
       tags:

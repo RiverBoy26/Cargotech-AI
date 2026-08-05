@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import ru.sber.cargotech.payment.dto.PaymentAllocationResponse;
 import ru.sber.cargotech.payment.dto.PaymentStateRequest;
 import ru.sber.cargotech.payment.dto.PaymentStateResponse;
 import ru.sber.cargotech.payment.enums.PaymentCheckStatus;
@@ -47,6 +48,18 @@ public class InternalPaymentStateController {
                 .subtract(paidAmount)
                 .max(BigDecimal.ZERO);
 
+        var allocations = matchRepository.findActiveAllocationsByTargets(
+                        PaymentTargetType.CLAIM,
+                        request.claimId(),
+                        PaymentTargetType.SHIPMENT,
+                        request.shipmentId()
+                ).stream()
+                .map(allocation -> new PaymentAllocationResponse(
+                        allocation.getPaymentDate(),
+                        allocation.getMatchedAmount()
+                ))
+                .toList();
+
         return new PaymentStateResponse(
                 request.claimId(),
                 request.shipmentId(),
@@ -56,7 +69,8 @@ public class InternalPaymentStateController {
                 resolveStatus(
                         request.serviceAmount(),
                         paidAmount
-                )
+                ),
+                allocations
         );
     }
 

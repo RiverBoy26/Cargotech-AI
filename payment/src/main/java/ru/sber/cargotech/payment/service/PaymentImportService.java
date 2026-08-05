@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import ru.sber.cargotech.payment.dto.PaymentImportResponse;
+import ru.sber.cargotech.payment.entity.OrganizationRecipient;
 import ru.sber.cargotech.payment.entity.Payment;
 import ru.sber.cargotech.payment.entity.PaymentImport;
 import ru.sber.cargotech.payment.enums.PaymentImportStatus;
@@ -13,6 +14,7 @@ import ru.sber.cargotech.payment.enums.PaymentSourceSystem;
 import ru.sber.cargotech.payment.enums.PaymentStatus;
 import ru.sber.cargotech.payment.exception.PaymentException;
 import ru.sber.cargotech.payment.parser.PaymentSpreadsheetParser;
+import ru.sber.cargotech.payment.repository.OrganizationRecipientRepository;
 import ru.sber.cargotech.payment.repository.PaymentImportRepository;
 import ru.sber.cargotech.payment.repository.PaymentOutboxWriter;
 import ru.sber.cargotech.payment.repository.PaymentRepository;
@@ -32,6 +34,7 @@ public class PaymentImportService {
     private final PaymentImportRepository importRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentOutboxWriter outboxWriter;
+    private final OrganizationRecipientRepository organizationRecipientRepository;
 
     @Transactional
     public PaymentImportResponse importFromOneC(
@@ -64,6 +67,13 @@ public class PaymentImportService {
             throw PaymentException.unprocessable("Файл импорта пуст");
         }
 
+        OrganizationRecipient recipient = organizationRecipientRepository
+            .findById(user.organizationId())
+            .orElseThrow(() -> PaymentException.notFound(
+                "Организация-экспедитор %s не найдена"
+                    .formatted(user.organizationId())
+            ));
+
         OffsetDateTime now = OffsetDateTime.now();
         PaymentImport batch = new PaymentImport();
         batch.setOrganizationId(user.organizationId());
@@ -91,7 +101,8 @@ public class PaymentImportService {
                 row,
                 sourceSystem,
                 batch.getId(),
-                user.organizationId()
+                user.organizationId(),
+                recipient
             ));
             imported++;
         }
@@ -167,7 +178,8 @@ public class PaymentImportService {
         PaymentSpreadsheetParser.PaymentRow row,
         PaymentSourceSystem sourceSystem,
         UUID importId,
-        UUID organizationId
+        UUID organizationId,
+        OrganizationRecipient recipient
     ) {
         Payment payment = new Payment();
         payment.setOrganizationId(organizationId);
@@ -178,8 +190,8 @@ public class PaymentImportService {
         payment.setPaymentDate(row.paymentDate());
         payment.setPayerInn(row.payerInn());
         payment.setPayerName(row.payerName());
-        payment.setRecipientInn(row.recipientInn());
-        payment.setRecipientName(row.recipientName());
+        payment.setRecipientInn(recipient.getInn());
+        payment.setRecipientName(recipient.getName());
         payment.setAmount(row.amount());
         payment.setCurrency(row.currency());
         payment.setPurpose(row.purpose());

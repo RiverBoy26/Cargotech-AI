@@ -280,6 +280,40 @@ public class ClaimService {
     }
 
     @Transactional
+    public ClaimDetailsResponse confirmNonPayment(
+            CurrentClaimUser user,
+            UUID claimId,
+            StatusChangeRequest request
+    ) {
+        ClaimEntity claim = getEntity(user.organizationId(), claimId);
+        if (claim.getStatus() != ClaimStatus.DRAFT) {
+            throw ClaimException.conflict(
+                    "Подтвердить отсутствие оплаты можно только для претензии в статусе DRAFT"
+            );
+        }
+
+        String reason = request == null ? null : request.reason();
+        applyNonPaymentConfirmation(claim, user, true, reason);
+        claim.setUpdatedBy(user.userId());
+        ClaimEntity saved = claimRepository.save(claim);
+
+        outboxWriter.write(
+                "CLAIM",
+                saved.getId(),
+                "CLAIM_NON_PAYMENT_CONFIRMED",
+                user.organizationId(),
+                user.userId(),
+                Map.of(
+                        "claimId", saved.getId(),
+                        "confirmed", true,
+                        "confirmedBy", user.userId()
+                )
+        );
+
+        return get(user, saved.getId());
+    }
+
+    @Transactional
     public ClaimDetailsResponse approve(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
         log.debug("Утверждение претензии: claimId={}, userId={}", claimId, user.userId());
 
@@ -307,6 +341,16 @@ public class ClaimService {
     ) {
         log.debug("Начало отправки претензии с preflight-проверкой оплаты: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
 
+        PaymentPreflightResponse preflight = paymentClient.preflightCheck(
+            claimId,
+            "Проверка оплаты перед отправкой претензии"
+        );
+        if (preflight == null || !preflight.isCanSend()) {
+            throw ClaimException.conflict(
+                "Отправка заблокирована: задолженность погашена или результат проверки оплаты недоступен"
+            );
+        }
+
         ClaimEntity claim = getEntity(
                 user.organizationId(),
                 claimId
@@ -315,16 +359,6 @@ public class ClaimService {
         if (claim.getStatus() != ClaimStatus.LEGAL_APPROVED) {
             throw ClaimException.conflict(
                     "Отправить можно только утверждённую претензию"
-            );
-        }
-
-        PaymentPreflightResponse preflight = paymentClient.preflightCheck(
-            claimId,
-            "Проверка оплаты перед отправкой претензии"
-        );
-        if (preflight == null || !preflight.isCanSend()) {
-            throw ClaimException.conflict(
-                "Отправка заблокирована: задолженность погашена или результат проверки оплаты недоступен"
             );
         }
 

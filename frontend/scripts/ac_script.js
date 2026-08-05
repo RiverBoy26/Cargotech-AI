@@ -22,6 +22,7 @@ const PAYMENT_SOURCE_LABELS = {
 let accountantClaims = [];
 let accountantPayments = [];
 let paymentsLoaded = false;
+let accountantOrganization = null;
 
 function escapeAccountant(value) {
   return String(value ?? '—')
@@ -46,9 +47,15 @@ function todayLocalIso() {
 
 function renderActionButton(claim) {
   if (claim.status === 'DRAFT' && !claim.nonPaymentConfirmed) {
-    const enabled = Boolean(claim.finalVersionId);
     return `<button class="action_btn action_btn_confirm" data-claim-action="confirm" data-id="${escapeAccountant(claim.id)}"
-      ${enabled ? '' : 'disabled title="Юрист ещё не назначил финальную версию"'}>Подтвердить неуплату</button>`;
+      >Подтвердить неуплату</button>`;
+  }
+  if (claim.status === 'DRAFT' && claim.nonPaymentConfirmed && !claim.finalVersionId) {
+    return '<button class="action_btn" disabled title="Юрист ещё не назначил финальную версию">Ожидается финальная версия</button>';
+  }
+  if (claim.status === 'DRAFT' && claim.nonPaymentConfirmed && claim.finalVersionId) {
+    return `<button class="action_btn action_btn_confirm" data-claim-action="submit" data-id="${escapeAccountant(claim.id)}"
+      >Передать на юрпроверку</button>`;
   }
   if (!['PAID', 'CANCELLED', 'CLOSED_IN_COURT'].includes(claim.status)) {
     return `
@@ -99,7 +106,9 @@ function bindOverdueActions() {
       button.disabled = true;
       try {
         if (action === 'confirm') {
-          await claimAction(id, 'submit-to-legal-review', 'Неуплата подтверждена бухгалтером');
+          await claimAction(id, 'confirm-non-payment', 'Неуплата подтверждена бухгалтером');
+        } else if (action === 'submit') {
+          await claimAction(id, 'submit-to-legal-review', 'Претензия передана на юридическую проверку');
         } else if (action === 'preflight') {
           const result = await preflightClaimPayment(id, 'Ручная проверка бухгалтером');
           alert(
@@ -269,6 +278,11 @@ function setOptional(payload, key, value) {
   if (value !== '') payload[key] = value;
 }
 
+async function loadPaymentFormReferences() {
+  const user = getStoredUser();
+  accountantOrganization = await getOrganization(user.organizationId);
+}
+
 function resetCreatePaymentForm() {
   const form = document.getElementById('payment_create_form');
   form.classList.remove('payment_form_visible');
@@ -278,8 +292,6 @@ function resetCreatePaymentForm() {
     'payment_amount',
     'payment_payer_inn',
     'payment_payer_name',
-    'payment_recipient_inn',
-    'payment_recipient_name',
     'payment_purpose',
   ].forEach((id) => { document.getElementById(id).value = ''; });
   document.getElementById('payment_date').value = todayLocalIso();
@@ -318,8 +330,8 @@ async function submitPayment() {
   setOptional(payload, 'externalPaymentId', document.getElementById('payment_external_id').value.trim());
   setOptional(payload, 'payerInn', document.getElementById('payment_payer_inn').value.trim());
   setOptional(payload, 'payerName', document.getElementById('payment_payer_name').value.trim());
-  setOptional(payload, 'recipientInn', document.getElementById('payment_recipient_inn').value.trim());
-  setOptional(payload, 'recipientName', document.getElementById('payment_recipient_name').value.trim());
+  setOptional(payload, 'recipientInn', accountantOrganization?.inn || '');
+  setOptional(payload, 'recipientName', accountantOrganization?.name || '');
   setOptional(payload, 'purpose', document.getElementById('payment_purpose').value.trim());
 
   button.disabled = true;
@@ -408,6 +420,7 @@ async function initAccountantPage() {
   if (!requireRole('ACCOUNTANT', 'SUPER_ADMIN')) return;
   fillUserHeader();
   await syncUserProfile().catch((error) => console.warn(error.message));
+  await loadPaymentFormReferences().catch((error) => console.warn(error.message));
 
   bindTabs();
   document.getElementById('overdue_search').addEventListener('input', renderOverdues);

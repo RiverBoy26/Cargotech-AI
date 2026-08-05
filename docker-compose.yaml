@@ -52,6 +52,73 @@ services:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped
 
+  qdrant-init:
+    image: curlimages/curl:8.12.1
+    depends_on:
+      qdrant:
+        condition: service_started
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until curl --fail --silent http://qdrant:6333/readyz; do
+          echo "Waiting for Qdrant..."
+          sleep 2
+        done
+
+        if curl --fail --silent http://qdrant:6333/collections/cargotech_rag_chunks >/dev/null; then
+          echo "Qdrant collection cargotech_rag_chunks already exists"
+          exit 0
+        fi
+
+        curl --fail --show-error --silent \
+          --request PUT \
+          http://qdrant:6333/collections/cargotech_rag_chunks \
+          --header "Content-Type: application/json" \
+          --data '{"vectors":{"size":2560,"distance":"Cosine"}}'
+
+        echo "Qdrant collection cargotech_rag_chunks created"
+
+  qdrant-seed:
+    image: curlimages/curl:8.12.1
+    profiles: ["seed"]
+    depends_on:
+      ai:
+        condition: service_started
+    restart: "no"
+    entrypoint: [ "/bin/sh", "-ec" ]
+    command:
+      - |
+        attempts=0
+        until curl --silent --output /dev/null http://ai:8084/; do
+          attempts=$$((attempts + 1))
+          if [ "$$attempts" -ge 60 ]; then
+            echo "AI service did not become available in 120 seconds" >&2
+            exit 1
+          fi
+          echo "Waiting for AI service..."
+          sleep 2
+        done
+
+        status=$$(curl --silent --output /tmp/seed-response.json \
+          --write-out '%{http_code}' \
+          --request POST \
+          http://ai:8084/api/ai/rag/demo/seed-payment-delay)
+
+        if [ "$$status" = "404" ]; then
+          echo "Seed endpoint is disabled. Set AI_DIAGNOSTICS_ENDPOINTS_ENABLED=true for the one-time seed run." >&2
+          exit 1
+        fi
+
+        if [ "$$status" -lt 200 ] || [ "$$status" -ge 300 ]; then
+          cat /tmp/seed-response.json >&2
+          echo "Qdrant seed request failed with HTTP $$status" >&2
+          exit 1
+        fi
+
+        cat /tmp/seed-response.json
+        echo "Qdrant demo data seeded"
+
   auth:
     build:
       context: ./auth
@@ -103,7 +170,10 @@ services:
     ports:
       - "${AI_PORT:-8084}:8084"
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_started
+      qdrant-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   claim:
@@ -132,8 +202,8 @@ services:
       <<: [*app-database-environment, *jwt-environment]
       SERVER_PORT: 8085
       DOCUMENT_LOCAL_STORAGE_PATH: /app/storage/documents
-      DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
-      DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID:-dev-seed-v1}
+      DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64:-}
+      DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID:-}
       MAILTRAP_SMTP_HOST: ${MAILTRAP_SMTP_HOST:-sandbox.smtp.mailtrap.io}
       MAILTRAP_SMTP_PORT: ${MAILTRAP_SMTP_PORT:-2525}
       MAILTRAP_SMTP_USERNAME: ${MAILTRAP_SMTP_USERNAME:-}

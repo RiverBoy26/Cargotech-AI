@@ -167,7 +167,9 @@ public class ClaimClient {
 
     public void updateLastPaymentCheck(
             UUID claimId,
-            UUID checkId
+            UUID checkId,
+            BigDecimal remainingPrincipalAmount,
+            BigDecimal remainingPenaltyAmount
     ) {
         try {
             restClient
@@ -177,7 +179,11 @@ public class ClaimClient {
                                     + "{claimId}/last-payment-check",
                             claimId
                     )
-                    .body(new UpdateLastPaymentCheckRequest(checkId))
+                    .body(new UpdateLastPaymentCheckRequest(
+                            checkId,
+                            remainingPrincipalAmount,
+                            remainingPenaltyAmount
+                    ))
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientResponseException exception) {
@@ -236,7 +242,9 @@ public class ClaimClient {
     }
 
     public record UpdateLastPaymentCheckRequest(
-            UUID checkId
+            UUID checkId,
+            BigDecimal remainingPrincipalAmount,
+            BigDecimal remainingPenaltyAmount
     ) {
     }
 }
