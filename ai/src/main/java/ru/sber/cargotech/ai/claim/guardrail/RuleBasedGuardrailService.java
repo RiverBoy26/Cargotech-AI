@@ -6,9 +6,16 @@ import ru.sber.cargotech.ai.claim.dto.GenerateClaimResponse;
 
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class RuleBasedGuardrailService {
+
+    private static final Pattern ARTICLE_REFERENCE_PATTERN = Pattern.compile(
+            "(?iu)(?:^|[^\\p{L}\\p{N}])(?:статья|статьи|статью|статье|статьей|статьёй|статьями|статей|ст\\.?)\\s*(\\d+(?:\\.\\d+)?)"
+    );
+    private static final Pattern ARTICLE_NUMBER_PATTERN = Pattern.compile("\\d+(?:\\.\\d+)?");
 
     private final ClaimFactConsistencyValidator factConsistencyValidator;
 
@@ -91,7 +98,7 @@ public class RuleBasedGuardrailService {
         }
 
         if (request.legalContext() == null || request.legalContext().isEmpty()) {
-            warnings.add("legal_context is empty");
+            errors.add("legal_context is required for claim generation");
         }
 
         if (request.templateContext() == null) {
@@ -348,7 +355,8 @@ public class RuleBasedGuardrailService {
         List<GenerateClaimResponse.UsedLawArticle> usedArticles = safeList(response.usedLawArticles());
 
         if (usedArticles.isEmpty()) {
-            warnings.add("Model did not cite law articles");
+            errors.add("Model must cite at least one applicable law article from legal_context");
+            validateNoUnknownLawReferences(request, response, errors);
             return;
         }
 
@@ -358,13 +366,15 @@ public class RuleBasedGuardrailService {
                 continue;
             }
 
+            GenerateClaimRequest.LegalContextItem allowed = null;
+
             if (!allowedByChunkId.isEmpty()) {
                 if (isBlank(used.chunkId())) {
                     errors.add("Model law citation must contain chunk_id");
                     continue;
                 }
 
-                GenerateClaimRequest.LegalContextItem allowed = allowedByChunkId.get(used.chunkId());
+                allowed = allowedByChunkId.get(used.chunkId());
                 if (allowed == null) {
                     errors.add("Model used unknown legal chunk_id: " + used.chunkId());
                     continue;
@@ -372,11 +382,113 @@ public class RuleBasedGuardrailService {
 
                 if (!sameText(allowed.lawCode(), used.lawCode()) || !sameText(allowed.article(), used.article())) {
                     errors.add("Model legal chunk_id does not match law_code/article: " + used.chunkId());
+                    continue;
                 }
             } else if (!legacyAllowedPairs.contains(normalizeKey(used.lawCode(), used.article()))) {
                 errors.add("Model used law article not present in legal_context: " + used.lawCode() + " " + used.article());
+                continue;
+            } else {
+                allowed = findLegacyLegalContextItem(request.legalContext(), used);
+            }
+
+            validateLawCitationPresentInClaimText(allowed, used, response.claimText(), errors);
+        }
+
+        validateNoUnknownLawReferences(request, response, errors);
+    }
+
+    private GenerateClaimRequest.LegalContextItem findLegacyLegalContextItem(
+            List<GenerateClaimRequest.LegalContextItem> legalContext,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        for (GenerateClaimRequest.LegalContextItem item : safeList(legalContext)) {
+            if (item != null
+                    && sameText(item.lawCode(), used.lawCode())
+                    && sameText(item.article(), used.article())) {
+                return item;
             }
         }
+        return null;
+    }
+
+    private void validateLawCitationPresentInClaimText(
+            GenerateClaimRequest.LegalContextItem allowed,
+            GenerateClaimResponse.UsedLawArticle used,
+            String claimText,
+            List<String> errors
+    ) {
+        if (isBlank(claimText)) {
+            return;
+        }
+
+        String canonicalCitation = allowed == null ? null : allowed.citation();
+        if (!isBlank(canonicalCitation)) {
+            if (!normalizeCitationText(claimText).contains(normalizeCitationText(canonicalCitation))) {
+                errors.add("claim_text must contain canonical legal citation from legal_context: " + canonicalCitation);
+            }
+            return;
+        }
+
+        String articleNumber = firstArticleNumber(used.article());
+        if (articleNumber == null || !extractReferencedArticleNumbers(claimText).contains(articleNumber)) {
+            errors.add("claim_text does not cite used law article: " + used.lawCode() + " " + used.article());
+        }
+    }
+
+    private void validateNoUnknownLawReferences(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            List<String> errors
+    ) {
+        Set<String> allowedArticleNumbers = new HashSet<>();
+        for (GenerateClaimRequest.LegalContextItem item : safeList(request.legalContext())) {
+            if (item == null) {
+                continue;
+            }
+            String articleNumber = firstArticleNumber(item.article());
+            if (articleNumber != null) {
+                allowedArticleNumbers.add(articleNumber);
+            }
+        }
+
+        for (String referencedArticle : extractReferencedArticleNumbers(response.claimText())) {
+            if (!allowedArticleNumbers.contains(referencedArticle)) {
+                errors.add("claim_text cites law article not present in legal_context: " + referencedArticle);
+            }
+        }
+    }
+
+    private Set<String> extractReferencedArticleNumbers(String text) {
+        if (isBlank(text)) {
+            return Set.of();
+        }
+
+        Set<String> result = new LinkedHashSet<>();
+        Matcher matcher = ARTICLE_REFERENCE_PATTERN.matcher(text);
+        while (matcher.find()) {
+            result.add(matcher.group(1));
+        }
+        return result;
+    }
+
+    private String firstArticleNumber(String article) {
+        if (isBlank(article)) {
+            return null;
+        }
+        Matcher matcher = ARTICLE_NUMBER_PATTERN.matcher(article);
+        return matcher.find() ? matcher.group() : null;
+    }
+
+    private String normalizeCitationText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .toLowerCase(Locale.ROOT)
+                .replace('ё', 'е')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
     }
 
     private void validateForbiddenText(GenerateClaimResponse response, List<String> errors) {

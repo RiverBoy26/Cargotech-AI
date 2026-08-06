@@ -138,7 +138,9 @@ public class ClaimGenerationPipelineService {
                 5. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
                 6. Не используй термин «непредставление транспортного средства».
                 7. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
-                8. Верни только валидный JSON без markdown и текста вне JSON.
+                8. Если legal_context не пуст, выбери минимум одну применимую норму, дословно вставь её citation в claim_text и добавь ту же норму в used_law_articles.
+                9. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
+                10. Верни только валидный JSON без markdown и текста вне JSON.
                 """.formatted(String.join("\n- ", errors == null ? List.of() : errors))
         ));
         return messages;

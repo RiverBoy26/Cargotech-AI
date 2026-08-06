@@ -63,6 +63,7 @@ class RuleBasedGuardrailServiceTest {
                 Услуги подтверждены актом №157 от 01.05.2026.
                 Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
                 неустойка — 2 400 руб., итого к оплате — 242 400 руб.
+                Правовое основание: ст. 309 ГК РФ.
                 """;
 
         GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
@@ -296,6 +297,69 @@ class RuleBasedGuardrailServiceTest {
         assertThat(result.errors()).anyMatch(error -> error.contains("confirmed by dispatcher"));
     }
 
+
+    @Test
+    void blocksWhenLegalContextExistsButModelReturnsNoLawArticles() {
+        GenerateClaimResponse base = validPaymentResponse(validText());
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                base.summaryForLawyer(),
+                base.usedContractClauses(),
+                List.of(),
+                base.backendCalculationUsed(),
+                base.attachments(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+
+        GuardrailResult result = service.check(paymentRequest(true), response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("must cite at least one applicable law article"));
+    }
+
+    @Test
+    void blocksWhenUsedLawArticleIsMissingFromClaimText() {
+        String textWithoutCitation = validText().replace("Правовое основание: ст. 309 ГК РФ.", "");
+
+        GuardrailResult result = service.check(
+                paymentRequest(true),
+                validPaymentResponse(textWithoutCitation)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("canonical legal citation"));
+    }
+
+    @Test
+    void blocksLawArticleMentionedOutsideLegalContext() {
+        String text = validText() + " Дополнительно применена ст. 999 ГК РФ.";
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("not present in legal_context: 999"));
+    }
+
+    @Test
+    void blocksWhenLegalContextIsEmpty() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                base.backendCalculation(),
+                base.contractContext(),
+                List.of(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        GuardrailResult result = service.check(request, validPaymentResponse(validText()));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("legal_context is required"));
+    }
+
     private GenerateClaimRequest detailedLoadingRequest() {
         return new GenerateClaimRequest(
                 new GenerateClaimRequest.CaseFacts(
@@ -383,6 +447,7 @@ class RuleBasedGuardrailServiceTest {
                 По заявке № ORD-LF-200 от 12.06.2026 требовался тент 20 т по маршруту Москва-Казань.
                 Погрузка была назначена на складе №4 в Москве с 09:00 до 12:00.
                 Факт непредоставления транспортного средства подтверждён актом № ACT-LF-200 от 12.06.2026.
+                Правовое основание: ст. 330 ГК РФ.
                 На основании нарушения просим оплатить штраф 15 000 руб.
                 """;
     }
@@ -502,6 +567,7 @@ class RuleBasedGuardrailServiceTest {
                 Услуги подтверждены актом №157 от 01.05.2026, ТТН-157 и счётом INV-157.
                 Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
                 неустойка — 2 400 руб., итого к оплате — 242 400 руб.
+                Правовое основание: ст. 309 ГК РФ.
                 """;
     }
 }
