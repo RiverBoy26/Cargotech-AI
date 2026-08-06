@@ -50,6 +50,18 @@ public class ClaimGenerationService {
                 context.calculation()
         ));
 
+        if (aiResponse.guardrailResult() != null) {
+            log.warn(
+                    "AI guardrail: claimId={}, success={}, decision={}, errors={}, warnings={}, ragWarnings={}",
+                    claimId,
+                    aiResponse.success(),
+                    aiResponse.guardrailResult().decision(),
+                    aiResponse.guardrailResult().errors(),
+                    aiResponse.guardrailResult().warnings(),
+                    aiResponse.ragWarnings()
+            );
+        }
+
         validateAiResponse(aiResponse);
         AiGenerateClaimResponse.GeneratedClaim generated = aiResponse.generatedClaim();
 
