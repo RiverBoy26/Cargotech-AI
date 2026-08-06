@@ -49,7 +49,7 @@ public class ClaimAiRequestMapper {
                                 null
                         ),
                         new AiGenerateClaimRequest.PaymentFacts(
-                                asString(calculation.getOverdueStartDate()),
+                                asString(resolvePaymentDueDate(calculation)),
                                 resolvePaymentStatus(calculation),
                                 claim.isNonPaymentConfirmed()
                         ),
@@ -112,6 +112,11 @@ public class ClaimAiRequestMapper {
             case ARTICLE_395 -> AiGenerateClaimRequest.PenaltyType.LEGAL_INTEREST;
             case NONE -> AiGenerateClaimRequest.PenaltyType.NONE;
         };
+    }
+
+    private LocalDate resolvePaymentDueDate(ClaimCalculation calculation) {
+        LocalDate overdueStartDate = calculation.getOverdueStartDate();
+        return overdueStartDate == null ? null : overdueStartDate.minusDays(1);
     }
 
     private AiGenerateClaimRequest.PaymentStatus resolvePaymentStatus(ClaimCalculation calculation) {

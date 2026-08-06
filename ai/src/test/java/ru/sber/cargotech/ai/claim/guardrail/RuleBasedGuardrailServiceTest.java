@@ -23,6 +23,37 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
+    void acceptsIsoInputDatesWhenClaimUsesRussianNumericDates() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                new GenerateClaimRequest.CaseFacts(
+                        base.caseFacts().claimId(),
+                        base.caseFacts().claimType(),
+                        base.caseFacts().creditor(),
+                        base.caseFacts().debtor(),
+                        new GenerateClaimRequest.ContractFacts("45/2026", "2026-01-10"),
+                        base.caseFacts().shipment(),
+                        new GenerateClaimRequest.PaymentFacts(
+                                "2026-05-31",
+                                base.caseFacts().payment().paymentStatus(),
+                                base.caseFacts().payment().paymentConfirmedByAccountant()
+                        ),
+                        base.caseFacts().claimDate()
+                ),
+                base.backendCalculation(),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        GuardrailResult result = service.check(request, validPaymentResponse(validText()));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
     void passesWhenTtnAndInvoiceArePresentOnlyInAttachments() {
         String text = """
                 От: ООО Экспедитор, ИНН 7800000000.

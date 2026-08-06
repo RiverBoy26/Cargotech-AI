@@ -51,7 +51,11 @@ public class ClaimFactConsistencyValidator {
     private static final int ADDRESS_TOKEN_WINDOW = 20;
     private static final int TIME_WINDOW_MAX_DISTANCE = 120;
 
-    private static final DateTimeFormatter INPUT_DATE = DateTimeFormatter.ofPattern("dd.MM.uuuu");
+    private static final List<DateTimeFormatter> INPUT_DATE_FORMATTERS = List.of(
+            DateTimeFormatter.ISO_LOCAL_DATE,
+            DateTimeFormatter.ofPattern("dd.MM.uuuu"),
+            DateTimeFormatter.ofPattern("dd-MM-uuuu")
+    );
     private static final String[] MONTHS = {
             "января", "февраля", "марта", "апреля", "мая", "июня",
             "июля", "августа", "сентября", "октября", "ноября", "декабря"
@@ -602,21 +606,38 @@ public class ClaimFactConsistencyValidator {
     }
 
     private boolean containsDate(String text, String expected) {
-        if (normalize(text).contains(normalize(expected))) {
+        String normalizedText = normalize(text);
+        if (normalizedText.contains(normalize(expected))) {
             return true;
         }
-        try {
-            LocalDate date = LocalDate.parse(expected, INPUT_DATE);
-            String numericDash = date.format(DateTimeFormatter.ofPattern("dd-MM-uuuu"));
-            String iso = date.toString();
-            String longDate = date.getDayOfMonth() + " " + MONTHS[date.getMonthValue() - 1] + " " + date.getYear();
-            String normalizedText = normalize(text);
-            return normalizedText.contains(normalize(numericDash))
-                    || normalizedText.contains(normalize(iso))
-                    || normalizedText.contains(normalize(longDate));
-        } catch (DateTimeParseException ignored) {
+
+        LocalDate date = parseDate(expected);
+        if (date == null) {
             return false;
         }
+
+        List<String> acceptedRepresentations = List.of(
+                date.toString(),
+                date.format(DateTimeFormatter.ofPattern("dd.MM.uuuu")),
+                date.format(DateTimeFormatter.ofPattern("dd-MM-uuuu")),
+                date.getDayOfMonth() + " " + MONTHS[date.getMonthValue() - 1] + " " + date.getYear(),
+                date.getDayOfMonth() + " " + MONTHS[date.getMonthValue() - 1] + " " + date.getYear() + " года"
+        );
+
+        return acceptedRepresentations.stream()
+                .map(this::normalize)
+                .anyMatch(normalizedText::contains);
+    }
+
+    private LocalDate parseDate(String value) {
+        for (DateTimeFormatter formatter : INPUT_DATE_FORMATTERS) {
+            try {
+                return LocalDate.parse(value, formatter);
+            } catch (DateTimeParseException ignored) {
+                // Try the next supported input format.
+            }
+        }
+        return null;
     }
 
     private void requireAmount(String text, BigDecimal amount, String field, List<String> errors) {

@@ -71,8 +71,7 @@ public class ClaimGenerationPipelineService {
         GigaChatChatResponse.Usage totalUsage = chatResponse.usage();
         String requestId = callResult.requestId();
 
-        if (enrichedRequest.caseFacts().claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE
-                && guardrailResult.decision() == GuardrailDecision.BLOCK) {
+        if (guardrailResult.decision() == GuardrailDecision.BLOCK) {
             List<GigaChatMessage> repairMessages = buildRepairMessages(
                     messages,
                     rawModelResponse,
@@ -135,10 +134,11 @@ public class ClaimGenerationPipelineService {
                 1. Верни полный объект GenerateClaimResponse, а не фрагмент и не объяснение.
                 2. Сохрани только факты из исходного входного JSON и RAG-контекста.
                 3. Дословно перенеси все обязательные номера, даты, маршрут, адрес, временное окно и суммы.
-                4. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
-                5. Не используй термин «непредставление транспортного средства».
-                6. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
-                7. Верни только валидный JSON без markdown и текста вне JSON.
+                4. Для PAYMENT_DELAY обязательно укажи в claim_text номер и дату договора, а также дату срока оплаты, если они есть во входе.
+                5. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
+                6. Не используй термин «непредставление транспортного средства».
+                7. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
+                8. Верни только валидный JSON без markdown и текста вне JSON.
                 """.formatted(String.join("\n- ", errors == null ? List.of() : errors))
         ));
         return messages;

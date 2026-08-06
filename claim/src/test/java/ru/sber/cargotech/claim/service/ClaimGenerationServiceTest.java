@@ -21,6 +21,7 @@ import ru.sber.cargotech.claim.repository.ClaimShipmentRepository;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -95,6 +96,68 @@ class ClaimGenerationServiceTest {
         assertThatThrownBy(() -> service.generate(user, claimId))
                 .isInstanceOf(ClaimException.class)
                 .hasMessage("Сначала бухгалтер должен подтвердить отсутствие оплаты");
+        verifyNoInteractions(requestMapper, aiClient, versionService);
+    }
+
+    @Test
+    void doesNotCallAiBeforePaymentBecomesOverdue() {
+        UUID organizationId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        UUID creditorId = UUID.randomUUID();
+        UUID debtorId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        UUID shipmentId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+
+        ClaimEntity claim = new ClaimEntity();
+        claim.setId(claimId);
+        claim.setOrganizationId(organizationId);
+        claim.setStatus(ClaimStatus.DRAFT);
+        claim.setCreditorId(creditorId);
+        claim.setDebtorId(debtorId);
+        claim.setContractId(contractId);
+        claim.setShipmentId(shipmentId);
+        claim.setNonPaymentConfirmed(true);
+
+        ClaimParty creditor = party(creditorId, "Кредитор");
+        ClaimParty debtor = party(debtorId, "Должник");
+        ClaimContract contract = new ClaimContract();
+        contract.setId(contractId);
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setId(shipmentId);
+        ClaimCalculation calculation = new ClaimCalculation();
+        calculation.setRemainingDebt(new BigDecimal("100.00"));
+        calculation.setOverdueStartDate(LocalDate.now().plusDays(5));
+
+        when(claimRepository.findByIdAndOrganizationId(claimId, organizationId)).thenReturn(Optional.of(claim));
+        when(partyRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(creditorId, organizationId))
+                .thenReturn(Optional.of(creditor));
+        when(partyRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(debtorId, organizationId))
+                .thenReturn(Optional.of(debtor));
+        when(contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId))
+                .thenReturn(Optional.of(contract));
+        when(shipmentRepository.findByIdAndOrganizationId(shipmentId, organizationId))
+                .thenReturn(Optional.of(shipment));
+        when(calculationRepository.findFirstByClaimIdOrderByCalculationVersionDesc(claimId))
+                .thenReturn(Optional.of(calculation));
+
+        ClaimGenerationService service = new ClaimGenerationService(
+                claimRepository,
+                partyRepository,
+                contractRepository,
+                shipmentRepository,
+                calculationRepository,
+                requestMapper,
+                aiClient,
+                versionService
+        );
+
+        assertThatThrownBy(() -> service.generate(user, claimId))
+                .isInstanceOf(ClaimException.class)
+                .hasMessageContaining("Срок оплаты ещё не истёк")
+                .hasMessageContaining(LocalDate.now().plusDays(5).format(
+                        java.time.format.DateTimeFormatter.ofPattern("dd.MM.uuuu")
+                ));
         verifyNoInteractions(requestMapper, aiClient, versionService);
     }
 

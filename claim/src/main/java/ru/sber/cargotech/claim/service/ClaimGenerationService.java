@@ -17,6 +17,8 @@ import ru.sber.cargotech.claim.mapper.ClaimAiRequestMapper;
 import ru.sber.cargotech.claim.repository.*;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -49,18 +51,6 @@ public class ClaimGenerationService {
                 context.shipment(),
                 context.calculation()
         ));
-
-        if (aiResponse.guardrailResult() != null) {
-            log.warn(
-                    "AI guardrail: claimId={}, success={}, decision={}, errors={}, warnings={}, ragWarnings={}",
-                    claimId,
-                    aiResponse.success(),
-                    aiResponse.guardrailResult().decision(),
-                    aiResponse.guardrailResult().errors(),
-                    aiResponse.guardrailResult().warnings(),
-                    aiResponse.ragWarnings()
-            );
-        }
 
         validateAiResponse(aiResponse);
         AiGenerateClaimResponse.GeneratedClaim generated = aiResponse.generatedClaim();
@@ -136,6 +126,18 @@ public class ClaimGenerationService {
         if (context.calculation().getRemainingDebt() == null
                 || context.calculation().getRemainingDebt().signum() <= 0) {
             throw ClaimException.validation("Для генерации должна существовать непогашенная задолженность");
+        }
+        LocalDate overdueStartDate = context.calculation().getOverdueStartDate();
+        if (overdueStartDate == null) {
+            throw ClaimException.validation(
+                    "Не удалось определить дату начала просрочки. Проверьте даты перевозки и условия оплаты, затем выполните расчёт повторно"
+            );
+        }
+        if (LocalDate.now().isBefore(overdueStartDate)) {
+            throw ClaimException.validation(
+                    "Срок оплаты ещё не истёк. Формирование претензии будет доступно с "
+                            + overdueStartDate.format(DateTimeFormatter.ofPattern("dd.MM.uuuu"))
+            );
         }
     }
 
