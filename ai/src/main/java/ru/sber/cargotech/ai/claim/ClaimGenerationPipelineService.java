@@ -1,5 +1,7 @@
 package ru.sber.cargotech.ai.claim;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimPipelineRequest;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimPipelineResponse;
@@ -22,6 +24,8 @@ import java.util.List;
 
 @Service
 public class ClaimGenerationPipelineService {
+
+    private static final Logger log = LoggerFactory.getLogger(ClaimGenerationPipelineService.class);
 
     private final RagSearchService ragSearchService;
     private final PaymentDelayPromptBuilder paymentDelayPromptBuilder;
@@ -68,10 +72,22 @@ public class ClaimGenerationPipelineService {
         );
         GenerateClaimResponse generatedClaim = claimResponseParser.parse(rawModelResponse);
         GuardrailResult guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
+        logGuardrailResult(
+                "INITIAL",
+                enrichedRequest.caseFacts().claimId(),
+                callResult.requestId(),
+                guardrailResult
+        );
         GigaChatChatResponse.Usage totalUsage = chatResponse.usage();
         String requestId = callResult.requestId();
 
         if (guardrailResult.decision() == GuardrailDecision.BLOCK) {
+            log.warn(
+                    "Claim generation blocked; starting repair: caseId={}, requestId={}, errors={}",
+                    enrichedRequest.caseFacts().claimId(),
+                    requestId,
+                    guardrailResult.errors()
+            );
             List<GigaChatMessage> repairMessages = buildRepairMessages(
                     messages,
                     rawModelResponse,
@@ -89,9 +105,24 @@ public class ClaimGenerationPipelineService {
             );
             generatedClaim = claimResponseParser.parse(repairedRaw);
             guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
+            logGuardrailResult(
+                    "REPAIR",
+                    enrichedRequest.caseFacts().claimId(),
+                    repairCall.requestId(),
+                    guardrailResult
+            );
             totalUsage = mergeUsage(totalUsage, repairResponse.usage());
             requestId = repairCall.requestId();
         }
+
+        log.info(
+                "Claim generation final: caseId={}, requestId={}, success={}, status={}, decision={}",
+                enrichedRequest.caseFacts().claimId(),
+                requestId,
+                guardrailResult.decision() != GuardrailDecision.BLOCK,
+                status(guardrailResult),
+                guardrailResult.decision()
+        );
 
         return new GenerateClaimPipelineResponse(
                 guardrailResult.decision() != GuardrailDecision.BLOCK,
@@ -105,6 +136,46 @@ public class ClaimGenerationPipelineService {
                 guardrailResult,
                 Instant.now()
         );
+    }
+
+
+    private void logGuardrailResult(
+            String stage,
+            String caseId,
+            String requestId,
+            GuardrailResult result
+    ) {
+        if (result == null) {
+            log.error(
+                    "Claim guardrail result is null: stage={}, caseId={}, requestId={}",
+                    stage,
+                    caseId,
+                    requestId
+            );
+            return;
+        }
+
+        if (result.decision() == GuardrailDecision.BLOCK) {
+            log.warn(
+                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errors={}, warnings={}",
+                    stage,
+                    caseId,
+                    requestId,
+                    result.decision(),
+                    result.errors(),
+                    result.warnings()
+            );
+        } else {
+            log.info(
+                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errors={}, warnings={}",
+                    stage,
+                    caseId,
+                    requestId,
+                    result.decision(),
+                    result.errors(),
+                    result.warnings()
+            );
+        }
     }
 
     private String requireContent(GigaChatChatResponse response, String errorMessage) {
