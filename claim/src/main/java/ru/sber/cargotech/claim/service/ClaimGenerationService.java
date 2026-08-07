@@ -39,6 +39,7 @@ public class ClaimGenerationService {
     public GenerateClaimResponse generate(CurrentClaimUser user, UUID claimId) {
         GenerationContext context = loadContext(user, claimId);
         validateForGeneration(context);
+        validateSignatory(user);
 
         log.info("Запуск AI-генерации: claimId={}, organizationId={}, userId={}",
                 claimId, user.organizationId(), user.userId());
@@ -49,7 +50,8 @@ public class ClaimGenerationService {
                 context.debtor(),
                 context.contract(),
                 context.shipment(),
-                context.calculation()
+                context.calculation(),
+                user
         ));
 
         validateAiResponse(aiResponse);
@@ -137,6 +139,14 @@ public class ClaimGenerationService {
             throw ClaimException.validation(
                     "Срок оплаты ещё не истёк. Формирование претензии будет доступно с "
                             + overdueStartDate.format(DateTimeFormatter.ofPattern("dd.MM.uuuu"))
+            );
+        }
+    }
+
+    private void validateSignatory(CurrentClaimUser user) {
+        if (user == null || isBlank(user.fullName())) {
+            throw ClaimException.validation(
+                    "В профиле пользователя не заполнено ФИО для подписи претензии. Войдите заново после заполнения профиля"
             );
         }
     }

@@ -85,6 +85,15 @@ services:
     depends_on:
       ai:
         condition: service_started
+      qdrant:
+        condition: service_started
+    environment:
+      RAG_SEED_RESET_COLLECTION: ${RAG_SEED_RESET_COLLECTION:-false}
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-cargotech_rag_chunks}
+      QDRANT_VECTOR_SIZE: ${QDRANT_VECTOR_SIZE:-2560}
+      QDRANT_DISTANCE: ${QDRANT_DISTANCE:-Cosine}
+    volumes:
+      - ./rag-data:/seed:ro
     restart: "no"
     entrypoint: [ "/bin/sh", "-ec" ]
     command:
@@ -92,32 +101,52 @@ services:
         attempts=0
         until curl --silent --output /dev/null http://ai:8084/; do
           attempts=$$((attempts + 1))
-          if [ "$$attempts" -ge 60 ]; then
-            echo "AI service did not become available in 120 seconds" >&2
+          if [ "$$attempts" -ge 90 ]; then
+            echo "AI service did not become available in 180 seconds" >&2
             exit 1
           fi
           echo "Waiting for AI service..."
           sleep 2
         done
 
-        status=$$(curl --silent --output /tmp/seed-response.json \
-          --write-out '%{http_code}' \
-          --request POST \
-          http://ai:8084/api/ai/rag/demo/seed-payment-delay)
+        until curl --fail --silent http://qdrant:6333/readyz >/dev/null; do
+          echo "Waiting for Qdrant..."
+          sleep 2
+        done
 
-        if [ "$$status" = "404" ]; then
-          echo "Seed endpoint is disabled. Set AI_DIAGNOSTICS_ENDPOINTS_ENABLED=true for the one-time seed run." >&2
+        collection="$$QDRANT_COLLECTION_NAME"
+
+        if [ "$$RAG_SEED_RESET_COLLECTION" = "true" ]; then
+          echo "Resetting Qdrant collection $$collection"
+          curl --silent --show-error --request DELETE             "http://qdrant:6333/collections/$$collection" >/dev/null || true
+          curl --fail --silent --show-error --request PUT             "http://qdrant:6333/collections/$$collection"             --header "Content-Type: application/json"             --data "{\"vectors\":{\"size\":$$QDRANT_VECTOR_SIZE,\"distance\":\"$$QDRANT_DISTANCE\"}}" >/dev/null
+        fi
+
+        indexed_files=0
+        for file in /seed/*.json; do
+          [ -f "$$file" ] || continue
+          echo "Indexing $$(basename "$$file")"
+          status=$$(curl --silent --show-error --output /tmp/index-response.json             --write-out '%{http_code}'             --request POST             http://ai:8084/api/ai/rag/index/chunks             --header "Content-Type: application/json"             --data-binary "@$$file")
+
+          if [ "$$status" -lt 200 ] || [ "$$status" -ge 300 ]; then
+            cat /tmp/index-response.json >&2
+            echo "RAG index request failed for $$file with HTTP $$status" >&2
+            exit 1
+          fi
+
+          cat /tmp/index-response.json
+          echo
+          indexed_files=$$((indexed_files + 1))
+        done
+
+        if [ "$$indexed_files" -eq 0 ]; then
+          echo "No JSON seed files found in /seed" >&2
           exit 1
         fi
 
-        if [ "$$status" -lt 200 ] || [ "$$status" -ge 300 ]; then
-          cat /tmp/seed-response.json >&2
-          echo "Qdrant seed request failed with HTTP $$status" >&2
-          exit 1
-        fi
-
-        cat /tmp/seed-response.json
-        echo "Qdrant demo data seeded"
+        echo "Indexed $$indexed_files RAG seed files"
+        curl --fail --silent --show-error           "http://qdrant:6333/collections/$$collection"
+        echo
 
   auth:
     build:

@@ -78,7 +78,7 @@ def main() -> int:
             else:
                 ids.add(chunk_id)
 
-            if chunk.get("claim_type") not in {"PAYMENT_DELAY", "LOADING_FAILURE"}:
+            if chunk.get("claim_type") not in {"PAYMENT_DELAY", "LOADING_FAILURE", "COMMON"}:
                 fail(errors, f"{prefix}: unsupported claim_type {chunk.get('claim_type')!r}")
             if not isinstance(chunk.get("is_current"), bool):
                 fail(errors, f"{prefix}: is_current must be boolean")
@@ -134,12 +134,12 @@ def main() -> int:
                 if text.count("?") >= 3:
                     fail(errors, f"{prefix}: too many question marks; text may be corrupted")
 
-    if total != 28:
-        fail(errors, f"expected 28 chunks, found {total}")
+    if total != 42:
+        fail(errors, f"expected 42 chunks, found {total}")
     if active_legal != 16:
         fail(errors, f"expected 16 auto-use legal chunks, found {active_legal}")
-    if review_legal != 8:
-        fail(errors, f"expected 8 review-only legal chunks, found {review_legal}")
+    if review_legal != 22:
+        fail(errors, f"expected 22 review-only legal chunks, found {review_legal}")
     if templates != 2:
         fail(errors, f"expected 2 templates, found {templates}")
 

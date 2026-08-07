@@ -134,13 +134,17 @@ public class ClaimGenerationPipelineService {
                 1. Верни полный объект GenerateClaimResponse, а не фрагмент и не объяснение.
                 2. Сохрани только факты из исходного входного JSON и RAG-контекста.
                 3. Дословно перенеси все обязательные номера, даты, маршрут, адрес, временное окно и суммы.
-                4. Для PAYMENT_DELAY обязательно укажи в claim_text номер и дату договора, а также дату срока оплаты, если они есть во входе.
-                5. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
-                6. Не используй термин «непредставление транспортного средства».
-                7. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
-                8. Если legal_context не пуст, выбери минимум одну применимую норму, дословно вставь её citation в claim_text и добавь ту же норму в used_law_articles.
-                9. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
-                10. Верни только валидный JSON без markdown и текста вне JSON.
+                4. Для PAYMENT_DELAY обязательно укажи claim_number и claim_date, номер и дату договора, а также дату срока оплаты, если они есть во входе.
+                5. Для PAYMENT_DELAY при claim_response_days > 0 укажи точный срок ответа в календарных днях с даты получения претензии.
+                6. Для PAYMENT_DELAY при заполненном signatory заверши текст точными position и name; attachments верни пустым массивом.
+                7. Если act_date есть, а act_number отсутствует, пиши «акт от <дата>» без символа № и пустого номера.
+                8. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
+                9. Не используй термин «непредставление транспортного средства».
+                10. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
+                11. Если legal_context не пуст, выбери минимум одну применимую норму, дословно вставь её citation в claim_text и добавь ту же норму в used_law_articles.
+                12. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
+                13. Для PAYMENT_DELAY не добавляй банковские реквизиты и раздел «Приложения»; attachments верни пустым массивом.
+                14. Верни только валидный JSON без markdown и текста вне JSON.
                 """.formatted(String.join("\n- ", errors == null ? List.of() : errors))
         ));
         return messages;
@@ -202,7 +206,7 @@ public class ClaimGenerationPipelineService {
                 request.backendCalculation(),
                 mergeContractContext(request.contractContext(), ragContext.contractContext()),
                 mergeLegalContext(request.legalContext(), ragContext.legalContext()),
-                request.templateContext() == null ? ragContext.templateContext() : request.templateContext(),
+                ragContext.templateContext() == null ? request.templateContext() : ragContext.templateContext(),
                 mergeSimilarExamples(request.similarExamples(), ragContext.similarExamples())
         );
     }
@@ -292,11 +296,10 @@ public class ClaimGenerationPipelineService {
             List<GenerateClaimRequest.LegalContextItem> secondary
     ) {
         java.util.LinkedHashMap<String, GenerateClaimRequest.LegalContextItem> merged = new java.util.LinkedHashMap<>();
-        for (GenerateClaimRequest.LegalContextItem item : concat(primary, secondary)) {
+        // RAG-элементы приоритетнее статического fallback: в них есть актуальные метаданные и источник.
+        for (GenerateClaimRequest.LegalContextItem item : concat(secondary, primary)) {
             if (item == null) continue;
-            String key = !isBlank(item.chunkId())
-                    ? "id:" + item.chunkId()
-                    : "law:" + normalize(item.lawCode()) + ":" + normalize(item.article());
+            String key = "law:" + normalize(item.lawCode()) + ":" + normalize(item.article());
             merged.putIfAbsent(key, item);
         }
         return List.copyOf(merged.values());

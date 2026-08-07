@@ -14,8 +14,8 @@ result=value['result']
 print(f"status={result['status']} points_count={result['points_count']}")
 if result['status'] != 'green':
     raise SystemExit('Qdrant collection is not green')
-if result['points_count'] != 28:
-    raise SystemExit(f"Expected 28 points, got {result['points_count']}")
+if result['points_count'] != 42:
+    raise SystemExit(f"Expected 42 points, got {result['points_count']}")
 PY
 
 curl -fsS -X POST "$AI_URL/api/ai/rag/search/chunks" \
@@ -53,6 +53,25 @@ if not all(chunk_id.startswith('legal-loading-') for chunk_id in ids):
 if not all((hit.get('chunk') or {}).get('extra', {}).get('auto_use') is True for hit in value.get('hits', [])):
     raise SystemExit('Loading search returned a review-only legal chunk')
 PY
+
+curl -fsS -X POST "$AI_URL/api/ai/rag/search/chunks" \
+  -H 'Content-Type: application/json' \
+  --data '{"query":"персональные данные электронная подпись хранение первичных документов","filters":{"rag_collection":"LEGAL_CONTEXT","claim_type":"COMMON","is_current":true,"auto_use":false},"limit":8,"min_score":0.0}' \
+  > /tmp/cargotech-rag-common-search.json
+
+python3 - <<'PY_COMMON'
+import json
+value=json.load(open('/tmp/cargotech-rag-common-search.json', encoding='utf-8'))
+hits=value.get('hits', [])
+ids=[hit['chunk']['chunkId'] for hit in hits]
+print('common_review_hits=', len(ids), ids)
+if not ids:
+    raise SystemExit('Common compliance search returned no hits')
+if not all(chunk_id.startswith('legal-common-') for chunk_id in ids):
+    raise SystemExit('Common compliance search returned an unrelated chunk')
+if not all((hit.get('chunk') or {}).get('extra', {}).get('auto_use') is False for hit in hits):
+    raise SystemExit('Common compliance corpus contains an auto-use chunk')
+PY_COMMON
 
 printf 'DIRECT SEARCH CHECKS PASSED\n'
 

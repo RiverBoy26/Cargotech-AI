@@ -207,9 +207,10 @@ public class RagSearchService {
                 filters(
                         "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
                         "claim_type", "PAYMENT_DELAY",
-                        "is_current", true
+                        "is_current", true,
+                        "auto_use", true
                 ),
-                4,
+                6,
                 searchProperties.getLegalMinScore()
         );
 
@@ -294,9 +295,10 @@ public class RagSearchService {
                 filters(
                         "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
                         "claim_type", "LOADING_FAILURE",
-                        "is_current", true
+                        "is_current", true,
+                        "auto_use", true
                 ),
-                4,
+                6,
                 searchProperties.getLegalMinScore()
         );
 

@@ -16,14 +16,29 @@ public record AiGenerateClaimRequest(
 ) {
     public record CaseFacts(
             @JsonProperty("claim_id") String claimId,
+            @JsonProperty("claim_number") String claimNumber,
             @JsonProperty("claim_type") ClaimType claimType,
             Party creditor,
             Party debtor,
             ContractFacts contract,
             ShipmentFacts shipment,
             PaymentFacts payment,
-            @JsonProperty("claim_date") String claimDate
-    ) {}
+            @JsonProperty("claim_date") String claimDate,
+            SignatoryFacts signatory
+    ) {
+        public CaseFacts(
+                String claimId,
+                ClaimType claimType,
+                Party creditor,
+                Party debtor,
+                ContractFacts contract,
+                ShipmentFacts shipment,
+                PaymentFacts payment,
+                String claimDate
+        ) {
+            this(claimId, null, claimType, creditor, debtor, contract, shipment, payment, claimDate, null);
+        }
+    }
 
     public enum ClaimType { PAYMENT_DELAY, LOADING_FAILURE }
 
@@ -31,8 +46,13 @@ public record AiGenerateClaimRequest(
 
     public record ContractFacts(
             @JsonProperty("contract_number") String contractNumber,
-            @JsonProperty("contract_date") String contractDate
-    ) {}
+            @JsonProperty("contract_date") String contractDate,
+            @JsonProperty("claim_response_days") Integer claimResponseDays
+    ) {
+        public ContractFacts(String contractNumber, String contractDate) {
+            this(contractNumber, contractDate, null);
+        }
+    }
 
     public record ShipmentFacts(
             @JsonProperty("order_number") String orderNumber,
@@ -57,6 +77,11 @@ public record AiGenerateClaimRequest(
 
     public enum PaymentStatus { PAID, UNPAID, PARTIALLY_PAID, UNKNOWN }
 
+    public record SignatoryFacts(
+            String name,
+            String position
+    ) {}
+
     public record BackendCalculation(
             @JsonProperty("principal_debt") BigDecimal principalDebt,
             @JsonProperty("penalty_type") PenaltyType penaltyType,
@@ -77,7 +102,20 @@ public record AiGenerateClaimRequest(
             String text
     ) {}
 
-    public record LegalContextItem(@JsonProperty("law_code") String lawCode, String article, String purpose) {}
+    public record LegalContextItem(
+            @JsonProperty("chunk_id") String chunkId,
+            @JsonProperty("law_code") String lawCode,
+            String article,
+            String purpose,
+            String text,
+            String citation,
+            @JsonProperty("verified_at") String verifiedAt,
+            String applicability
+    ) {
+        public LegalContextItem(String lawCode, String article, String purpose) {
+            this(null, lawCode, article, purpose, null, null, null, null);
+        }
+    }
 
     public record TemplateContext(
             @JsonProperty("template_id") String templateId,
@@ -93,6 +131,9 @@ public record AiGenerateClaimRequest(
             @JsonProperty("structure_summary") String structureSummary
     ) {}
 
-    public record RagOptions(Boolean enabled, @JsonProperty("contract_id") String contractId,
-                             @JsonProperty("client_id") String clientId) {}
+    public record RagOptions(
+            Boolean enabled,
+            @JsonProperty("contract_id") String contractId,
+            @JsonProperty("client_id") String clientId
+    ) {}
 }

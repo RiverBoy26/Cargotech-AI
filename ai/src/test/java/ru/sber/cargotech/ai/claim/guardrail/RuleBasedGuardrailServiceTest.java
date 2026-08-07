@@ -360,6 +360,142 @@ class RuleBasedGuardrailServiceTest {
         assertThat(result.errors()).anyMatch(error -> error.contains("legal_context is required"));
     }
 
+    @Test
+    void passesProductionPaymentClaimWithHeaderDeadlineSignatureAndActWithoutNumber() {
+        GenerateClaimRequest request = productionPaymentRequest();
+        GenerateClaimResponse response = productionPaymentResponse(productionPaymentText());
+
+        GuardrailResult result = service.check(request, response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksDanglingActNumberWhenSourceActNumberIsMissing() {
+        String text = productionPaymentText().replace("актом от 01.05.2026", "актом № от 01.05.2026");
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("dangling act number marker"));
+    }
+
+    @Test
+    void blocksMissingOutgoingClaimNumber() {
+        String text = productionPaymentText().replace("Исх. № CLM-2026-001 от 10.06.2026.\n", "");
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("claim_number"));
+    }
+
+    @Test
+    void blocksMissingContractualResponseDeadline() {
+        String text = productionPaymentText().replace(
+                "Требуем оплатить задолженность и направить письменный ответ в течение 10 календарных дней с даты получения настоящей претензии.\n",
+                "Требуем оплатить задолженность.\n"
+        );
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("contract.claim_response_days"));
+    }
+
+    @Test
+    void blocksAttachmentsSectionAndBankDetailsInClaimText() {
+        String text = productionPaymentText()
+                + "\nПриложения:\n1. Копия договора.\n"
+                + "Расчетный счет 40702810000000000000, БИК 044525000.";
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("attachments section"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("bank details"));
+    }
+
+    private GenerateClaimRequest productionPaymentRequest() {
+        GenerateClaimRequest base = paymentRequest(true);
+        return new GenerateClaimRequest(
+                new GenerateClaimRequest.CaseFacts(
+                        base.caseFacts().claimId(),
+                        "CLM-2026-001",
+                        base.caseFacts().claimType(),
+                        base.caseFacts().creditor(),
+                        base.caseFacts().debtor(),
+                        new GenerateClaimRequest.ContractFacts("45/2026", "10.01.2026", 10),
+                        new GenerateClaimRequest.ShipmentFacts(
+                                "ORD-157",
+                                "Санкт-Петербург — Москва",
+                                null,
+                                "01.05.2026",
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null
+                        ),
+                        base.caseFacts().payment(),
+                        "10.06.2026",
+                        new GenerateClaimRequest.SignatoryFacts("Дмитриев Павел Алексеевич", "Юрист")
+                ),
+                base.backendCalculation(),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+    }
+
+    private GenerateClaimResponse productionPaymentResponse(String text) {
+        GenerateClaimResponse base = validPaymentResponse(text);
+        return new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                base.summaryForLawyer(),
+                base.usedContractClauses(),
+                base.usedLawArticles(),
+                base.backendCalculationUsed(),
+                List.of(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+    }
+
+    private String productionPaymentText() {
+        return """
+                Исх. № CLM-2026-001 от 10.06.2026.
+                Претензия о нарушении срока оплаты оказанных услуг.
+                От: ООО Экспедитор, ИНН 7800000000.
+                Кому: ООО Клиент, ИНН 7700000000.
+                По договору №45/2026 от 10.01.2026 оказаны услуги по маршруту Санкт-Петербург — Москва.
+                Оказание услуг подтверждено актом от 01.05.2026.
+                Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
+                неустойка — 2 400 руб., итого к оплате — 242 400 руб.
+                Правовое основание: ст. 309 ГК РФ.
+                Требуем оплатить задолженность и направить письменный ответ в течение 10 календарных дней с даты получения настоящей претензии.
+                Юрист __________ Дмитриев Павел Алексеевич
+                """;
+    }
+
     private GenerateClaimRequest detailedLoadingRequest() {
         return new GenerateClaimRequest(
                 new GenerateClaimRequest.CaseFacts(

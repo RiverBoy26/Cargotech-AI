@@ -23,6 +23,18 @@ public class ClaimFactConsistencyValidator {
     private static final Pattern CLOCK_TIME_PATTERN = Pattern.compile(
             "(?<!\\d)([01]?\\d|2[0-3])[:.]([0-5]\\d)(?!\\d)"
     );
+    private static final Pattern DANGLING_ACT_NUMBER_PATTERN = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}_])акт(?:ом|а|у|е|ы)?\\s*№\\s*(?:от(?![\\p{L}\\p{N}_])|[,.;:]|$)"
+    );
+    private static final Pattern ATTACHMENTS_SECTION_PATTERN = Pattern.compile(
+            "(?imu)^\\s*приложени(?:е|я)\\s*:"
+    );
+    private static final Pattern BANK_DETAILS_PATTERN = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}_])(?:бик|"
+                    + "корреспондентск\\p{L}*\\s+сч[её]т\\p{L}*|"
+                    + "расч[её]тн\\p{L}*\\s+сч[её]т\\p{L}*|"
+                    + "р\\s*/\\s*с|к\\s*/\\s*с)(?![\\p{L}\\p{N}_])"
+    );
     private static final Pattern CONFIRMATION_SUBSTITUTION_PATTERN = Pattern.compile(
             "(?iu)(?:неподтверждени\\p{L}*|отсутстви\\p{L}*\\s+подтверждени\\p{L}*)\\s+(?:факт\\p{L}*\\s+)?(?:подач\\p{L}*|предоставлени\\p{L}*)"
                     + "|(?:подач\\p{L}*|предоставлени\\p{L}*)\\s+(?:транспортн\\p{L}*\\s+средств\\p{L}*\\s+)?не\\s+подтвержден\\p{L}*"
@@ -76,6 +88,9 @@ public class ClaimFactConsistencyValidator {
         String narrative = text + "\n" + summary;
         GenerateClaimRequest.CaseFacts facts = request.caseFacts();
 
+        validateClaimIdentity(facts, text, errors);
+        validateSignatory(facts.signatory(), text, errors);
+        validateExcludedSections(text, errors);
         validateParty("creditor", facts.creditor(), text, errors);
         validateParty("debtor", facts.debtor(), text, errors);
         validateUnknownInns(facts, narrative, errors);
@@ -94,6 +109,39 @@ public class ClaimFactConsistencyValidator {
             if (modelWarning != null && !modelWarning.isBlank()) {
                 warnings.add("Model warning: " + modelWarning.trim());
             }
+        }
+    }
+
+    private void validateClaimIdentity(
+            GenerateClaimRequest.CaseFacts facts,
+            String text,
+            List<String> errors
+    ) {
+        if (!hasText(facts.claimNumber())) {
+            return;
+        }
+        requireTextValue(text, facts.claimNumber(), "claim_number", errors);
+        requireDate(text, facts.claimDate(), "claim_date", errors);
+    }
+
+    private void validateSignatory(
+            GenerateClaimRequest.SignatoryFacts signatory,
+            String text,
+            List<String> errors
+    ) {
+        if (signatory == null) {
+            return;
+        }
+        requireTextValue(text, signatory.position(), "signatory.position", errors);
+        requireTextValue(text, signatory.name(), "signatory.name", errors);
+    }
+
+    private void validateExcludedSections(String text, List<String> errors) {
+        if (ATTACHMENTS_SECTION_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not contain an attachments section");
+        }
+        if (BANK_DETAILS_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not contain bank details");
         }
     }
 
@@ -139,6 +187,26 @@ public class ClaimFactConsistencyValidator {
         }
         requireTextValue(text, contract.contractNumber(), "contract.contract_number", errors);
         requireDate(text, contract.contractDate(), "contract.contract_date", errors);
+        requireClaimResponseDeadline(text, contract.claimResponseDays(), errors);
+    }
+
+    private void requireClaimResponseDeadline(String text, Integer days, List<String> errors) {
+        if (days == null || days <= 0) {
+            return;
+        }
+
+        Pattern daysPattern = Pattern.compile(
+                "(?iu)(?<!\\d)" + Pattern.quote(String.valueOf(days))
+                        + "\\s+календарн\\p{L}*\\s+дн\\p{L}*(?!\\d)"
+        );
+        String normalized = normalize(text);
+        boolean hasDays = daysPattern.matcher(text).find();
+        boolean tiedToReceipt = normalized.contains("получени") && normalized.contains("претензи");
+
+        if (!hasDays || !tiedToReceipt) {
+            errors.add("claim_text does not contain expected contract.claim_response_days: "
+                    + days + " calendar days from receipt of the claim");
+        }
     }
 
     private void validatePaymentDelayFacts(
@@ -158,6 +226,11 @@ public class ClaimFactConsistencyValidator {
 
         requireTextValue(text, shipment.actNumber(), "shipment.act_number", errors);
         requireDate(text, shipment.actDate(), "shipment.act_date", errors);
+        if (!hasText(shipment.actNumber())
+                && hasText(shipment.actDate())
+                && DANGLING_ACT_NUMBER_PATTERN.matcher(text).find()) {
+            errors.add("claim_text contains a dangling act number marker while shipment.act_number is empty");
+        }
         requireTextValue(text, shipment.route(), "shipment.route", errors);
     }
 
@@ -259,7 +332,8 @@ public class ClaimFactConsistencyValidator {
 
         validateRequiredLoadingFailureAct(facts, response.attachments(), errors);
 
-        if (response.attachments() == null || response.attachments().isEmpty()) {
+        if ((response.attachments() == null || response.attachments().isEmpty())
+                && facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
             warnings.add("Model returned no attachments");
         }
     }
