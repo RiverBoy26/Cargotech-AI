@@ -35,6 +35,15 @@ public class ClaimFactConsistencyValidator {
                     + "расч[её]тн\\p{L}*\\s+сч[её]т\\p{L}*|"
                     + "р\\s*/\\s*с|к\\s*/\\s*с)(?![\\p{L}\\p{N}_])"
     );
+    private static final Pattern ISO_DATE_IN_CLAIM_PATTERN = Pattern.compile(
+            "(?<!\\d)\\d{4}-\\d{2}-\\d{2}(?!\\d)"
+    );
+    private static final Pattern TECHNICAL_ENUM_IN_CLAIM_PATTERN = Pattern.compile(
+            "(?<![\\p{L}\\p{N}_])(?:UNPAID|PAID|PARTIALLY_PAID|UNKNOWN|RUB|CONTRACT_PENALTY|NONE)(?![\\p{L}\\p{N}_])"
+    );
+    private static final Pattern MACHINE_RUB_AMOUNT_PATTERN = Pattern.compile(
+            "(?iu)(?<!\\d)\\d[\\d \\u00A0]*\\.\\d{2}\\s*(?:руб(?:лей|ля|ль|\\.)?|₽)"
+    );
     private static final Pattern CONFIRMATION_SUBSTITUTION_PATTERN = Pattern.compile(
             "(?iu)(?:неподтверждени\\p{L}*|отсутстви\\p{L}*\\s+подтверждени\\p{L}*)\\s+(?:факт\\p{L}*\\s+)?(?:подач\\p{L}*|предоставлени\\p{L}*)"
                     + "|(?:подач\\p{L}*|предоставлени\\p{L}*)\\s+(?:транспортн\\p{L}*\\s+средств\\p{L}*\\s+)?не\\s+подтвержден\\p{L}*"
@@ -91,6 +100,7 @@ public class ClaimFactConsistencyValidator {
         validateClaimIdentity(facts, text, errors);
         validateSignatory(facts.signatory(), text, errors);
         validateExcludedSections(text, errors);
+        validatePresentationQuality(text, errors);
         validateParty("creditor", facts.creditor(), text, errors);
         validateParty("debtor", facts.debtor(), text, errors);
         validateUnknownInns(facts, narrative, errors);
@@ -142,6 +152,23 @@ public class ClaimFactConsistencyValidator {
         }
         if (BANK_DETAILS_PATTERN.matcher(text).find()) {
             errors.add("claim_text must not contain bank details");
+        }
+    }
+
+    private void validatePresentationQuality(String text, List<String> errors) {
+        Matcher isoDateMatcher = ISO_DATE_IN_CLAIM_PATTERN.matcher(text);
+        if (isoDateMatcher.find()) {
+            errors.add("claim_text contains machine ISO date: " + isoDateMatcher.group());
+        }
+
+        Matcher enumMatcher = TECHNICAL_ENUM_IN_CLAIM_PATTERN.matcher(text);
+        if (enumMatcher.find()) {
+            errors.add("claim_text contains technical enum/code: " + enumMatcher.group());
+        }
+
+        Matcher machineAmountMatcher = MACHINE_RUB_AMOUNT_PATTERN.matcher(text);
+        if (machineAmountMatcher.find()) {
+            errors.add("claim_text contains machine-formatted RUB amount: " + machineAmountMatcher.group());
         }
     }
 

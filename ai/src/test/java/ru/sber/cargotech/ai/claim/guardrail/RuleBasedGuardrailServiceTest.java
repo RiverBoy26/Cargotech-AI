@@ -429,6 +429,24 @@ class RuleBasedGuardrailServiceTest {
         assertThat(result.errors()).anyMatch(error -> error.contains("bank details"));
     }
 
+    @Test
+    void blocksMachineFormattingAndTechnicalEnumsInClaimText() {
+        String text = productionPaymentText()
+                .replace("10.06.2026", "2026-06-10")
+                .replace("Основной долг составляет 240 000 руб.", "Основной долг составляет 240000.00 рублей.")
+                + "\nТехнический статус платежа: UNPAID.";
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("machine ISO date"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("technical enum/code"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("machine-formatted RUB amount"));
+    }
+
     private GenerateClaimRequest productionPaymentRequest() {
         GenerateClaimRequest base = paymentRequest(true);
         return new GenerateClaimRequest(
