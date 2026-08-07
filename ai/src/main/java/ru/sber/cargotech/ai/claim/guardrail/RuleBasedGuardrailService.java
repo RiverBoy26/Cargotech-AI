@@ -340,13 +340,10 @@ public class RuleBasedGuardrailService {
             List<String> warnings
     ) {
         Map<String, GenerateClaimRequest.LegalContextItem> allowedByChunkId = new HashMap<>();
-        Set<String> legacyAllowedPairs = new HashSet<>();
-
         for (GenerateClaimRequest.LegalContextItem item : safeList(request.legalContext())) {
             if (item == null || isBlank(item.lawCode()) || isBlank(item.article())) {
                 continue;
             }
-            legacyAllowedPairs.add(normalizeKey(item.lawCode(), item.article()));
             if (!isBlank(item.chunkId())) {
                 allowedByChunkId.put(item.chunkId(), item);
             }
@@ -380,11 +377,11 @@ public class RuleBasedGuardrailService {
                     continue;
                 }
 
-                if (!sameText(allowed.lawCode(), used.lawCode()) || !sameText(allowed.article(), used.article())) {
+                if (!sameLawSource(allowed.lawCode(), used.lawCode()) || !sameText(allowed.article(), used.article())) {
                     errors.add("Model legal chunk_id does not match law_code/article: " + used.chunkId());
                     continue;
                 }
-            } else if (!legacyAllowedPairs.contains(normalizeKey(used.lawCode(), used.article()))) {
+            } else if (!containsAllowedLawPair(request.legalContext(), used)) {
                 errors.add("Model used law article not present in legal_context: " + used.lawCode() + " " + used.article());
                 continue;
             } else {
@@ -403,7 +400,7 @@ public class RuleBasedGuardrailService {
     ) {
         for (GenerateClaimRequest.LegalContextItem item : safeList(legalContext)) {
             if (item != null
-                    && sameText(item.lawCode(), used.lawCode())
+                    && sameLawSource(item.lawCode(), used.lawCode())
                     && sameText(item.article(), used.article())) {
                 return item;
             }
@@ -421,18 +418,106 @@ public class RuleBasedGuardrailService {
             return;
         }
 
-        String canonicalCitation = allowed == null ? null : allowed.citation();
-        if (!isBlank(canonicalCitation)) {
-            if (!normalizeCitationText(claimText).contains(normalizeCitationText(canonicalCitation))) {
-                errors.add("claim_text must contain canonical legal citation from legal_context: " + canonicalCitation);
-            }
+        String articleNumber = firstArticleNumber(used.article());
+        if (articleNumber == null && allowed != null) {
+            articleNumber = firstArticleNumber(allowed.article());
+        }
+
+        if (articleNumber == null || !extractReferencedArticleNumbers(claimText).contains(articleNumber)) {
+            errors.add("claim_text does not cite used law article: " + used.lawCode() + " " + used.article());
             return;
         }
 
-        String articleNumber = firstArticleNumber(used.article());
-        if (articleNumber == null || !extractReferencedArticleNumbers(claimText).contains(articleNumber)) {
-            errors.add("claim_text does not cite used law article: " + used.lawCode() + " " + used.article());
+        if (!containsLawSourceReference(claimText, allowed, used)) {
+            errors.add("claim_text cites article " + articleNumber + " without the expected law source: "
+                    + expectedLawSourceLabel(allowed, used));
         }
+    }
+
+    /**
+     * Legal citations are validated semantically rather than by exact string equality.
+     * For example, both "ГК РФ, ст. 309" and "в соответствии со ст. 309 ГК РФ"
+     * are the same reference and must be accepted.
+     */
+    private boolean containsLawSourceReference(
+            String claimText,
+            GenerateClaimRequest.LegalContextItem allowed,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        String articleNumber = firstArticleNumber(used.article());
+        if (articleNumber == null && allowed != null) {
+            articleNumber = firstArticleNumber(allowed.article());
+        }
+        if (articleNumber == null) {
+            return false;
+        }
+
+        String source = ((allowed == null ? "" : Objects.toString(allowed.lawCode(), ""))
+                + " " + (allowed == null ? "" : Objects.toString(allowed.citation(), ""))
+                + " " + Objects.toString(used.lawCode(), "")).toLowerCase(Locale.ROOT);
+
+        String lawPattern = lawSourcePattern(source, allowed, used);
+        if (lawPattern == null) {
+            return true;
+        }
+
+        String articlePattern = "(?:статья|статьи|статью|статье|статьей|статьёй|ст\\.?)\\s*"
+                + Pattern.quote(articleNumber);
+
+        Pattern referencePattern = Pattern.compile(
+                "(?isu)(?:"
+                        + articlePattern + ".{0,120}?" + lawPattern
+                        + "|"
+                        + lawPattern + ".{0,120}?" + articlePattern
+                        + ")"
+        );
+
+        return referencePattern.matcher(claimText).find();
+    }
+
+    private String lawSourcePattern(
+            String source,
+            GenerateClaimRequest.LegalContextItem allowed,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        if (source.contains("гк рф") || source.contains("гражданск")) {
+            return "(?:гк\\s*рф|гражданск\\p{L}*\\s+кодекс\\p{L}*\\s+российск\\p{L}*\\s+федерац\\p{L}*)";
+        }
+
+        if (source.contains("апк рф") || source.contains("арбитражн") && source.contains("процессуальн")) {
+            return "(?:апк\\s*рф|арбитражн\\p{L}*\\s+процессуальн\\p{L}*\\s+кодекс\\p{L}*\\s+российск\\p{L}*\\s+федерац\\p{L}*)";
+        }
+
+        Matcher federalLawMatcher = Pattern.compile("(?iu)(\\d+)\\s*[-–—]?\\s*фз").matcher(source);
+        if (federalLawMatcher.find()) {
+            String lawNumber = Pattern.quote(federalLawMatcher.group(1));
+            return "(?:федеральн\\p{L}*\\s+закон\\p{L}*\\s*(?:№\\s*)?"
+                    + lawNumber
+                    + "\\s*[-–—]?\\s*фз|"
+                    + lawNumber
+                    + "\\s*[-–—]?\\s*фз)";
+        }
+
+        String expected = allowed == null ? null : allowed.lawCode();
+        if (isBlank(expected)) {
+            expected = used.lawCode();
+        }
+        if (isBlank(expected)) {
+            return null;
+        }
+
+        expected = expected.replaceAll("\\s*\\([^)]*\\)\\s*$", "").trim();
+        return expected.isBlank() ? null : Pattern.quote(expected);
+    }
+
+    private String expectedLawSourceLabel(
+            GenerateClaimRequest.LegalContextItem allowed,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        if (allowed != null && !isBlank(allowed.lawCode())) {
+            return allowed.lawCode();
+        }
+        return used.lawCode();
     }
 
     private void validateNoUnknownLawReferences(
@@ -543,6 +628,64 @@ public class RuleBasedGuardrailService {
         }
 
         return expected.trim().equalsIgnoreCase(actual.trim());
+    }
+
+    /**
+     * Compares structured law source labels semantically. RAG may use a full
+     * official label (for example, "ГК РФ (часть первая)"), while the model
+     * returns the conventional short form ("ГК РФ"). These are the same
+     * source and must not be rejected before claim-text citation validation.
+     */
+    private boolean sameLawSource(String expected, String actual) {
+        if (expected == null && actual == null) {
+            return true;
+        }
+        if (expected == null || actual == null) {
+            return false;
+        }
+
+        return canonicalLawSource(expected).equals(canonicalLawSource(actual));
+    }
+
+    private String canonicalLawSource(String value) {
+        String normalized = normalizeCitationText(value);
+
+        if (normalized.contains("гк рф")
+                || (normalized.contains("гражданск")
+                && normalized.contains("кодекс")
+                && !normalized.contains("процессуальн"))) {
+            return "GK_RF";
+        }
+
+        if (normalized.contains("апк рф")
+                || (normalized.contains("арбитражн")
+                && normalized.contains("процессуальн")
+                && normalized.contains("кодекс"))) {
+            return "APK_RF";
+        }
+
+        Matcher federalLawMatcher = Pattern.compile("(?iu)(\\d+)\\s*[-–—]?\\s*фз").matcher(value);
+        if (federalLawMatcher.find()) {
+            return "FZ_" + federalLawMatcher.group(1);
+        }
+
+        // Parenthetical clarifications such as "(часть первая)" are metadata,
+        // not a different source. Keep other labels strict after removing them.
+        return normalizeCitationText(value.replaceAll("\\([^)]*\\)", " "));
+    }
+
+    private boolean containsAllowedLawPair(
+            List<GenerateClaimRequest.LegalContextItem> legalContext,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        for (GenerateClaimRequest.LegalContextItem item : safeList(legalContext)) {
+            if (item != null
+                    && sameLawSource(item.lawCode(), used.lawCode())
+                    && sameText(item.article(), used.article())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String normalizeKey(String first, String second) {

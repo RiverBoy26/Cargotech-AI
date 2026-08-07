@@ -329,7 +329,39 @@ class RuleBasedGuardrailServiceTest {
         );
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
-        assertThat(result.errors()).anyMatch(error -> error.contains("canonical legal citation"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("does not cite used law article"));
+    }
+
+
+    @Test
+    void acceptsEquivalentNaturalOrderForCanonicalLegalCitation() {
+        // Use the production-shaped fixture so this test checks legal citation
+        // normalization without being coupled to older/minimal claim fixtures.
+        GenerateClaimRequest base = productionPaymentRequest();
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                base.backendCalculation(),
+                base.contractContext(),
+                List.of(new GenerateClaimRequest.LegalContextItem(
+                        "law-309", "ГК РФ (часть первая)", "309", "надлежащее исполнение",
+                        "Обязательства исполняются надлежащим образом",
+                        "ГК РФ, ст. 309", "2026-08-06", "PAYMENT_DELAY"
+                )),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        GenerateClaimResponse response = productionPaymentResponse(
+                productionPaymentText().replace("Правовое основание: ст. 309 ГК РФ.",
+                        "Правовое основание: в соответствии со ст. 309 ГК РФ обязательства исполняются надлежащим образом.")
+        );
+
+        GuardrailResult result = service.check(request, response);
+
+        assertThat(result.errors())
+                .as("guardrail errors: %s", result.errors())
+                .isEmpty();
+        assertThat(result.decision()).isNotEqualTo(GuardrailDecision.BLOCK);
     }
 
     @Test
