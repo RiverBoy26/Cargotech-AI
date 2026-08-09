@@ -5,6 +5,29 @@ let selectedDocumentId = null;
 let currentClaimContext = {};
 let templatePreviewRequestId = 0;
 
+const LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX = 'cargotech.claim.lastOpenedVersion.';
+
+function getLastOpenedClaimVersionId(claimId) {
+  try {
+    return localStorage.getItem(`${LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX}${claimId}`);
+  } catch (error) {
+    console.warn('Не удалось прочитать последнюю открытую версию претензии', error);
+    return null;
+  }
+}
+
+function rememberOpenedClaimVersion(claimId, versionId) {
+  if (!claimId || !versionId) return;
+  try {
+    localStorage.setItem(
+      `${LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX}${claimId}`,
+      versionId
+    );
+  } catch (error) {
+    console.warn('Не удалось сохранить последнюю открытую версию претензии', error);
+  }
+}
+
 const CLAIM_TEXT_LOCKED_STATUSES = new Set([
   'SENT',
   'AWAITING_RESPONSE',
@@ -250,11 +273,14 @@ async function loadVersions(claimId) {
     currentVersions.map((version) =>
       `<option value="${version.id}">v${version.versionNumber} · ${escapeHtml(version.source)}${version.finalVersion ? ' · финальная' : ''}</option>`
     ).join('');
+  const lastOpenedVersionId = getLastOpenedClaimVersionId(claimId);
   const selected = currentVersions.find((item) => item.id === currentClaim?.finalVersionId)
+    || currentVersions.find((item) => item.id === lastOpenedVersionId)
     || currentVersions.at(-1);
   if (selected) {
     select.value = selected.id;
     document.getElementById('claim_text_editor').value = selected.content || '';
+    rememberOpenedClaimVersion(claimId, selected.id);
   }
 }
 
@@ -453,7 +479,10 @@ async function initClaimCardPage() {
 
   document.getElementById('version_select').addEventListener('change', (event) => {
     const version = currentVersions.find((item) => item.id === event.target.value);
-    if (version) document.getElementById('claim_text_editor').value = version.content || '';
+    if (version) {
+      document.getElementById('claim_text_editor').value = version.content || '';
+      rememberOpenedClaimVersion(claimId, version.id);
+    }
   });
 
   document.getElementById('template_select').addEventListener('change', async () => {
@@ -489,6 +518,7 @@ async function initClaimCardPage() {
       await reloadClaim(claimId);
       document.getElementById('version_select').value = result.version.id;
       document.getElementById('claim_text_editor').value = generatedText;
+      rememberOpenedClaimVersion(claimId, result.version.id);
     } catch (error) { showError(error); }
     finally { updateAvailableActions(); }
   });
@@ -508,13 +538,14 @@ async function initClaimCardPage() {
     const content = document.getElementById('claim_text_editor').value.trim();
     if (!content) return alert('Введите текст претензии');
     try {
-      await createClaimVersion(claimId, {
+      const createdVersion = await createClaimVersion(claimId, {
         source: 'LAWYER',
         baseVersionId: document.getElementById('version_select').value || null,
         content,
         comment: 'Версия сохранена юристом',
         finalVersion: false,
       });
+      rememberOpenedClaimVersion(claimId, createdVersion.id);
       await reloadClaim(claimId);
     } catch (error) { showError(error); }
   });
