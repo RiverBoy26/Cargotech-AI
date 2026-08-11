@@ -1,0 +1,679 @@
+body {
+  margin: 0;
+  background: #F4F6F8;
+  font-family: 'Anonymous Pro', monospace;
+  color: #2E3440;
+}
+
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+}
+
+/* хэдер */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background-color: #F26522;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+.topbar_user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  color: #1B2A4A;
+  font-size: 16px;
+}
+
+.logout_btn {
+  margin-right: auto;
+  padding: 10px 16px;
+  color: #1B2A4A;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.logout_btn:hover { background: #F6C9A6; }
+.logout_btn:disabled { cursor: wait; opacity: 0.7; }
+
+.page_title_row {
+  margin-bottom: 18px;
+}
+
+.page_title {
+  font-size: 22px;
+  margin: 0;
+}
+
+.tabs_row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #E6E9ED;
+}
+
+.tab_btn {
+  font: inherit;
+  font-size: 14px;
+  color: #69727D;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 12px 18px;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.tab_btn_active {
+  color: #1A1A1A;
+  border-bottom-color: #1A1A1A;
+  font-weight: 700;
+}
+
+.tab_panel {
+  display: none;
+}
+
+.tab_panel_active {
+  display: block;
+}
+
+/* поиск+фильтр */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+.search_box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 25px;
+  padding: 14px 20px;
+  flex: 1;
+  max-width: 620px;
+  max-height: 50px;
+}
+
+.search-box__input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: inherit;
+  color: #1a1a1a;
+  width: 100%;
+}
+
+.search-box__input::placeholder {
+  color: #555;
+}
+
+.status_filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 25px;
+  padding: 10px 20px;
+  width: 220px;
+  cursor: pointer;
+}
+
+.toolbar_actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.primary_btn,
+.secondary_btn {
+  font: inherit;
+  font-size: 14px;
+  border-radius: 8px;
+  padding: 11px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primary_btn {
+  background: #F26522;
+  border: 1px solid #F26522;
+  color: #1B2A4A;
+}
+
+.primary_btn:hover {
+  background: #D9531A;
+}
+
+.secondary_btn {
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  color: #2E3440;
+}
+
+.secondary_btn:hover {
+  background: #F6C9A6;
+}
+
+.primary_btn:disabled,
+.secondary_btn:disabled,
+.action_btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+/* таблица */
+
+.overdues_table {
+  background: #FFFFFF;
+  border: 2px solid #E6E9ED;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.overdues_table_head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.75fr 0.8fr 0.8fr 0.8fr 0.7fr 1fr 1.2fr;
+  background: #FCEADF;
+}
+
+.overdues_table_head_t {
+  padding: 16px 20px;
+  font-size: 14px;
+  color: #8A93A0;
+  text-align: center;
+}
+
+/* строки */
+
+.overdue_row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.75fr 0.8fr 0.8fr 0.8fr 0.7fr 1fr 1.2fr;
+  align-items: center;
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 14px;
+}
+
+.overdue_row:last-child {
+  border-bottom: none;
+}
+
+.overdue_row_client,
+.overdue_row_carrier,
+.overdue_row_trip,
+.overdue_row_amount,
+.overdue_row_days {
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.overdue_row_status_cell,
+.overdue_row_action_cell {
+  display: flex;
+  justify-content: center;
+  padding: 16px 20px;
+}
+
+/* статус */
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 170px;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid #DDE1E6;
+}
+
+.status-pill--waiting {
+  background: #F6EEDD;
+  color: #C0832B;
+}
+
+.status-pill--sent {
+  background: #E7ECF3;
+  color: #3D5A80;
+}
+
+.status-pill--partial {
+  background: #F5E5E2; 
+  color: #B23A2F;
+}
+
+.status-pill--paid {
+  background: #E6F0EA;
+  color: #2E7D5B;
+}
+
+/* кнопки действия */
+
+.action_btn {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 16px;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action_btn_confirm {
+  background: #ffada9; 
+  color: #d73728;
+  border: 1px solid #DDE1E6;
+}
+
+.action_btn_confirm:hover {
+  background: #f88d87;
+}
+
+.action_btn_paid {
+  background: #a9e0a0;
+  color: #1f5c14;
+  border: 1px solid #DDE1E6;
+}
+
+.action_btn_paid:hover {
+  background: #93d488;
+}
+
+.action_btn_done {
+  color: #888;
+  font-size: 14px;
+}
+
+/* платежи */
+
+.panel_header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.panel_title {
+  font-size: 18px;
+  margin: 0 0 5px;
+}
+
+.panel_subtitle {
+  color: #8A93A0;
+  font-size: 14px;
+  margin: 0;
+}
+
+.payment_form {
+  display: none;
+  background: #FFFFFF;
+  border: 1px solid #E6E9ED;
+  border-radius: 10px;
+  padding: 22px 26px;
+  margin-bottom: 20px;
+  box-shadow: 0 8px 24px rgba(27, 42, 74, 0.06);
+}
+
+.payment_form_visible {
+  display: block;
+}
+
+.payment_form_title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.payment_form_hint {
+  color: #8A93A0;
+  font-size: 13px;
+  margin-bottom: 17px;
+}
+
+.payment_form_grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 15px;
+  margin-bottom: 17px;
+}
+
+.payment_form_grid_import {
+  grid-template-columns: minmax(220px, 0.7fr) minmax(300px, 1.3fr);
+}
+
+.form_field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form_field_wide {
+  grid-column: 1 / -1;
+}
+
+.form_label {
+  color: #69727D;
+  font-size: 13px;
+}
+
+.form_input,
+.compact_select {
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 14px;
+  color: #2E3440;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.form_input:focus,
+.compact_select:focus {
+  border-color: #F26522;
+}
+
+.form_file {
+  padding: 7px 10px;
+}
+
+.form_textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.payment_form_footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+}
+
+.payment_form_actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.form_message {
+  color: #69727D;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 8px 0;
+}
+
+.form_message_success {
+  color: #2E7D5B;
+}
+
+.form_error {
+  color: #C0392B;
+}
+
+.payments_toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 18px 0 12px;
+}
+
+.compact_select {
+  min-width: 190px;
+}
+
+.payments_table {
+  background: #FFFFFF;
+  border: 2px solid #E6E9ED;
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.payments_table_head,
+.payment_row {
+  display: grid;
+  grid-template-columns:
+    minmax(92px, 0.65fr)
+    minmax(135px, 0.9fr)
+    minmax(160px, 1.2fr)
+    minmax(160px, 1.2fr)
+    minmax(120px, 0.85fr)
+    minmax(115px, 0.8fr)
+    minmax(115px, 0.8fr)
+    minmax(145px, 0.9fr);
+  min-width: 1120px;
+}
+
+.payments_table_head {
+  color: #8A93A0;
+  background: #FCEADF;
+  font-size: 13px;
+}
+
+.payments_table_head > div,
+.payment_row > div {
+  padding: 14px 12px;
+  text-align: center;
+}
+
+.payment_row {
+  align-items: center;
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.payment_row:last-child {
+  border-bottom: none;
+}
+
+.payment_row:hover {
+  background: #FFF7F1;
+}
+
+.payment_row_primary {
+  font-weight: 700;
+}
+
+.payment_row_secondary {
+  color: #8A93A0;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.payment_status {
+  display: inline-flex;
+  justify-content: center;
+  border-radius: 20px;
+  padding: 6px 10px;
+  border: 1px solid #DDE1E6;
+  font-size: 12px;
+}
+
+.payment_status_imported {
+  background: #F6EEDD;
+  color: #9A671C;
+}
+
+.payment_status_partial {
+  background: #F5E5E2;
+  color: #B23A2F;
+}
+
+.payment_status_matched {
+  background: #E6F0EA;
+  color: #2E7D5B;
+}
+
+.payment_status_rejected {
+  background: #ECEFF3;
+  color: #69727D;
+}
+
+.empty_row {
+  padding: 28px;
+  color: #8A93A0;
+  text-align: center;
+}
+
+/* карточка платежа */
+
+.modal_overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(27, 42, 74, 0.45);
+}
+
+.modal_overlay_visible {
+  display: flex;
+}
+
+.payment_modal {
+  width: min(820px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+  background: #FFFFFF;
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(27, 42, 74, 0.25);
+}
+
+.payment_match_modal {
+  width: min(620px, 96vw);
+}
+
+.payment_match_actions {
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.modal_header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid #E6E9ED;
+}
+
+.modal_close {
+  font: inherit;
+  font-size: 25px;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.modal_body {
+  padding: 20px 24px 24px;
+}
+
+.payment_details_grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.payment_detail {
+  padding: 12px;
+  background: #F8F9FA;
+  border-radius: 8px;
+}
+
+.payment_detail_label {
+  color: #8A93A0;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.payment_detail_value {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.matches_title {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.match_row {
+  display: grid;
+  grid-template-columns: 0.8fr 1.4fr 0.8fr 0.7fr;
+  gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1px solid #E6E9ED;
+  font-size: 13px;
+}
+
+@media (max-width: 1000px) {
+  .payment_form_grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payment_details_grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  main {
+    padding: 18px 14px 36px;
+  }
+
+  .tabs_row {
+    overflow-x: auto;
+  }
+
+  .panel_header,
+  .toolbar,
+  .payments_toolbar,
+  .payment_form_footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toolbar_actions {
+    flex-wrap: wrap;
+  }
+
+  .search_box {
+    max-width: none;
+  }
+
+  .payment_form_grid,
+  .payment_form_grid_import,
+  .payment_details_grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payment_form_actions {
+    margin-left: 0;
+  }
+}

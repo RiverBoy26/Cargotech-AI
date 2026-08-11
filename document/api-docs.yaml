@@ -1,0 +1,166 @@
+openapi: 3.1.0
+info:
+  title: CargoTech Document API
+  version: 1.0.0
+  description: Template preview, claim file generation, download and email delivery.
+servers:
+  - url: http://localhost:8085
+    description: Direct document service
+  - url: http://localhost:8080
+    description: Gateway
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/document-templates/available:
+    get:
+      summary: Find active templates applicable to a claim
+      parameters:
+        - in: query
+          name: claimType
+          required: true
+          schema: { type: string, example: PAYMENT_DELAY }
+        - in: query
+          name: clientId
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Ordered templates; the first applicable template is recommended
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TemplateOption" }
+  /api/v1/document-templates/{templateId}/preview:
+    post:
+      summary: Decrypt and render the selected active template
+      parameters:
+        - $ref: "#/components/parameters/TemplateId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemplatePreviewRequest"
+      responses:
+        "200":
+          description: Rendered text and unresolved variables
+  /api/v1/document-templates/{templateId}/versions/{versionId}/export:
+    get:
+      summary: Export the decrypted text of a template version
+      parameters:
+        - $ref: "#/components/parameters/TemplateId"
+        - in: path
+          name: versionId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: UTF-8 text attachment
+  /api/v1/documents/generate/claim:
+    post:
+      summary: Generate and store a claim in DOCX or PDF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateClaimDocumentRequest"
+      responses:
+        "200":
+          description: Generated document identifiers and download URL
+        "409":
+          description: Template version changed or no active version exists
+  /api/v1/documents/{documentId}/download:
+    get:
+      summary: Download a stored document
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: DOCX or PDF binary
+  /api/v1/documents/{documentId}/send-email:
+    post:
+      summary: Send the stored document through the configured Mailtrap SMTP inbox
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendEmailRequest"
+      responses:
+        "200":
+          description: Successful delivery record
+        "422":
+          description: SMTP delivery failed; a FAILED record is retained
+  /api/v1/documents/{documentId}/deliveries:
+    get:
+      summary: List email delivery attempts for a document
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: Delivery history
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TemplateId:
+      in: path
+      name: templateId
+      required: true
+      schema: { type: string, format: uuid }
+    DocumentId:
+      in: path
+      name: documentId
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    TemplateOption:
+      type: object
+      properties:
+        templateId: { type: string, format: uuid }
+        activeVersionId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        claimType: { type: string }
+        recommended: { type: boolean }
+    TemplatePreviewRequest:
+      type: object
+      properties:
+        templateVersionId: { type: string, format: uuid }
+        data:
+          type: object
+          additionalProperties: true
+    GenerateClaimDocumentRequest:
+      type: object
+      required: [claimId]
+      properties:
+        templateId: { type: string, format: uuid }
+        templateVersionId: { type: string, format: uuid }
+        templateCode: { type: string, example: PAYMENT_DELAY_DEFAULT }
+        claimText:
+          type: string
+          description: Финальный текст претензии для формирования файла без шаблона
+        claimId: { type: string, format: uuid }
+        outputType:
+          type: string
+          enum: [CLAIM_DOCX, CLAIM_PDF]
+        documentNumber: { type: string }
+        documentDate: { type: string, format: date }
+        description: { type: string }
+        data:
+          type: object
+          additionalProperties: true
+    SendEmailRequest:
+      type: object
+      required: [to]
+      properties:
+        to: { type: string, format: email }
+        cc: { type: string, format: email }
+        subject: { type: string, maxLength: 500 }
+        message: { type: string, maxLength: 10000 }

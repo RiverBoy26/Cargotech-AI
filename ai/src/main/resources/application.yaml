@@ -1,3 +1,52 @@
+server:
+  port: 8084
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
 spring:
   application:
-    name: ai
+    name: cargotech-ai
+  datasource:
+    url: ${AI_DB_URL:jdbc:postgresql://localhost:5432/cargotech}
+    username: ${AI_DB_USERNAME:cargotech}
+    password: ${AI_DB_PASSWORD:cargotech}
+  docker:
+    compose:
+      enabled: false
+
+gigachat:
+  auth-url: ${GIGACHAT_AUTH_URL:https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+  chat-url: ${GIGACHAT_CHAT_URL:https://gigachat.devices.sberbank.ru/api/v1/chat/completions}
+  embeddings-url: ${GIGACHAT_EMBEDDINGS_URL:https://gigachat.devices.sberbank.ru/api/v1/embeddings}
+  scope: ${GIGACHAT_SCOPE:GIGACHAT_API_B2B}
+  client-id: ${GIGACHAT_CLIENT_ID:}
+  auth-key: ${GIGACHAT_AUTH_KEY:}
+  chat-model: ${GIGACHAT_CHAT_MODEL:GigaChat-2-Pro}
+  embeddings-model: ${GIGACHAT_EMBEDDINGS_MODEL:EmbeddingsGigaR}
+  temperature: ${GIGACHAT_TEMPERATURE:0.1}
+  max-tokens: ${GIGACHAT_MAX_TOKENS:2000}
+  token-refresh-skew-seconds: ${GIGACHAT_TOKEN_REFRESH_SKEW_SECONDS:60}
+
+qdrant:
+  url: ${QDRANT_URL:http://localhost:6333}
+  collection-name: ${QDRANT_COLLECTION_NAME:cargotech_rag_chunks}
+  vector-size: ${QDRANT_VECTOR_SIZE:2560}
+  distance: ${QDRANT_DISTANCE:Cosine}
+rag:
+  search:
+    contract-min-score: ${RAG_CONTRACT_MIN_SCORE:0.45}
+    legal-min-score: ${RAG_LEGAL_MIN_SCORE:0.45}
+    template-min-score: ${RAG_TEMPLATE_MIN_SCORE:0.40}
+    example-min-score: ${RAG_EXAMPLE_MIN_SCORE:0.40}
+
+ai:
+  diagnostics:
+    endpoints-enabled: ${AI_DIAGNOSTICS_ENDPOINTS_ENABLED:false}
+  limits:
+    max-calls-per-claim: ${AI_MAX_CALLS_PER_CLAIM:8}
+    max-cost-per-claim-rub: ${AI_MAX_COST_PER_CLAIM_RUB:50}
+    input-token-cost-rub-per-1000: ${AI_INPUT_TOKEN_COST_RUB_PER_1000:0.20}
+    output-token-cost-rub-per-1000: ${AI_OUTPUT_TOKEN_COST_RUB_PER_1000:0.20}

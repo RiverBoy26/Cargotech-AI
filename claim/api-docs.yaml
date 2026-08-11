@@ -1,0 +1,1782 @@
+openapi: 3.1.0
+info:
+  title: CargoTech Claim API
+  description: "Реестр претензий, расчёты, версии текста, комментарии и статусы"
+  version: v1
+servers:
+- url: http://localhost:8083
+  description: Generated server url
+security:
+- bearerAuth: []
+paths:
+  /api/v1/shipments:
+    get:
+      tags:
+      - shipment-controller
+      operationId: list
+      parameters:
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseShipmentResponse"
+    post:
+      tags:
+      - shipment-controller
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ShipmentResponse"
+  /api/v1/parties:
+    get:
+      tags:
+      - party-controller
+      operationId: list_1
+      parameters:
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponsePartyResponse"
+    post:
+      tags:
+      - party-controller
+      operationId: create_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartyRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PartyResponse"
+  /api/v1/contracts:
+    get:
+      tags:
+      - contract-controller
+      operationId: list_2
+      parameters:
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseContractResponse"
+    post:
+      tags:
+      - contract-controller
+      operationId: create_2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContractRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContractResponse"
+  /api/v1/claims:
+    get:
+      tags:
+      - claim-controller
+      operationId: list_3
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - DRAFT
+          - PENDING_LEGAL_REVIEW
+          - LEGAL_APPROVED
+          - SENT
+          - AWAITING_RESPONSE
+          - PAID
+          - ESCALATED_TO_COURT
+          - CANCELLED
+          - CLOSED_IN_COURT
+      - name: creditorId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: debtorId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: assignedLawyerId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseClaimListItemResponse"
+    post:
+      tags:
+      - claim-controller
+      operationId: create_3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClaimRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/versions:
+    get:
+      tags:
+      - claim-version-controller
+      operationId: list_4
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClaimVersionResponse"
+    post:
+      tags:
+      - claim-version-controller
+      operationId: create_4
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClaimVersionRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimVersionResponse"
+  /api/v1/claims/{claimId}/versions/{versionId}/restore:
+    post:
+      tags:
+      - claim-version-controller
+      operationId: restore
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimVersionResponse"
+  /api/v1/claims/{claimId}/versions/{versionId}/final:
+    post:
+      tags:
+      - claim-version-controller
+      operationId: markFinal
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimVersionResponse"
+  /api/v1/claims/{claimId}/submit-to-legal-review:
+    post:
+      tags:
+      - claim-controller
+      operationId: submitToLegalReview
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/confirm-non-payment:
+    post:
+      tags:
+      - claim-controller
+      summary: Подтвердить отсутствие оплаты без изменения статуса претензии
+      operationId: confirmNonPayment
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/send:
+    post:
+      tags:
+      - claim-controller
+      operationId: send
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/mark-paid:
+    post:
+      tags:
+      - claim-controller
+      operationId: markPaid
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/escalate-to-court:
+    post:
+      tags:
+      - claim-controller
+      operationId: escalateToCourt
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/comments:
+    get:
+      tags:
+      - claim-comment-controller
+      operationId: list_5
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClaimCommentResponse"
+    post:
+      tags:
+      - claim-comment-controller
+      operationId: create_5
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimCommentResponse"
+  /api/v1/claims/{claimId}/close-in-court:
+    post:
+      tags:
+      - claim-controller
+      operationId: closeInCourt
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/cancel:
+    post:
+      tags:
+      - claim-controller
+      operationId: cancel
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/approve:
+    post:
+      tags:
+      - claim-controller
+      operationId: approve
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/calculations/claim/{claimId}/recalculate:
+    post:
+      tags:
+      - calculation-controller
+      operationId: recalculate
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimCalculationResponse"
+  /api/v1/shipments/{shipmentId}:
+    get:
+      tags:
+      - shipment-controller
+      operationId: get
+      parameters:
+      - name: shipmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ShipmentResponse"
+    patch:
+      tags:
+      - shipment-controller
+      operationId: update
+      parameters:
+      - name: shipmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ShipmentResponse"
+  /api/v1/parties/{partyId}:
+    get:
+      tags:
+      - party-controller
+      operationId: get_1
+      parameters:
+      - name: partyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PartyResponse"
+    delete:
+      tags:
+      - party-controller
+      operationId: delete
+      parameters:
+      - name: partyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+    patch:
+      tags:
+      - party-controller
+      operationId: update_1
+      parameters:
+      - name: partyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PartyResponse"
+  /api/v1/contracts/{contractId}:
+    get:
+      tags:
+      - contract-controller
+      operationId: get_2
+      parameters:
+      - name: contractId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContractResponse"
+    delete:
+      tags:
+      - contract-controller
+      operationId: delete_1
+      parameters:
+      - name: contractId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+    patch:
+      tags:
+      - contract-controller
+      operationId: update_2
+      parameters:
+      - name: contractId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContractRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContractResponse"
+  /api/v1/claims/{claimId}:
+    get:
+      tags:
+      - claim-controller
+      operationId: get_3
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+    delete:
+      tags:
+      - claim-controller
+      operationId: delete_2
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+    patch:
+      tags:
+      - claim-controller
+      operationId: update_3
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClaimRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
+  /api/v1/claims/{claimId}/comments/{commentId}:
+    delete:
+      tags:
+      - claim-comment-controller
+      operationId: delete_3
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+    patch:
+      tags:
+      - claim-comment-controller
+      operationId: update_4
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCommentRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimCommentResponse"
+  /api/v1/claims/{claimId}/versions/{versionId}:
+    get:
+      tags:
+      - claim-version-controller
+      operationId: get_4
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimVersionResponse"
+  /api/v1/claims/{claimId}/versions/{versionId}/diff:
+    get:
+      tags:
+      - claim-version-controller
+      operationId: diff
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VersionDiffResponse"
+  /api/v1/claims/{claimId}/status-history:
+    get:
+      tags:
+      - claim-controller
+      operationId: statusHistory
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StatusHistoryResponse"
+  /api/v1/calculations/claim/{claimId}:
+    get:
+      tags:
+      - calculation-controller
+      operationId: getLatest
+      parameters:
+      - name: claimId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimCalculationResponse"
+components:
+  schemas:
+    ShipmentRequest:
+      type: object
+      properties:
+        orderNumber:
+          type: string
+          maxLength: 128
+          minLength: 0
+        clientId:
+          type: string
+          format: uuid
+        expeditorId:
+          type: string
+          format: uuid
+        contractId:
+          type: string
+          format: uuid
+        routeFrom:
+          type: string
+          maxLength: 500
+          minLength: 0
+        routeTo:
+          type: string
+          maxLength: 500
+          minLength: 0
+        loadingDate:
+          type: string
+          format: date
+        unloadingDate:
+          type: string
+          format: date
+        actSignedAt:
+          type: string
+          format: date
+        serviceAmount:
+          type: number
+        currency:
+          type: string
+          maxLength: 10
+          minLength: 0
+        status:
+          type: string
+          enum:
+          - CREATED
+          - IN_PROGRESS
+          - COMPLETED
+          - CANCELLED
+        externalId:
+          type: string
+          maxLength: 255
+          minLength: 0
+      required:
+      - clientId
+      - contractId
+      - expeditorId
+      - orderNumber
+      - serviceAmount
+    ShipmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+        clientId:
+          type: string
+          format: uuid
+        clientName:
+          type: string
+        expeditorId:
+          type: string
+          format: uuid
+        expeditorName:
+          type: string
+        contractId:
+          type: string
+          format: uuid
+        contractNumber:
+          type: string
+        routeFrom:
+          type: string
+        routeTo:
+          type: string
+        loadingDate:
+          type: string
+          format: date
+        unloadingDate:
+          type: string
+          format: date
+        actSignedAt:
+          type: string
+          format: date
+        serviceAmount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+          enum:
+          - CREATED
+          - IN_PROGRESS
+          - COMPLETED
+          - CANCELLED
+        externalId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PartyRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - CLIENT
+          - EXPEDITOR
+          - CARRIER
+          - THIRD_PARTY
+        name:
+          type: string
+          maxLength: 500
+          minLength: 0
+        inn:
+          type: string
+          maxLength: 12
+          minLength: 0
+        kpp:
+          type: string
+          maxLength: 9
+          minLength: 0
+        ogrn:
+          type: string
+          maxLength: 15
+          minLength: 0
+        legalAddress:
+          type: string
+        postalAddress:
+          type: string
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          minLength: 0
+        phone:
+          type: string
+          maxLength: 64
+          minLength: 0
+      required:
+      - name
+      - type
+    PartyResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - CLIENT
+          - EXPEDITOR
+          - CARRIER
+          - THIRD_PARTY
+        name:
+          type: string
+        inn:
+          type: string
+        kpp:
+          type: string
+        ogrn:
+          type: string
+        legalAddress:
+          type: string
+        postalAddress:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ContractRequest:
+      type: object
+      properties:
+        number:
+          type: string
+          maxLength: 128
+          minLength: 0
+        clientId:
+          type: string
+          format: uuid
+        expeditorId:
+          type: string
+          format: uuid
+        signedAt:
+          type: string
+          format: date
+        validFrom:
+          type: string
+          format: date
+        validTo:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - ACTIVE
+          - EXPIRED
+          - TERMINATED
+          - ARCHIVED
+        paymentDays:
+          type: integer
+          format: int32
+          minimum: 0
+        paymentStartEvent:
+          type: string
+          enum:
+          - ACT_SIGNED
+          - UNLOADING_DATE
+          - TTN_SIGNED
+          - INVOICE_DATE
+        penaltyType:
+          type: string
+          enum:
+          - CONTRACT_PENALTY
+          - ARTICLE_395
+          - NONE
+        penaltyRate:
+          type: number
+        claimResponseDays:
+          type: integer
+          format: int32
+          minimum: 0
+        jurisdiction:
+          type: string
+        documentId:
+          type: string
+          format: uuid
+      required:
+      - clientId
+      - expeditorId
+      - number
+    ContractResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        number:
+          type: string
+        clientId:
+          type: string
+          format: uuid
+        clientName:
+          type: string
+        expeditorId:
+          type: string
+          format: uuid
+        expeditorName:
+          type: string
+        signedAt:
+          type: string
+          format: date
+        validFrom:
+          type: string
+          format: date
+        validTo:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - ACTIVE
+          - EXPIRED
+          - TERMINATED
+          - ARCHIVED
+        paymentDays:
+          type: integer
+          format: int32
+        paymentStartEvent:
+          type: string
+          enum:
+          - ACT_SIGNED
+          - UNLOADING_DATE
+          - TTN_SIGNED
+          - INVOICE_DATE
+        penaltyType:
+          type: string
+          enum:
+          - CONTRACT_PENALTY
+          - ARTICLE_395
+          - NONE
+        penaltyRate:
+          type: number
+        claimResponseDays:
+          type: integer
+          format: int32
+        jurisdiction:
+          type: string
+        documentId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateClaimRequest:
+      type: object
+      properties:
+        claimNumber:
+          type: string
+          maxLength: 128
+          minLength: 0
+        shipmentId:
+          type: string
+          format: uuid
+        creditorId:
+          type: string
+          format: uuid
+        debtorId:
+          type: string
+          format: uuid
+        claimType:
+          type: string
+          enum:
+          - PAYMENT_DELAY
+        reason:
+          type: string
+        principalDebt:
+          type: number
+        penaltyAmount:
+          type: number
+        assignedLawyerId:
+          type: string
+          format: uuid
+        nonPaymentConfirmed:
+          type: boolean
+        nonPaymentConfirmationComment:
+          type: string
+        draftContent:
+          type: string
+      required:
+      - shipmentId
+    ClaimDetailsResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        claimNumber:
+          type: string
+        claimType:
+          type: string
+          enum:
+          - PAYMENT_DELAY
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - PENDING_LEGAL_REVIEW
+          - LEGAL_APPROVED
+          - SENT
+          - AWAITING_RESPONSE
+          - PAID
+          - ESCALATED_TO_COURT
+          - CANCELLED
+          - CLOSED_IN_COURT
+        reason:
+          type: string
+        shipmentId:
+          type: string
+          format: uuid
+        shipmentNumber:
+          type: string
+        contractId:
+          type: string
+          format: uuid
+        contractNumber:
+          type: string
+        creditorId:
+          type: string
+          format: uuid
+        creditorName:
+          type: string
+        debtorId:
+          type: string
+          format: uuid
+        debtorName:
+          type: string
+        principalDebt:
+          type: number
+        penaltyAmount:
+          type: number
+        totalAmount:
+          type: number
+        nonPaymentConfirmed:
+          type: boolean
+        nonPaymentConfirmedAt:
+          type: string
+          format: date-time
+        nonPaymentConfirmedBy:
+          type: string
+          format: uuid
+        nonPaymentConfirmationComment:
+          type: string
+        assignedLawyerId:
+          type: string
+          format: uuid
+        finalVersionId:
+          type: string
+          format: uuid
+        lastPaymentCheckId:
+          type: string
+          format: uuid
+        approvedAt:
+          type: string
+          format: date-time
+        approvedBy:
+          type: string
+          format: uuid
+        sentAt:
+          type: string
+          format: date-time
+        paidAt:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+        cancellationReasonCode:
+          type: string
+        cancellationReason:
+          type: string
+        escalatedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          format: uuid
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+          format: uuid
+    CreateClaimVersionRequest:
+      type: object
+      properties:
+        source:
+          type: string
+          enum:
+          - AI
+          - LAWYER
+          - RESTORED
+        baseVersionId:
+          type: string
+          format: uuid
+        content:
+          type: string
+          minLength: 1
+        comment:
+          type: string
+        finalVersion:
+          type: boolean
+      required:
+      - content
+    ClaimVersionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        claimId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+          format: int32
+        source:
+          type: string
+          enum:
+          - AI
+          - LAWYER
+          - RESTORED
+        baseVersionId:
+          type: string
+          format: uuid
+        content:
+          type: string
+        comment:
+          type: string
+        finalVersion:
+          type: boolean
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+    StatusChangeRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        cancellationReasonCode:
+          type: string
+    CreateCommentRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          minLength: 1
+      required:
+      - text
+    ClaimCommentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        claimId:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        text:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ClaimCalculationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        claimId:
+          type: string
+          format: uuid
+        calculationVersion:
+          type: integer
+          format: int32
+        principalDebt:
+          type: number
+        paidAmount:
+          type: number
+        remainingDebt:
+          type: number
+        overdueStartDate:
+          type: string
+          format: date
+        calculationDate:
+          type: string
+          format: date
+        overdueDays:
+          type: integer
+          format: int32
+        penaltyType:
+          type: string
+          enum:
+          - CONTRACT_PENALTY
+          - ARTICLE_395
+          - NONE
+        penaltyRate:
+          type: number
+        penaltyAmount:
+          type: number
+        totalAmount:
+          type: number
+        formula:
+          type: string
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+    UpdateClaimRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        principalDebt:
+          type: number
+        penaltyAmount:
+          type: number
+        assignedLawyerId:
+          type: string
+          format: uuid
+        nonPaymentConfirmed:
+          type: boolean
+        nonPaymentConfirmationComment:
+          type: string
+    UpdateCommentRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          minLength: 1
+      required:
+      - text
+    Pageable:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+        sort:
+          type: array
+          items:
+            type: string
+    PageResponseShipmentResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShipmentResponse"
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        number:
+          type: integer
+          format: int32
+        first:
+          type: boolean
+        last:
+          type: boolean
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    PageResponsePartyResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartyResponse"
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        number:
+          type: integer
+          format: int32
+        first:
+          type: boolean
+        last:
+          type: boolean
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    PageResponseContractResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContractResponse"
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        number:
+          type: integer
+          format: int32
+        first:
+          type: boolean
+        last:
+          type: boolean
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    ClaimListItemResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        claimNumber:
+          type: string
+        claimType:
+          type: string
+          enum:
+          - PAYMENT_DELAY
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - PENDING_LEGAL_REVIEW
+          - LEGAL_APPROVED
+          - SENT
+          - AWAITING_RESPONSE
+          - PAID
+          - ESCALATED_TO_COURT
+          - CANCELLED
+          - CLOSED_IN_COURT
+        shipmentId:
+          type: string
+          format: uuid
+        shipmentNumber:
+          type: string
+        creditorId:
+          type: string
+          format: uuid
+        creditorName:
+          type: string
+        debtorId:
+          type: string
+          format: uuid
+        debtorName:
+          type: string
+        assignedLawyerId:
+          type: string
+          format: uuid
+        principalDebt:
+          type: number
+        penaltyAmount:
+          type: number
+        totalAmount:
+          type: number
+        overdueDays:
+          type: integer
+          format: int32
+        paymentDays:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PageResponseClaimListItemResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClaimListItemResponse"
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        number:
+          type: integer
+          format: int32
+        first:
+          type: boolean
+        last:
+          type: boolean
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    VersionDiffResponse:
+      type: object
+      properties:
+        baseVersionId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        addedLines:
+          type: array
+          items:
+            type: string
+        removedLines:
+          type: array
+          items:
+            type: string
+    StatusHistoryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        claimId:
+          type: string
+          format: uuid
+        previousStatus:
+          type: string
+          enum:
+          - DRAFT
+          - PENDING_LEGAL_REVIEW
+          - LEGAL_APPROVED
+          - SENT
+          - AWAITING_RESPONSE
+          - PAID
+          - ESCALATED_TO_COURT
+          - CANCELLED
+          - CLOSED_IN_COURT
+        newStatus:
+          type: string
+          enum:
+          - DRAFT
+          - PENDING_LEGAL_REVIEW
+          - LEGAL_APPROVED
+          - SENT
+          - AWAITING_RESPONSE
+          - PAID
+          - ESCALATED_TO_COURT
+          - CANCELLED
+          - CLOSED_IN_COURT
+        reason:
+          type: string
+        changedBy:
+          type: string
+          format: uuid
+        changedAt:
+          type: string
+          format: date-time
+  securitySchemes:
+    bearerAuth:
+      type: http
+      name: bearerAuth
+      scheme: bearer
+      bearerFormat: JWT

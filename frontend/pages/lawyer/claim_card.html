@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Карточка претензии</title>
+    <link rel="stylesheet" href="../../styles/claim_card.css?v=20260812-requirements-1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <button class="logout_btn" id="logout_btn" type="button">Выйти из аккаунта</button>
+        <div class="topbar_user">
+            <div class="topbar_usename">Иванов Иван Иванович</div>
+            <div class="topbar_user_role">юрист</div>
+        </div>
+    </header>
+
+    <main>
+        <div class="back_link_row">
+            <button class="back_link" id="back_link">Вернуться к списку претензий</button>
+        </div>
+
+        <div class="claim_card">
+
+            <div class="claim_card_stripe" id="claim_card_stripe"></div>
+
+            <div class="claim_card_body">
+
+                <div class="claim_card_header">
+                    <div class="claim_card_header_left">
+                        <div class="claim_card_title" id="claim_card_title">Претензия 1111-1111</div>
+                        <div class="claim_card_subtitle" id="claim_card_subtitle">Экспедитор 1 — АА-1111</div>
+                    </div>
+                    <div class="claim_card_header_right">
+                        <div class="claim_card_badge" id="claim_card_overdue_badge">Дней просрочки 45</div>
+                        <div class="claim_card_status_badge" id="claim_card_status_badge">Эскалация</div>
+                    </div>
+                </div>
+
+                <div class="claim_card_info_grid">
+                    <div class="info_box">
+                        <div class="info_box_label">Сумма долга</div>
+                        <div class="info_box_value" id="info_debt_amount">217 000 ₽</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Неустойка</div>
+                        <div class="info_box_value" id="info_penalty">61 000 ₽</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Срок оплаты по договору</div>
+                        <div class="info_box_value" id="info_payment_term">75 дней</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Дата выполнения</div>
+                        <div class="info_box_value" id="info_completion_date">01.01.2025</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Дата просрочки</div>
+                        <div class="info_box_value" id="info_overdue_date">16.04.2025</div>
+                    </div>
+                    <div class="info_box">
+                        <div class="info_box_label">Ответственный юрист</div>
+                        <div class="info_box_value" id="info_lawyer_name">Иванов Иван Иванович</div>
+                    </div>
+                </div>
+
+                <div class="claim_card_main">
+
+                    <div class="claim_actions_column">
+
+                        <div class="action_buttons_grid">
+                            <button class="action_btn" id="btn_compose">Сгенерировать</button>
+                            <button class="action_btn" id="btn_request_confirmation">Запросить бухгалтера</button>
+                            <button class="action_btn" id="btn_approve">Утвердить</button>
+                            <button class="action_btn" id="btn_edit">Редактировать</button>
+                            <button class="action_btn" id="btn_recalculate">Расчёт</button>
+                            <button class="action_btn" id="btn_cancel">Отменить</button>
+                            <button class="action_btn" id="btn_court_package">Пакет для суда</button>
+                            <button class="action_btn" id="btn_download_claim" hidden>Скачать</button>
+                        </div>
+
+                        <section class="workflow_panel validation_panel" id="validation_panel">
+                            <div class="validation_header">
+                                <h2 class="workflow_title">Проверка перед отправкой</h2>
+                                <span class="validation_badge" id="validation_status">Ожидает проверки</span>
+                            </div>
+                            <p class="validation_message" id="validation_errors"></p>
+                            <ul class="checklist" id="send_checklist"><li>Загрузка проверок…</li></ul>
+                            <details>
+                                <summary>Использованные источники</summary>
+                                <pre class="sources_view" id="used_sources">Источники ещё не зафиксированы</pre>
+                            </details>
+                            <button class="action_btn" id="btn_validation_override" hidden>Подтвердить после ручной проверки</button>
+                        </section>
+
+                        <section class="workflow_panel" id="claim_text_panel">
+                            <h2 class="workflow_title">Текст претензии</h2>
+                            <div class="workflow_controls">
+                                <select class="workflow_input" id="template_select">
+                                    <option value="">— выберите шаблон —</option>
+                                </select>
+                                <button class="action_btn" id="btn_template_preview">Предпросмотр</button>
+                                <select class="workflow_input" id="version_select">
+                                    <option value="">— версии текста —</option>
+                                </select>
+                            </div>
+                            <textarea class="workflow_textarea" id="claim_text_editor" name="claim_text_editor" autocomplete="off"
+                                      placeholder="Сгенерированный или отредактированный текст претензии"></textarea>
+                            <div class="version_diff" id="version_diff">Выберите версию для сравнения.</div>
+                            <div class="workflow_controls">
+                                <button class="action_btn" id="btn_save_version">Сохранить версию</button>
+                                <button class="action_btn" id="btn_mark_final">Назначить финальной</button>
+                                <span id="ai_warning"></span>
+                            </div>
+                        </section>
+
+                        <section class="workflow_panel" id="document_delivery_panel" hidden>
+                            <h2 class="workflow_title">Документы и отправка</h2>
+                            <div class="workflow_controls">
+                                <select class="workflow_input" id="document_format">
+                                    <option value="CLAIM_PDF">PDF</option>
+                                    <option value="CLAIM_DOCX">DOCX</option>
+                                </select>
+                                <button class="action_btn" id="btn_generate_document">Сформировать документ</button>
+                                <button class="action_btn" id="btn_generate_new_document" hidden>Сформировать новую версию</button>
+                                <button class="action_btn" id="btn_download_calculation_pdf">Расчёт PDF</button>
+                                <button class="action_btn" id="btn_download_calculation_xlsx">Расчёт XLSX</button>
+                            </div>
+                            <div class="document_list" id="document_list">Документы ещё не сформированы</div>
+                            <div class="workflow_controls">
+                                <div class="email_recipient_control">
+                                    <div class="email_recipient_value" id="email_to_display">Email клиента не указан</div>
+                                    <input class="workflow_input" id="email_to" name="claim_recipient_email" type="email" autocomplete="off" placeholder="Email клиента" hidden>
+                                    <button class="email_edit_button" id="btn_edit_recipient_email" type="button">Изменить</button>
+                                </div>
+                                <input class="workflow_input" id="email_cc" name="claim_email_cc" type="email" autocomplete="off" placeholder="Копия">
+                                <input class="workflow_input" id="email_subject" name="claim_email_subject" autocomplete="off" placeholder="Тема письма">
+                                <button class="action_btn" id="btn_send_document">Проверить оплату и отправить</button>
+                            </div>
+                            <textarea class="workflow_textarea workflow_textarea_small" id="email_message" name="claim_email_message" autocomplete="off"
+                                      placeholder="Текст письма"></textarea>
+                            <div id="delivery_status"></div>
+                        </section>
+
+                        <input class="comment_input" id="comment_input" name="claim_comment" type="text" autocomplete="off" placeholder="Введите комментарий...">
+
+                        <div class="history_row">
+                            <span class="history_title">История изменений</span>
+                            <button class="add_comment_btn" id="add_comment_btn">Добавить<br>комментарий</button>
+                        </div>
+
+                        <div class="history_list" id="history_list"></div>
+
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <dialog class="action_dialog" id="claim_action_dialog" aria-labelledby="claim_action_dialog_title">
+        <form class="action_dialog_form" id="claim_action_dialog_form" method="dialog">
+            <h2 class="action_dialog_title" id="claim_action_dialog_title">Редактирование претензии</h2>
+            <label class="action_dialog_label" for="claim_action_dialog_text" id="claim_action_dialog_label">Комментарий</label>
+            <textarea class="workflow_textarea action_dialog_textarea" id="claim_action_dialog_text" name="claim_action_comment" autocomplete="off"></textarea>
+            <p class="action_dialog_error" id="claim_action_dialog_error" role="alert"></p>
+            <div class="action_dialog_buttons">
+                <button class="action_btn" id="claim_action_dialog_cancel" type="button">Отмена</button>
+                <button class="action_btn action_dialog_confirm" type="submit">Сохранить</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="action_dialog claim_edit_dialog" id="claim_edit_dialog" aria-labelledby="claim_edit_dialog_title">
+        <form class="action_dialog_form" id="claim_edit_dialog_form" method="dialog">
+            <h2 class="action_dialog_title" id="claim_edit_dialog_title">Редактирование претензии</h2>
+            <div class="claim_edit_grid">
+                <label>Номер претензии<input class="workflow_input" id="edit_claim_number" name="claim_number" autocomplete="off" required></label>
+                <label>Срок ответа, дней<input class="workflow_input" id="edit_response_deadline_days" name="claim_response_deadline_days" autocomplete="off" type="number" min="0"></label>
+                <label class="claim_edit_wide">Основание<textarea class="workflow_textarea action_dialog_textarea" id="edit_reason" name="claim_reason" autocomplete="off" required></textarea></label>
+                <label>Получатель<input class="workflow_input" id="edit_recipient_name" name="claim_recipient_name" autocomplete="off"></label>
+                <label>Email получателя<input class="workflow_input" id="edit_recipient_email" name="claim_recipient_email_edit" autocomplete="off" type="email"></label>
+                <label class="claim_edit_wide">Адрес получателя<textarea class="workflow_textarea action_dialog_textarea" id="edit_recipient_address" name="claim_recipient_address" autocomplete="off"></textarea></label>
+                <label class="claim_edit_wide">Банковские реквизиты<textarea class="workflow_textarea action_dialog_textarea" id="edit_bank_details" name="claim_bank_details" autocomplete="off"></textarea></label>
+                <label>Подписант, ФИО<input class="workflow_input" id="edit_signer_full_name" name="claim_signer_full_name" autocomplete="off"></label>
+                <label>Должность<input class="workflow_input" id="edit_signer_position" name="claim_signer_position" autocomplete="off"></label>
+                <label class="claim_edit_wide">Основание полномочий<input class="workflow_input" id="edit_signer_authority" name="claim_signer_authority" autocomplete="off"></label>
+                <label>Сумма долга (только чтение)<input class="workflow_input" id="edit_principal_debt" name="claim_principal_debt_readonly" autocomplete="off" readonly></label>
+                <label>Неустойка (только чтение)<input class="workflow_input" id="edit_penalty_amount" name="claim_penalty_amount_readonly" autocomplete="off" readonly></label>
+                <label class="claim_edit_wide">Текст претензии<textarea class="workflow_textarea" id="edit_claim_text" name="claim_text" autocomplete="off"></textarea></label>
+            </div>
+            <p class="action_dialog_error" id="claim_edit_dialog_error" role="alert"></p>
+            <div class="action_dialog_buttons">
+                <button class="action_btn" id="claim_edit_dialog_cancel" type="button">Отмена</button>
+                <button class="action_btn action_dialog_confirm" type="submit">Сохранить новую версию</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="../../scripts/api.js?v=20260812-requirements-1"></script>
+    <script src="../../scripts/claim_script.js?v=20260812-requirements-1"></script>
+</body>
+</html>

@@ -1,0 +1,585 @@
+body {
+  margin: 0;
+  background: #F4F6F8;
+  font-family: 'Anonymous Pro', monospace;
+  color: #2E3440;
+}
+
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+}
+
+/* шапка */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background-color: #F26522;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+.topbar_user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  color: #1B2A4A;
+  font-size: 16px;
+}
+
+.logout_btn {
+  margin-right: auto;
+  padding: 10px 16px;
+  color: #1B2A4A;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.logout_btn:hover { background: #F6C9A6; }
+.logout_btn:disabled { cursor: wait; opacity: 0.7; }
+
+/* Кнопка назад */
+
+.back_link_row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.back_link {
+  background: #F26522;
+  border: 25px;
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-family: inherit;
+  font-size: 14px;
+  color: #1B2A4A;
+  cursor: pointer;
+}
+
+.back_link:hover {
+  background: #D9531A;
+}
+
+/* карточка - внешний контейнер */
+
+.claim_card {
+  background: #FFFFFF;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid #DDE1E6;
+}
+
+.claim_card_stripe {
+  height: 14px;
+  background: #F5E5E2;
+  border-bottom: 1px solid #E6E9ED;
+}
+
+.claim_card_body {
+  padding: 28px 36px 36px;
+}
+
+/* Заголовок карточки */
+
+.claim_card_header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.claim_card_title {
+  font-size: 20px;
+  margin-bottom: 4px;
+  color: #1B2A4A;
+}
+
+.claim_card_subtitle {
+  font-size: 14px;
+  color: #8A93A0;
+}
+
+.claim_card_header_right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.claim_card_badge {
+  background: #FCEADF;
+  color: #8A93A0;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.claim_card_status_badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 130px;
+  background: #F5E5E2;
+  border-radius: 20px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #B23A2F;
+}
+
+/* Инфополя */
+
+.claim_card_info_grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.info_box {
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
+.info_box_label {
+  font-size: 13px;
+  color: #8A93A0;
+  margin-bottom: 8px;
+}
+
+.info_box_value {
+  font-size: 18px;
+  color: #2E3440;
+}
+
+/* кнопки */
+
+.template_row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.template_label {
+  font-size: 17px;
+}
+
+.template_select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  color: #8A93A0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  width: 140px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.template_select_arrow {
+  font-size: 12px;
+}
+
+.action_buttons_grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.action_btn {
+  background: #F26522;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.action_btn:hover {
+  background: #D9531A;
+}
+
+.action_btn_disabled {
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  cursor: not-allowed;
+}
+
+.action_btn_disabled:hover {
+  background: #C0C0C0;
+  border: 1px solid #DDE1E6;
+}
+
+.workflow_panel {
+  background: #f5f5f5;
+  border: 1px solid #dde1e6;
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.validation_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.validation_badge {
+  padding: 6px 10px;
+  border: 1px solid #f6c9a6;
+  border-radius: 999px;
+  background: #fceadf;
+  color: #7b3517;
+  font-size: 12px;
+}
+
+.validation_message {
+  margin: 4px 0 12px;
+  color: #5f6875;
+  white-space: pre-wrap;
+}
+
+.checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.check_passed { color: #217a47; }
+.check_failed { color: #b23a2f; }
+
+.sources_view {
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #dde1e6;
+  border-radius: 8px;
+  background: #fff;
+  font: 12px/1.45 'Anonymous Pro', monospace;
+  white-space: pre-wrap;
+}
+
+.version_diff {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.version_diff section {
+  min-height: 42px;
+  padding: 10px;
+  border: 1px solid #dde1e6;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.version_diff ul { margin: 8px 0 0; padding-left: 18px; }
+.diff_added { background: #eaf7ef; color: #216b42; }
+.diff_removed { background: #fff0ee; color: #96392f; }
+.diff_changed { background: #fff8df; color: #795a00; }
+.diff_category { background: #f5f3ff; color: #433879; }
+
+.workflow_panel_locked .workflow_input:disabled,
+.workflow_panel_locked .workflow_textarea[readonly] {
+  color: #77808c;
+  background: #eceff2;
+  border-color: #d5d9de;
+  cursor: not-allowed;
+}
+
+.workflow_panel_locked .workflow_textarea[readonly] {
+  resize: none;
+}
+
+.workflow_title {
+  font-size: 17px;
+  margin: 0 0 14px;
+}
+
+.workflow_controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.workflow_input,
+.workflow_textarea {
+  box-sizing: border-box;
+  border: 1px solid #aeb5bf;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: inherit;
+  background: #fff;
+}
+
+.workflow_input {
+  min-width: 210px;
+  flex: 1;
+}
+
+.email_recipient_control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 210px;
+  flex: 1;
+}
+
+.email_recipient_control .workflow_input {
+  min-width: 0;
+  width: 100%;
+}
+
+.email_recipient_value {
+  box-sizing: border-box;
+  min-width: 0;
+  flex: 1;
+  padding: 10px 12px;
+  overflow: hidden;
+  color: #252a31;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email_edit_button {
+  padding: 3px 2px;
+  border: 0;
+  background: transparent;
+  color: #77808c;
+  font-family: inherit;
+  font-size: 12px;
+  opacity: 0.62;
+  cursor: pointer;
+}
+
+.email_edit_button:hover,
+.email_edit_button:focus-visible {
+  color: #252a31;
+  opacity: 0.9;
+}
+
+.workflow_textarea {
+  width: 100%;
+  min-height: 260px;
+  resize: vertical;
+  margin-bottom: 12px;
+}
+
+.workflow_textarea_small {
+  min-height: 90px;
+}
+
+.document_item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #dde1e6;
+}
+
+.document_list {
+  margin-bottom: 14px;
+}
+
+/* Комментарий */
+
+.comment_input {
+  width: 100%;
+  border: 25px;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.comment_input::placeholder {
+  color: #8A93A0;
+}
+
+.history_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.history_title {
+  font-size: 15px;
+}
+
+.add_comment_btn {
+  background: #F26522;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.add_comment_btn:hover {
+  background: #D9531A;
+}
+
+/* история изменений */
+
+.history_list {
+  background: #c4c4c4;
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.history_item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #b0b0b0;
+  font-size: 13px;
+}
+
+.history_item:last-child {
+  border-bottom: none;
+}
+
+.history_item_text {
+  flex: 1;
+}
+
+.history_item_author {
+  margin-bottom: 2px;
+}
+
+.history_item_action {
+  color: #444;
+}
+
+.history_item_date {
+  white-space: nowrap;
+  color: #444;
+}
+
+.action_dialog {
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(27, 42, 74, 0.28);
+}
+
+.action_dialog::backdrop {
+  background: rgba(27, 42, 74, 0.48);
+}
+
+.action_dialog_form {
+  padding: 24px;
+}
+
+.action_dialog_title {
+  margin: 0 0 18px;
+  font-size: 20px;
+}
+
+.action_dialog_label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.action_dialog_textarea {
+  min-height: 120px;
+  margin-bottom: 0;
+}
+
+.action_dialog_error {
+  min-height: 20px;
+  margin: 7px 0;
+  color: #b23a2f;
+  font-size: 13px;
+}
+
+.action_dialog_buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.action_dialog_confirm {
+  background: #f26522;
+  color: #fff;
+}
+
+.claim_edit_dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.claim_edit_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.claim_edit_grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.claim_edit_grid .workflow_input,
+.claim_edit_grid .workflow_textarea {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  font-weight: 400;
+}
+
+.claim_edit_grid .action_dialog_textarea { min-height: 72px; }
+.claim_edit_grid .claim_edit_wide { grid-column: 1 / -1; }
+.claim_edit_grid input[readonly] { background: #eceff2; color: #5f6875; }
+
+@media (max-width: 760px) {
+  main { padding: 16px; }
+  .claim_card_body { padding: 20px; }
+  .claim_card_info_grid,
+  .action_buttons_grid,
+  .checklist,
+  .version_diff,
+  .claim_edit_grid { grid-template-columns: 1fr; }
+  .claim_edit_grid .claim_edit_wide { grid-column: auto; }
+}

@@ -1,3 +1,82 @@
+server:
+  port: ${SERVER_PORT:8085}
+
 spring:
   application:
     name: document
+
+  datasource:
+    url: ${DOCUMENT_DB_URL:jdbc:postgresql://localhost:5432/cargotech_document}
+    username: ${DOCUMENT_DB_USERNAME:postgres}
+    password: ${DOCUMENT_DB_PASSWORD:admin}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: cargotech
+        jdbc:
+          time_zone: UTC
+
+  jackson:
+    default-property-inclusion: non_null
+
+  servlet:
+    multipart:
+      max-file-size: ${DOCUMENT_MAX_FILE_SIZE:20MB}
+      max-request-size: ${DOCUMENT_MAX_REQUEST_SIZE:25MB}
+
+  mail:
+    host: ${MAILTRAP_SMTP_HOST:sandbox.smtp.mailtrap.io}
+    port: ${MAILTRAP_SMTP_PORT:2525}
+    username: ${MAILTRAP_SMTP_USERNAME:}
+    password: ${MAILTRAP_SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: ${MAILTRAP_CONNECTION_TIMEOUT_MS:5000}
+          timeout: ${MAILTRAP_READ_TIMEOUT_MS:10000}
+          writetimeout: ${MAILTRAP_WRITE_TIMEOUT_MS:10000}
+
+document:
+  internal-api-key: ${INTERNAL_API_KEY:cargotech-local-internal-key}
+  security:
+    jwt-secret-base64: ${JWT_SECRET_BASE64}
+    jwt-issuer: ${JWT_ISSUER:http://localhost:8081}
+  storage:
+    provider: ${DOCUMENT_STORAGE_PROVIDER:LOCAL}
+    local-root-path: ${DOCUMENT_LOCAL_STORAGE_PATH:./storage/documents}
+    bucket-name: ${DOCUMENT_STORAGE_BUCKET:cargotech-documents}
+  templates:
+    encryption-key-base64: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+    encryption-key-id: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID:dev-seed-v1}
+  pdf:
+    font-path: ${DOCUMENT_PDF_FONT_PATH:}
+  mail:
+    from: ${DOCUMENT_MAIL_FROM:no-reply@cargotech.local}
+    from-name: ${DOCUMENT_MAIL_FROM_NAME:CargoTech}
+
+services:
+  claim:
+    base-url: ${CLAIM_SERVICE_URL:http://localhost:8083}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+    try-it-out-enabled: true
