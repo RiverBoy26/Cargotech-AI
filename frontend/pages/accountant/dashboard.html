@@ -49,7 +49,9 @@
                     <div class="overdues_table_head_t">Клиент</div>
                     <div class="overdues_table_head_t">Экспедитор</div>
                     <div class="overdues_table_head_t">Рейс</div>
-                    <div class="overdues_table_head_t">Сумма долга</div>
+                    <div class="overdues_table_head_t">Сумма рейса</div>
+                    <div class="overdues_table_head_t">Оплачено</div>
+                    <div class="overdues_table_head_t">Остаток</div>
                     <div class="overdues_table_head_t">Просрочка</div>
                     <div class="overdues_table_head_t">Статус</div>
                     <div class="overdues_table_head_t">Действие</div>
@@ -197,7 +199,30 @@
         </div>
     </div>
 
+    <div class="modal_overlay" id="payment_match_modal" role="dialog" aria-modal="true" aria-labelledby="payment_match_modal_title">
+        <form class="payment_modal payment_match_modal" id="payment_match_form">
+            <div class="modal_header">
+                <div>
+                    <div class="payment_form_title" id="payment_match_modal_title">Подтверждение полной оплаты</div>
+                    <div class="payment_form_hint" id="payment_match_modal_subtitle"></div>
+                </div>
+                <button class="modal_close" id="close_payment_match_modal_btn" type="button" aria-label="Закрыть">×</button>
+            </div>
+            <div class="modal_body">
+                <div class="form_field">
+                    <label class="form_label" for="payment_match_select">Платёж *</label>
+                    <select class="form_input form_select" id="payment_match_select" required></select>
+                </div>
+                <p class="form_message form_error" id="payment_match_error" role="alert"></p>
+                <div class="payment_form_actions payment_match_actions">
+                    <button class="secondary_btn" id="cancel_payment_match_btn" type="button">Отмена</button>
+                    <button class="primary_btn" type="submit">Подтвердить оплату</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
     <script src="../../scripts/api.js?v=20260804-user-name-fields-2"></script>
-    <script src="../../scripts/ac_script.js"></script>
+    <script src="../../scripts/ac_script.js?v=20260811-payment-picker-1"></script>
 </body>
 </html>

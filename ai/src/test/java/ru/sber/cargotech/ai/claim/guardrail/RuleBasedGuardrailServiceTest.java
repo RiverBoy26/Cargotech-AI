@@ -446,7 +446,7 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
-    void blocksAttachmentsSectionAndBankDetailsInClaimText() {
+    void allowsAttachmentsSectionButBlocksUnsupportedBankDetailsInClaimText() {
         String text = productionPaymentText()
                 + "\nПриложения:\n1. Копия договора.\n"
                 + "Расчетный счет 40702810000000000000, БИК 044525000.";
@@ -457,7 +457,6 @@ class RuleBasedGuardrailServiceTest {
         );
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
-        assertThat(result.errors()).anyMatch(error -> error.contains("attachments section"));
         assertThat(result.errors()).anyMatch(error -> error.contains("bank details"));
     }
 

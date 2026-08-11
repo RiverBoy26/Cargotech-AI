@@ -26,9 +26,6 @@ public class ClaimFactConsistencyValidator {
     private static final Pattern DANGLING_ACT_NUMBER_PATTERN = Pattern.compile(
             "(?iu)(?<![\\p{L}\\p{N}_])акт(?:ом|а|у|е|ы)?\\s*№\\s*(?:от(?![\\p{L}\\p{N}_])|[,.;:]|$)"
     );
-    private static final Pattern ATTACHMENTS_SECTION_PATTERN = Pattern.compile(
-            "(?imu)^\\s*приложени(?:е|я)\\s*:"
-    );
     private static final Pattern BANK_DETAILS_PATTERN = Pattern.compile(
             "(?iu)(?<![\\p{L}\\p{N}_])(?:бик|"
                     + "корреспондентск\\p{L}*\\s+сч[её]т\\p{L}*|"
@@ -147,9 +144,6 @@ public class ClaimFactConsistencyValidator {
     }
 
     private void validateExcludedSections(String text, List<String> errors) {
-        if (ATTACHMENTS_SECTION_PATTERN.matcher(text).find()) {
-            errors.add("claim_text must not contain an attachments section");
-        }
         if (BANK_DETAILS_PATTERN.matcher(text).find()) {
             errors.add("claim_text must not contain bank details");
         }

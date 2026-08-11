@@ -1,11 +1,3 @@
-const ACCOUNTANT_STATUSES = [
-  'DRAFT',
-  'LEGAL_APPROVED',
-  'SENT',
-  'AWAITING_RESPONSE',
-  'ESCALATED_TO_COURT',
-];
-
 const PAYMENT_STATUS_META = {
   IMPORTED: { label: 'Не сопоставлен', className: 'payment_status_imported' },
   PARTIALLY_MATCHED: { label: 'Частично', className: 'payment_status_partial' },
@@ -46,18 +38,18 @@ function todayLocalIso() {
 }
 
 function renderActionButton(claim) {
+  if (!claim.claimId) {
+    return `<button class="action_btn action_btn_confirm" data-claim-action="create" data-shipment-id="${escapeAccountant(claim.shipmentId)}"
+      >Подтвердить неуплату</button>`;
+  }
   if (claim.status === 'DRAFT' && !claim.nonPaymentConfirmed) {
     return `<button class="action_btn action_btn_confirm" data-claim-action="confirm" data-id="${escapeAccountant(claim.id)}"
       >Подтвердить неуплату</button>`;
   }
-  if (claim.status === 'DRAFT' && claim.nonPaymentConfirmed && !claim.finalVersionId) {
-    return '<button class="action_btn" disabled title="Юрист ещё не назначил финальную версию">Ожидается финальная версия</button>';
+  if (claim.status === 'DRAFT' && claim.nonPaymentConfirmed) {
+    return '<span class="action_btn_done">Передано юристу</span>';
   }
-  if (claim.status === 'DRAFT' && claim.nonPaymentConfirmed && claim.finalVersionId) {
-    return `<button class="action_btn action_btn_confirm" data-claim-action="submit" data-id="${escapeAccountant(claim.id)}"
-      >Передать на юрпроверку</button>`;
-  }
-  if (!['PAID', 'CANCELLED', 'CLOSED_IN_COURT'].includes(claim.status)) {
+  if (!['PAID', 'CANCELLED', 'CANCELLED_PAID', 'CLOSED_IN_COURT'].includes(claim.status)) {
     return `
       <button class="action_btn" data-claim-action="preflight" data-id="${escapeAccountant(claim.id)}">Проверить</button>
       <button class="action_btn action_btn_paid" data-claim-action="mark-paid" data-id="${escapeAccountant(claim.id)}">Отметить оплату</button>`;
@@ -66,13 +58,17 @@ function renderActionButton(claim) {
 }
 
 function renderOverdueRow(claim) {
-  const status = mapStatus(claim.status);
+  const status = claim.status
+    ? mapStatus(claim.status)
+    : { text: 'Требует подтверждения', className: 'status_pending' };
   return `
-    <div class="overdue_row" data-id="${escapeAccountant(claim.id)}">
+    <div class="overdue_row">
       <div class="overdue_row_client">${escapeAccountant(claim.debtorName)}</div>
       <div class="overdue_row_carrier">${escapeAccountant(claim.creditorName)}</div>
       <div class="overdue_row_trip">${escapeAccountant(claim.shipmentNumber)}</div>
-      <div class="overdue_row_amount">${formatMoney(claim.totalAmount || claim.principalDebt)}</div>
+      <div class="overdue_row_amount">${formatMoney(claim.shipmentAmount)}</div>
+      <div class="overdue_row_amount">${formatMoney(claim.paidAmount)}</div>
+      <div class="overdue_row_amount">${formatMoney(claim.principalDebt)}</div>
       <div class="overdue_row_days">+${escapeAccountant(claim.overdueDays ?? 0)} дн.</div>
       <div class="overdue_row_status_cell"><span class="status-pill ${status.className}">${escapeAccountant(status.text)}</span></div>
       <div class="overdue_row_action_cell">${renderActionButton(claim)}</div>
@@ -99,16 +95,78 @@ function renderOverdues() {
   bindOverdueActions();
 }
 
+async function choosePaymentForClaim(claimId) {
+  if (!paymentsLoaded) await loadPayments();
+  const claim = accountantClaims.find((item) => item.id === claimId);
+  const debt = Number(claim?.principalDebt || 0);
+  const eligiblePayments = accountantPayments.filter((payment) =>
+    payment.status !== 'REJECTED'
+    && Number(payment.availableAmount || 0) >= debt
+  );
+  if (!eligiblePayments.length) {
+    throw new Error('Нет несопоставленного платежа, достаточного для полного погашения задолженности');
+  }
+
+  const modal = document.getElementById('payment_match_modal');
+  const form = document.getElementById('payment_match_form');
+  const select = document.getElementById('payment_match_select');
+  const closeButton = document.getElementById('close_payment_match_modal_btn');
+  const cancelButton = document.getElementById('cancel_payment_match_btn');
+  document.getElementById('payment_match_modal_subtitle').textContent =
+    `Остаток задолженности: ${formatMoney(debt)}. Выберите платёж, который его полностью покрывает.`;
+  document.getElementById('payment_match_error').textContent = '';
+  select.innerHTML = eligiblePayments.map((payment) =>
+    `<option value="${escapeAccountant(payment.id)}">${escapeAccountant(formatPaymentDate(payment.paymentDate))} · ${escapeAccountant(payment.paymentNumber || 'Без номера')} · доступно ${escapeAccountant(formatMoney(payment.availableAmount))}</option>`
+  ).join('');
+  modal.classList.add('modal_overlay_visible');
+  select.focus();
+
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      form.removeEventListener('submit', submit);
+      closeButton.removeEventListener('click', cancel);
+      cancelButton.removeEventListener('click', cancel);
+      modal.removeEventListener('click', backdropCancel);
+      document.removeEventListener('keydown', escapeCancel);
+      modal.classList.remove('modal_overlay_visible');
+      resolve(value);
+    };
+    const submit = (event) => {
+      event.preventDefault();
+      if (!select.value) return;
+      finish(select.value);
+    };
+    const cancel = () => finish(null);
+    const backdropCancel = (event) => {
+      if (event.target === modal) cancel();
+    };
+    const escapeCancel = (event) => {
+      if (event.key === 'Escape') cancel();
+    };
+    form.addEventListener('submit', submit);
+    closeButton.addEventListener('click', cancel);
+    cancelButton.addEventListener('click', cancel);
+    modal.addEventListener('click', backdropCancel);
+    document.addEventListener('keydown', escapeCancel);
+  });
+}
+
 function bindOverdueActions() {
   document.querySelectorAll('[data-claim-action]').forEach((button) => {
     button.addEventListener('click', async () => {
       const { claimAction: action, id } = button.dataset;
       button.disabled = true;
       try {
-        if (action === 'confirm') {
+        if (action === 'create') {
+          await createClaim({
+            shipmentId: button.dataset.shipmentId,
+            claimType: 'PAYMENT_DELAY',
+            reason: 'Просроченная оплата по завершённому рейсу',
+            nonPaymentConfirmed: true,
+            nonPaymentConfirmationComment: 'Неуплата подтверждена бухгалтером',
+          });
+        } else if (action === 'confirm') {
           await claimAction(id, 'confirm-non-payment', 'Неуплата подтверждена бухгалтером');
-        } else if (action === 'submit') {
-          await claimAction(id, 'submit-to-legal-review', 'Претензия передана на юридическую проверку');
         } else if (action === 'preflight') {
           const result = await preflightClaimPayment(id, 'Ручная проверка бухгалтером');
           alert(
@@ -117,7 +175,7 @@ function bindOverdueActions() {
             + `Остаток: ${formatMoney(result.remainingAmount)}`
           );
         } else if (action === 'mark-paid') {
-          const paymentId = prompt('Введите ID платежа, полностью закрывающего задолженность:');
+          const paymentId = await choosePaymentForClaim(id);
           if (!paymentId) return;
           await markClaimPaidByPayment(id, paymentId, 'Полная оплата подтверждена бухгалтером');
         }
@@ -135,12 +193,15 @@ async function loadOverdues() {
   const list = document.getElementById('overdues_list');
   list.textContent = 'Загрузка...';
   try {
-    const pages = await Promise.all(ACCOUNTANT_STATUSES.map((status) =>
-      getClaims({ status, size: 100 })
-    ));
-    const brief = pages.flatMap((page) => page.content || []);
-    accountantClaims = await Promise.all(brief.map((claim) => getClaim(claim.id)));
-    accountantClaims.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const overdues = await getOverdueShipments();
+    accountantClaims = (overdues || []).map((item) => ({
+      ...item,
+      id: item.claimId,
+      status: item.claimStatus,
+      debtorName: item.clientName,
+      creditorName: item.expeditorName,
+      principalDebt: item.remainingDebt,
+    }));
     renderOverdues();
   } catch (error) {
     list.textContent = `Ошибка: ${error.message}`;

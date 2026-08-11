@@ -35,6 +35,7 @@ public class ClaimVersionService {
         ClaimStatus.PAID,
         ClaimStatus.ESCALATED_TO_COURT,
         ClaimStatus.CANCELLED,
+        ClaimStatus.CANCELLED_PAID,
         ClaimStatus.CLOSED_IN_COURT
     );
 

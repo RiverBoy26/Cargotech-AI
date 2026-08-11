@@ -227,6 +227,28 @@ public class ClaimClient {
         }
     }
 
+    public void syncPaymentState(UUID claimId) {
+        try {
+            restClient
+                .post()
+                .uri(
+                    "/internal/api/v1/claims/{claimId}/sync-payment-state",
+                    claimId
+                )
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientResponseException exception) {
+            throw PaymentException.conflict(
+                "Платёж зафиксирован, но claim не выполнил перерасчёт: "
+                    + exception.getStatusCode()
+            );
+        } catch (ResourceAccessException exception) {
+            throw PaymentException.conflict(
+                "Модуль claim недоступен для перерасчёта после платежа"
+            );
+        }
+    }
+
     private static String currentBearerToken() {
         Authentication authentication = SecurityContextHolder
                 .getContext()

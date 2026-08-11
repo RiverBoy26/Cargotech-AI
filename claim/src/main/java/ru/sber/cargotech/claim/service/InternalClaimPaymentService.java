@@ -28,6 +28,7 @@ public class InternalClaimPaymentService {
     private static final List<ClaimStatus> CLOSED_STATUSES = List.of(
             ClaimStatus.PAID,
             ClaimStatus.CANCELLED,
+            ClaimStatus.CANCELLED_PAID,
             ClaimStatus.CLOSED_IN_COURT
     );
 

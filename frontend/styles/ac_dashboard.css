@@ -192,7 +192,7 @@ header {
 
 .overdues_table_head {
   display: grid;
-  grid-template-columns: 1fr 1.2fr 0.8fr 0.9fr 0.9fr 1.1fr 1.3fr;
+  grid-template-columns: 1fr 1fr 0.75fr 0.8fr 0.8fr 0.8fr 0.7fr 1fr 1.2fr;
   background: #FCEADF;
 }
 
@@ -207,19 +207,14 @@ header {
 
 .overdue_row {
   display: grid;
-  grid-template-columns: 1fr 1.2fr 0.8fr 0.9fr 0.9fr 1.1fr 1.3fr;
+  grid-template-columns: 1fr 1fr 0.75fr 0.8fr 0.8fr 0.8fr 0.7fr 1fr 1.2fr;
   align-items: center;
   border-bottom: 1px solid #E6E9ED;
   font-size: 14px;
-  cursor: pointer;
 }
 
 .overdue_row:last-child {
   border-bottom: none;
-}
-
-.overdue_row:hover {
-  background: #cacaca;
 }
 
 .overdue_row_client,
@@ -567,6 +562,15 @@ header {
   background: #FFFFFF;
   border-radius: 12px;
   box-shadow: 0 24px 70px rgba(27, 42, 74, 0.25);
+}
+
+.payment_match_modal {
+  width: min(620px, 96vw);
+}
+
+.payment_match_actions {
+  justify-content: flex-end;
+  margin-top: 18px;
 }
 
 .modal_header {

@@ -108,6 +108,8 @@
                                     <option value="CLAIM_DOCX">DOCX</option>
                                 </select>
                                 <button class="action_btn" id="btn_generate_document">Сформировать файл</button>
+                                <button class="action_btn" id="btn_download_calculation_pdf">Расчёт PDF</button>
+                                <button class="action_btn" id="btn_download_calculation_xlsx">Расчёт XLSX</button>
                             </div>
                             <div class="document_list" id="document_list">Документы ещё не сформированы</div>
                             <div class="workflow_controls">
@@ -141,7 +143,20 @@
         </div>
     </main>
 
+    <dialog class="action_dialog" id="claim_action_dialog" aria-labelledby="claim_action_dialog_title">
+        <form class="action_dialog_form" id="claim_action_dialog_form" method="dialog">
+            <h2 class="action_dialog_title" id="claim_action_dialog_title">Редактирование претензии</h2>
+            <label class="action_dialog_label" for="claim_action_dialog_text" id="claim_action_dialog_label">Комментарий</label>
+            <textarea class="workflow_textarea action_dialog_textarea" id="claim_action_dialog_text"></textarea>
+            <p class="action_dialog_error" id="claim_action_dialog_error" role="alert"></p>
+            <div class="action_dialog_buttons">
+                <button class="action_btn" id="claim_action_dialog_cancel" type="button">Отмена</button>
+                <button class="action_btn action_dialog_confirm" type="submit">Сохранить</button>
+            </div>
+        </form>
+    </dialog>
+
     <script src="../../scripts/api.js?v=20260804-user-name-fields-2"></script>
-    <script src="../../scripts/claim_script.js?v=20260810-final-version-priority-1"></script>
+    <script src="../../scripts/claim_script.js?v=20260811-action-dialogs-1"></script>
 </body>
 </html>

@@ -35,8 +35,11 @@ public class ClaimGenerationService {
     private final ClaimAiRequestMapper requestMapper;
     private final AiClient aiClient;
     private final ClaimVersionService versionService;
+    private final ClaimCalculationService calculationService;
 
     public GenerateClaimResponse generate(CurrentClaimUser user, UUID claimId) {
+        // A document must always be based on today's payment and overdue state.
+        calculationService.recalculate(user, claimId);
         GenerationContext context = loadContext(user, claimId);
         validateForGeneration(context);
         validateSignatory(user);

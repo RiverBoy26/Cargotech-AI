@@ -7,6 +7,47 @@ let templatePreviewRequestId = 0;
 
 const LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX = 'cargotech.claim.lastOpenedVersion.';
 
+function requestClaimActionText({ title, label, value = '', required = false }) {
+  const dialog = document.getElementById('claim_action_dialog');
+  const form = document.getElementById('claim_action_dialog_form');
+  const input = document.getElementById('claim_action_dialog_text');
+  const error = document.getElementById('claim_action_dialog_error');
+  document.getElementById('claim_action_dialog_title').textContent = title;
+  document.getElementById('claim_action_dialog_label').textContent = label;
+  input.value = value;
+  error.textContent = '';
+
+  return new Promise((resolve) => {
+    const finish = (result) => {
+      form.removeEventListener('submit', submit);
+      dialog.removeEventListener('cancel', cancel);
+      document.getElementById('claim_action_dialog_cancel').removeEventListener('click', cancel);
+      if (dialog.open) dialog.close();
+      resolve(result);
+    };
+    const submit = (event) => {
+      event.preventDefault();
+      const result = input.value.trim();
+      if (required && !result) {
+        error.textContent = 'Заполните обязательное поле';
+        input.focus();
+        return;
+      }
+      finish(result);
+    };
+    const cancel = (event) => {
+      event.preventDefault();
+      finish(null);
+    };
+    form.addEventListener('submit', submit);
+    dialog.addEventListener('cancel', cancel);
+    document.getElementById('claim_action_dialog_cancel').addEventListener('click', cancel);
+    dialog.showModal();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  });
+}
+
 function getLastOpenedClaimVersionId(claimId) {
   try {
     return localStorage.getItem(`${LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX}${claimId}`);
@@ -34,6 +75,7 @@ const CLAIM_TEXT_LOCKED_STATUSES = new Set([
   'PAID',
   'ESCALATED_TO_COURT',
   'CANCELLED',
+  'CANCELLED_PAID',
   'CLOSED_IN_COURT',
 ]);
 
@@ -161,12 +203,14 @@ function updateAvailableActions() {
   setButtonState('btn_edit', editable && hasPermission('CLAIM_UPDATE'));
   setButtonState(
     'btn_approve',
-    status === 'PENDING_LEGAL_REVIEW' && hasPermission('CLAIM_UPDATE'),
+    (status === 'PENDING_LEGAL_REVIEW'
+      || (status === 'DRAFT' && Boolean(currentClaim?.nonPaymentConfirmed)))
+      && hasPermission('CLAIM_UPDATE'),
     Boolean(currentClaim?.finalVersionId)
   );
   setButtonState(
     'btn_cancel',
-    !['PAID', 'CANCELLED', 'CLOSED_IN_COURT'].includes(status) && hasPermission('CLAIM_UPDATE')
+    !['PAID', 'CANCELLED', 'CANCELLED_PAID', 'CLOSED_IN_COURT'].includes(status) && hasPermission('CLAIM_UPDATE')
   );
   setButtonState(
     'btn_court_package',
@@ -179,8 +223,8 @@ function updateAvailableActions() {
   );
   setButtonState(
     'btn_download_claim',
-    approved && hasPermission('DOCUMENT_GENERATE') && hasPermission('DOCUMENT_DOWNLOAD'),
-    Boolean(currentClaim?.finalVersionId)
+    approved && hasPermission('DOCUMENT_DOWNLOAD'),
+    Boolean(selectedDocumentId)
   );
   setButtonState(
     'btn_send_document',
@@ -423,9 +467,9 @@ async function reloadClaim(claimId) {
   return claim;
 }
 
-async function generateSelectedClaimDocument(claimId, downloadAfterGeneration) {
+async function generateSelectedClaimDocument(claimId) {
   const template = document.getElementById('template_select');
-  const templateId = downloadAfterGeneration ? null : template.value || null;
+  const templateId = template.value || null;
   const templateVersionId = templateId
     ? template.selectedOptions[0]?.dataset.versionId || null
     : null;
@@ -449,10 +493,6 @@ async function generateSelectedClaimDocument(claimId, downloadAfterGeneration) {
   });
 
   await loadDocuments(claimId);
-
-  if (downloadAfterGeneration) {
-    await downloadDocument(generated.documentId);
-  }
 
   return generated;
 }
@@ -568,7 +608,12 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_edit').addEventListener('click', async () => {
-    const reason = prompt('Новое основание претензии:', currentClaim?.reason || '');
+    const reason = await requestClaimActionText({
+      title: 'Редактирование претензии',
+      label: 'Основание претензии',
+      value: currentClaim?.reason || '',
+      required: true,
+    });
     if (reason == null) return;
     try {
       await updateClaim(claimId, { reason });
@@ -577,8 +622,12 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_cancel').addEventListener('click', async () => {
-    const reason = prompt('Причина отмены:');
-    if (!reason) return;
+    const reason = await requestClaimActionText({
+      title: 'Отмена претензии',
+      label: 'Причина отмены',
+      required: true,
+    });
+    if (reason == null) return;
     try {
       await claimAction(claimId, 'cancel', reason);
       await reloadClaim(claimId);
@@ -587,9 +636,17 @@ async function initClaimCardPage() {
 
   document.getElementById('btn_generate_document').addEventListener('click', async () => {
     try {
-      await generateSelectedClaimDocument(claimId, false);
+      await generateSelectedClaimDocument(claimId);
     } catch (error) { showError(error); }
   });
+
+  for (const format of ['pdf', 'xlsx']) {
+    document.getElementById(`btn_download_calculation_${format}`).addEventListener('click', async () => {
+      try {
+        await downloadClaimCalculation(claimId, format);
+      } catch (error) { showError(error); }
+    });
+  }
 
   document.getElementById('btn_edit_recipient_email').addEventListener('click', () => {
     const input = document.getElementById('email_to');
@@ -618,7 +675,10 @@ async function initClaimCardPage() {
     const button = document.getElementById('btn_download_claim');
     button.disabled = true;
     try {
-      await generateSelectedClaimDocument(claimId, true);
+      if (!selectedDocumentId) {
+        throw new Error('Сначала сформируйте и выберите документ');
+      }
+      await downloadDocument(selectedDocumentId);
     } catch (error) {
       showError(error);
     } finally {

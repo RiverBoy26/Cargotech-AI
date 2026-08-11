@@ -10,7 +10,6 @@ import ru.sber.cargotech.claim.entity.ClaimCalculation;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
-import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimCalculationRepository;
@@ -21,7 +20,6 @@ import ru.sber.cargotech.claim.security.CurrentClaimUser;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,11 +53,15 @@ public class ClaimCalculationService {
         ClaimShipment shipment = shipmentService.getEntity(user.organizationId(), claim.getShipmentId());
         ClaimContract contract = contractService.getEntity(user.organizationId(), claim.getContractId());
 
-        BigDecimal principalDebt = calculationRepository
-            .findFirstByClaimIdOrderByCalculationVersionDesc(claim.getId())
-            .map(ClaimCalculation::getPrincipalDebt)
-            .map(ClaimCalculationService::money)
-            .orElseGet(() -> money(claim.getPrincipalDebt()));
+        // The shipment is the only source of truth for the original obligation.
+        // Never carry a client-supplied or previously mutated claim balance into a
+        // new calculation: doing so makes partial payments compound incorrectly.
+        BigDecimal principalDebt = money(shipment.getServiceAmount());
+        if (principalDebt.signum() <= 0) {
+            throw ClaimException.validation(
+                "Сумма завершённого рейса должна быть больше нуля"
+            );
+        }
         PaymentClient.PaymentStateResponse paymentState =
                 paymentClient.getPaymentState(
                         claim.getId(),
@@ -70,8 +72,8 @@ public class ClaimCalculationService {
         BigDecimal paidAmount = money(paymentState.paidAmount());
 
         LocalDate calculationDate = LocalDate.now();
-        LocalDate overdueStartDate = resolveOverdueStartDate(shipment, contract);
-        int overdueDays = resolveOverdueDays(overdueStartDate, calculationDate);
+        LocalDate overdueStartDate = OverdueDateCalculator.overdueStartDate(shipment, contract);
+        int overdueDays = OverdueDateCalculator.overdueDays(overdueStartDate, calculationDate);
         PenaltyType penaltyType = contract.getPenaltyType() == null
             ? PenaltyType.NONE
             : contract.getPenaltyType();
@@ -175,32 +177,6 @@ public class ClaimCalculationService {
     private ClaimEntity getClaim(CurrentClaimUser user, UUID claimId) {
         return claimRepository.findByIdAndOrganizationId(claimId, user.organizationId())
             .orElseThrow(() -> ClaimException.notFound("Претензия не найдена"));
-    }
-
-    private LocalDate resolveOverdueStartDate(ClaimShipment shipment, ClaimContract contract) {
-        LocalDate baseDate = switch (contract.getPaymentStartEvent() == null
-            ? PaymentStartEvent.UNLOADING_DATE
-            : contract.getPaymentStartEvent()) {
-            case ACT_SIGNED -> shipment.getActSignedAt();
-            case UNLOADING_DATE, TTN_SIGNED, INVOICE_DATE -> shipment.getUnloadingDate();
-        };
-        if (baseDate == null) {
-            baseDate = shipment.getActSignedAt() != null
-                ? shipment.getActSignedAt()
-                : shipment.getUnloadingDate();
-        }
-        if (baseDate == null) {
-            return null;
-        }
-        int paymentDays = contract.getPaymentDays() == null ? 0 : contract.getPaymentDays();
-        return baseDate.plusDays(paymentDays + 1L);
-    }
-
-    private int resolveOverdueDays(LocalDate overdueStartDate, LocalDate calculationDate) {
-        if (overdueStartDate == null || !calculationDate.isAfter(overdueStartDate)) {
-            return 0;
-        }
-        return Math.toIntExact(ChronoUnit.DAYS.between(overdueStartDate, calculationDate));
     }
 
     private String buildFormula(

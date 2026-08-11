@@ -3,17 +3,22 @@ package ru.sber.cargotech.document.service;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.sber.cargotech.document.client.ClaimCalculationClient;
 import ru.sber.cargotech.document.config.DocumentMailProperties;
 import ru.sber.cargotech.document.dto.DocumentEmailDeliveryResponse;
 import ru.sber.cargotech.document.dto.SendDocumentEmailRequest;
 import ru.sber.cargotech.document.entity.Document;
 import ru.sber.cargotech.document.entity.DocumentEmailDelivery;
+import ru.sber.cargotech.document.entity.DocumentLink;
+import ru.sber.cargotech.document.enums.DocumentEntityType;
 import ru.sber.cargotech.document.enums.EmailDeliveryStatus;
 import ru.sber.cargotech.document.exception.DocumentException;
 import ru.sber.cargotech.document.repository.DocumentEmailDeliveryRepository;
+import ru.sber.cargotech.document.repository.DocumentLinkRepository;
 import ru.sber.cargotech.document.security.CurrentDocumentUser;
 
 import java.nio.charset.StandardCharsets;
@@ -28,17 +33,23 @@ public class DocumentEmailService {
     private final DocumentMailProperties mailProperties;
     private final DocumentService documentService;
     private final DocumentEmailDeliveryRepository deliveryRepository;
+    private final DocumentLinkRepository linkRepository;
+    private final ClaimCalculationClient claimCalculationClient;
 
     public DocumentEmailService(
         JavaMailSender mailSender,
         DocumentMailProperties mailProperties,
         DocumentService documentService,
-        DocumentEmailDeliveryRepository deliveryRepository
+        DocumentEmailDeliveryRepository deliveryRepository,
+        DocumentLinkRepository linkRepository,
+        ClaimCalculationClient claimCalculationClient
     ) {
         this.mailSender = mailSender;
         this.mailProperties = mailProperties;
         this.documentService = documentService;
         this.deliveryRepository = deliveryRepository;
+        this.linkRepository = linkRepository;
+        this.claimCalculationClient = claimCalculationClient;
     }
 
     @PreAuthorize("hasAuthority('DOCUMENT_SEND')")
@@ -87,6 +98,7 @@ public class DocumentEmailService {
                 attachment.resource(),
                 attachment.contentType()
             );
+            addClaimCalculations(helper, document);
 
             mailSender.send(message);
 
@@ -100,6 +112,25 @@ public class DocumentEmailService {
             deliveryRepository.save(delivery);
             throw DocumentException.unprocessable(
                 "Mailtrap не принял письмо; попытка сохранена в журнале доставки"
+            );
+        }
+    }
+
+    private void addClaimCalculations(MimeMessageHelper helper, Document document) throws Exception {
+        UUID claimId = linkRepository.findAllByDocument_Id(document.getId()).stream()
+            .filter(link -> link.getEntityType() == DocumentEntityType.CLAIM)
+            .map(DocumentLink::getEntityId)
+            .findFirst()
+            .orElse(null);
+        if (claimId == null) {
+            return;
+        }
+        for (String format : List.of("pdf", "xlsx")) {
+            var calculation = claimCalculationClient.download(claimId, format);
+            helper.addAttachment(
+                calculation.filename(),
+                new ByteArrayResource(calculation.content()),
+                calculation.contentType()
             );
         }
     }

@@ -40,6 +40,7 @@ class ClaimGenerationServiceTest {
     @Mock private ClaimAiRequestMapper requestMapper;
     @Mock private AiClient aiClient;
     @Mock private ClaimVersionService versionService;
+    @Mock private ClaimCalculationService calculationService;
 
     @Test
     void doesNotCallAiBeforeNonPaymentIsConfirmed() {
@@ -90,7 +91,8 @@ class ClaimGenerationServiceTest {
                 calculationRepository,
                 requestMapper,
                 aiClient,
-                versionService
+                versionService,
+                calculationService
         );
 
         assertThatThrownBy(() -> service.generate(user, claimId))
@@ -149,7 +151,8 @@ class ClaimGenerationServiceTest {
                 calculationRepository,
                 requestMapper,
                 aiClient,
-                versionService
+                versionService,
+                calculationService
         );
 
         assertThatThrownBy(() -> service.generate(user, claimId))

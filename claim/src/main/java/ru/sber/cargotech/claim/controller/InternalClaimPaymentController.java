@@ -111,4 +111,14 @@ public class InternalClaimPaymentController {
             )
         );
     }
+
+    @PostMapping("/{claimId}/sync-payment-state")
+    @PreAuthorize(
+            "hasAuthority('PAYMENT_READ') or hasAuthority('CLAIM_UPDATE')"
+    )
+    public ResponseEntity<Void> syncPaymentState(@PathVariable UUID claimId) {
+        CurrentClaimUser user = currentUserProvider.getRequiredUser();
+        claimService.synchronizePaymentState(user, claimId);
+        return ResponseEntity.noContent().build();
+    }
 }

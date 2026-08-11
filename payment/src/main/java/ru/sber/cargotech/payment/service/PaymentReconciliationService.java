@@ -38,6 +38,7 @@ public class PaymentReconciliationService {
     private final PaymentReconciliationRunRepository runRepository;
     private final PaymentServiceImpl paymentService;
     private final PaymentOutboxWriter outboxWriter;
+    private final ClaimPaymentSynchronizationService claimSynchronizationService;
 
     @Transactional
     public ReconciliationResponse reconcile(CurrentPaymentUser user) {
@@ -234,6 +235,12 @@ public class PaymentReconciliationService {
         matchRepository.save(match);
 
         paymentService.refreshStatus(payment);
+
+        if (candidate.targetType() == PaymentTargetType.CLAIM) {
+            claimSynchronizationService.synchronizeAfterCommit(
+                candidate.targetId()
+            );
+        }
 
         return true;
     }

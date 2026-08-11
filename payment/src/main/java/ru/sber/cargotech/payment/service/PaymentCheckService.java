@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.payment.dto.MarkPaidRequest;
 import ru.sber.cargotech.payment.dto.MarkPaidResponse;
 import ru.sber.cargotech.payment.dto.PreflightCheckResponse;
-import ru.sber.cargotech.payment.client.ClaimClient;
 import ru.sber.cargotech.payment.entity.Payment;
 import ru.sber.cargotech.payment.entity.PaymentCheck;
 import ru.sber.cargotech.payment.entity.PaymentMatch;
@@ -36,7 +35,7 @@ public class PaymentCheckService {
     private final PaymentMatchRepository matchRepository;
     private final PaymentCheckRepository checkRepository;
     private final PaymentOutboxWriter outboxWriter;
-    private final ClaimClient claimClient;
+    private final ClaimPaymentSynchronizationService claimSynchronizationService;
 
     @Transactional
     public PreflightCheckResponse preflightCheck(
@@ -92,7 +91,7 @@ public class PaymentCheckService {
                     user
             );
 
-            claimClient.markPaid(claim.id());
+            claimSynchronizationService.synchronizeAfterCommit(claim.id());
 
             return toMarkPaidResponse(claim, payment, check, eventId);
         }
@@ -139,7 +138,7 @@ public class PaymentCheckService {
 
         UUID eventId = writePaymentConfirmedEvent(claim, payment, check, user);
 
-        claimClient.markPaid(claim.id());
+        claimSynchronizationService.synchronizeAfterCommit(claim.id());
 
         return toMarkPaidResponse(claim, payment, check, eventId);
     }

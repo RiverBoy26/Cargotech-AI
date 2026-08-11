@@ -16,11 +16,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import ru.sber.cargotech.claim.dto.PageResponse;
+import ru.sber.cargotech.claim.dto.OverdueShipmentResponse;
 import ru.sber.cargotech.claim.dto.ShipmentRequest;
 import ru.sber.cargotech.claim.dto.ShipmentResponse;
 import ru.sber.cargotech.claim.security.CurrentClaimUserProvider;
 import ru.sber.cargotech.claim.service.ShipmentService;
+import ru.sber.cargotech.claim.service.OverdueShipmentService;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -29,6 +32,7 @@ import java.util.UUID;
 @Slf4j
 public class ShipmentController {
     private final ShipmentService shipmentService;
+    private final OverdueShipmentService overdueShipmentService;
     private final CurrentClaimUserProvider currentUserProvider;
 
     @GetMapping
@@ -43,6 +47,13 @@ public class ShipmentController {
     public ShipmentResponse get(@PathVariable UUID shipmentId) {
         log.info("Вызов endpoint: get");
         return shipmentService.get(currentUserProvider.getRequiredUser(), shipmentId);
+    }
+
+    @GetMapping("/overdue")
+    @PreAuthorize("hasAuthority('SHIPMENT_READ')")
+    public List<OverdueShipmentResponse> overdue() {
+        log.info("Вызов endpoint: overdue");
+        return overdueShipmentService.list(currentUserProvider.getRequiredUser());
     }
 
     @PostMapping

@@ -10,6 +10,7 @@ import ru.sber.cargotech.payment.dto.PaymentMatchResponse;
 import ru.sber.cargotech.payment.entity.Payment;
 import ru.sber.cargotech.payment.entity.PaymentMatch;
 import ru.sber.cargotech.payment.enums.PaymentMatchType;
+import ru.sber.cargotech.payment.enums.PaymentTargetType;
 import ru.sber.cargotech.payment.exception.PaymentException;
 import ru.sber.cargotech.payment.repository.PaymentMatchRepository;
 import ru.sber.cargotech.payment.repository.PaymentOutboxWriter;
@@ -29,6 +30,7 @@ public class PaymentMatchingService {
     private final PaymentTargetService targetService;
     private final PaymentMatchRepository matchRepository;
     private final PaymentOutboxWriter outboxWriter;
+    private final ClaimPaymentSynchronizationService claimSynchronizationService;
 
     @Transactional
     public PaymentMatchResponse match(
@@ -109,6 +111,10 @@ public class PaymentMatchingService {
             )
         );
 
+        if (request.targetType() == PaymentTargetType.CLAIM) {
+            claimSynchronizationService.synchronizeAfterCommit(request.targetId());
+        }
+
         return paymentService.toMatchResponse(match);
     }
 
@@ -161,6 +167,10 @@ public class PaymentMatchingService {
                 "reason", reason
             )
         );
+
+        if (match.getTargetType() == PaymentTargetType.CLAIM) {
+            claimSynchronizationService.synchronizeAfterCommit(match.getTargetId());
+        }
 
         return paymentService.getDetails(paymentId, user);
     }

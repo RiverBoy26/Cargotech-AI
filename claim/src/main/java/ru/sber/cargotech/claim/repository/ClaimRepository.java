@@ -12,6 +12,7 @@ import java.util.UUID;
 public interface ClaimRepository extends JpaRepository<ClaimEntity, UUID> {
     Optional<ClaimEntity> findByIdAndOrganizationId(UUID id, UUID organizationId);
     boolean existsByOrganizationIdAndClaimNumber(UUID organizationId, String claimNumber);
-    boolean existsByShipmentIdAndStatusNotIn(UUID shipmentId, Collection<ClaimStatus> statuses);
+    boolean existsByOrganizationIdAndShipmentIdAndStatusNotIn(UUID organizationId, UUID shipmentId, Collection<ClaimStatus> statuses);
+    Optional<ClaimEntity> findFirstByOrganizationIdAndShipmentIdAndStatusNotIn(UUID organizationId, UUID shipmentId, Collection<ClaimStatus> statuses);
     List<ClaimEntity> findAllByOrganizationId(UUID organizationId);
 }

@@ -21,6 +21,7 @@ const STATUS_MAP = {
   PAID: { text: 'Оплачено', className: 'status-pill-success paid' },
   ESCALATED_TO_COURT: { text: 'Эскалация', className: 'status-pill-danger escalation' },
   CANCELLED: { text: 'Отменено', className: 'status-pill-info draft' },
+  CANCELLED_PAID: { text: 'Оплачено до отправки', className: 'status-pill-success paid' },
   CLOSED_IN_COURT: { text: 'Закрыто', className: 'status-pill-success closed' },
 };
 
@@ -394,6 +395,18 @@ async function recalculateClaim(claimId) {
   return apiRequest(`/calculations/claim/${claimId}/recalculate`, { method: 'POST' });
 }
 
+async function downloadClaimCalculation(claimId, format) {
+  const normalizedFormat = String(format || '').toLowerCase();
+  const response = await fetch(`${API_BASE}/calculations/claim/${claimId}/export/${normalizedFormat}`, {
+    headers: { Authorization: `Bearer ${getAccessToken()}` },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `Ошибка ${response.status}`);
+  }
+  await downloadResponseFile(response, `calculation-${claimId}.${normalizedFormat}`);
+}
+
 async function generateClaimText(claimId) {
   return apiRequest(`/claims/${claimId}/generate`, { method: 'POST' });
 }
@@ -446,6 +459,10 @@ async function createContract(payload) {
 async function getShipments(params = {}) {
   const qs = buildQuery({ page: params.page ?? 0, size: params.size ?? 100 });
   return apiRequest(`/shipments?${qs}`);
+}
+
+async function getOverdueShipments() {
+  return apiRequest('/shipments/overdue');
 }
 
 async function getShipment(shipmentId) {
@@ -565,11 +582,15 @@ async function downloadDocument(documentId) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.message || `Ошибка ${response.status}`);
   }
+  await downloadResponseFile(response, `document-${documentId}`);
+}
+
+async function downloadResponseFile(response, fallbackFilename) {
   const blob = await response.blob();
   const disposition = response.headers.get('Content-Disposition') || '';
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
   const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-  const filename = encoded ? decodeURIComponent(encoded) : (plain || `document-${documentId}`);
+  const filename = encoded ? decodeURIComponent(encoded) : (plain || fallbackFilename);
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;

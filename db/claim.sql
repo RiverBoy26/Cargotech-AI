@@ -329,7 +329,7 @@ CREATE TABLE cargotech.claim_claims (
 	CONSTRAINT chk_claim_total CHECK ((total_amount = (principal_debt + penalty_amount))),
 	CONSTRAINT chk_non_payment_confirmation CHECK (((non_payment_confirmed = false) OR ((non_payment_confirmed_at IS NOT NULL) AND (non_payment_confirmed_by IS NOT NULL)))),
 	CONSTRAINT claim_claims_pkey PRIMARY KEY (id),
-	CONSTRAINT claim_claims_status_check CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'PENDING_LEGAL_REVIEW'::character varying, 'LEGAL_APPROVED'::character varying, 'SENT'::character varying, 'AWAITING_RESPONSE'::character varying, 'PAID'::character varying, 'ESCALATED_TO_COURT'::character varying, 'CANCELLED'::character varying, 'CLOSED_IN_COURT'::character varying])::text[])))
+	CONSTRAINT claim_claims_status_check CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'PENDING_LEGAL_REVIEW'::character varying, 'LEGAL_APPROVED'::character varying, 'SENT'::character varying, 'AWAITING_RESPONSE'::character varying, 'PAID'::character varying, 'ESCALATED_TO_COURT'::character varying, 'CANCELLED'::character varying, 'CANCELLED_PAID'::character varying, 'CLOSED_IN_COURT'::character varying])::text[])))
 );
 CREATE INDEX idx_claim_created_by ON cargotech.claim_claims USING btree (created_by);
 CREATE INDEX idx_claim_lawyer ON cargotech.claim_claims USING btree (assigned_lawyer_id);
@@ -338,7 +338,7 @@ CREATE INDEX idx_claim_org_creditor ON cargotech.claim_claims USING btree (organ
 CREATE INDEX idx_claim_org_debtor ON cargotech.claim_claims USING btree (organization_id, debtor_id);
 CREATE INDEX idx_claim_status ON cargotech.claim_claims USING btree (organization_id, status);
 CREATE INDEX idx_claim_updated_at ON cargotech.claim_claims USING btree (updated_at DESC);
-CREATE UNIQUE INDEX uq_active_claim_per_shipment ON cargotech.claim_claims USING btree (shipment_id) WHERE ((status)::text <> ALL ((ARRAY['PAID'::character varying, 'CANCELLED'::character varying, 'CLOSED_IN_COURT'::character varying])::text[]));
+CREATE UNIQUE INDEX uq_active_claim_per_shipment ON cargotech.claim_claims USING btree (shipment_id) WHERE ((status)::text <> ALL ((ARRAY['PAID'::character varying, 'CANCELLED'::character varying, 'CANCELLED_PAID'::character varying, 'CLOSED_IN_COURT'::character varying])::text[]));
 CREATE UNIQUE INDEX uq_claim_number ON cargotech.claim_claims USING btree (organization_id, claim_number);
 
 -- Table Triggers

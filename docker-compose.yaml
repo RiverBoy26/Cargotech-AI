@@ -230,6 +230,7 @@ services:
     environment:
       <<: [*app-database-environment, *jwt-environment]
       SERVER_PORT: 8085
+      CLAIM_SERVICE_URL: http://claim:8083
       DOCUMENT_LOCAL_STORAGE_PATH: /app/storage/documents
       DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64:-}
       DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID:-}
@@ -244,6 +245,8 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      claim:
+        condition: service_started
     restart: unless-stopped
 
   gateway:

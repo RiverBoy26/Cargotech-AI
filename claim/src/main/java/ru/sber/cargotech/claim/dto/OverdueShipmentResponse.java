@@ -1,0 +1,27 @@
+package ru.sber.cargotech.claim.dto;
+
+import ru.sber.cargotech.claim.enums.ClaimStatus;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.UUID;
+
+public record OverdueShipmentResponse(
+    UUID shipmentId,
+    String shipmentNumber,
+    String clientName,
+    String expeditorName,
+    BigDecimal shipmentAmount,
+    BigDecimal paidAmount,
+    BigDecimal remainingDebt,
+    String currency,
+    LocalDate paymentDeadline,
+    LocalDate overdueStartDate,
+    Integer overdueDays,
+    UUID claimId,
+    String claimNumber,
+    ClaimStatus claimStatus,
+    boolean nonPaymentConfirmed,
+    UUID finalVersionId
+) {
+}
