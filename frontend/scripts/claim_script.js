@@ -284,16 +284,8 @@ function updateAvailableActions() {
     'btn_court_package',
     ['SENT', 'AWAITING_RESPONSE'].includes(status) && hasPermission('CLAIM_UPDATE')
   );
-  const claimDocumentExists = currentDocuments.some((item) =>
-    ['CLAIM_PDF', 'CLAIM_DOCX'].includes(item.documentType)
-  );
   const canGenerateDocument = status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_GENERATE');
-  const initialDocumentButton = document.getElementById('btn_generate_document');
-  const newDocumentButton = document.getElementById('btn_generate_new_document');
-  if (initialDocumentButton) initialDocumentButton.hidden = claimDocumentExists;
-  if (newDocumentButton) newDocumentButton.hidden = !claimDocumentExists;
   setButtonState('btn_generate_document', canGenerateDocument, Boolean(currentClaim?.finalVersionId));
-  setButtonState('btn_generate_new_document', canGenerateDocument, Boolean(currentClaim?.finalVersionId));
   setButtonState(
     'btn_download_claim',
     approved && hasPermission('DOCUMENT_DOWNLOAD'),
@@ -442,25 +434,34 @@ async function renderVersionDiff(claimId, versionId) {
       ['Удалено', diff.removedLines, 'diff_removed'],
       ['Изменено', diff.changedLines, 'diff_changed'],
     ];
-    const categoryLabels = {
-      LEGAL_REASONING: 'Правовое обоснование',
-      FACTUAL_DATA: 'Фактические данные',
-      STYLE: 'Стиль',
-      AMOUNT: 'Суммы',
-      DATES: 'Даты и сроки',
-      CONTRACT_REFERENCE: 'Ссылки на договор',
-      OTHER: 'Прочее',
-    };
-    const categoryHtml = Object.entries(diff.categories || {})
-      .filter(([, lines]) => (lines || []).length)
-      .map(([name, lines]) => `
-        <section class="diff_category"><strong>${escapeHtml(categoryLabels[name] || name)}: ${lines.length}</strong>
-          <ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
-        </section>`).join('');
-    container.innerHTML = groups.map(([title, lines, className]) => `
+    const totalChanges = groups.reduce((sum, [, lines]) => sum + (lines || []).length, 0);
+    const importantChanges = groups
+      .flatMap(([title, lines]) => (lines || []).map((line) => `${title}: ${line}`))
+      .slice(0, 3);
+    const fullDiffHtml = groups.map(([title, lines, className]) => `
       <section class="${className}"><strong>${title}: ${(lines || []).length}</strong>
-        ${(lines || []).length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : ''}
-      </section>`).join('') + categoryHtml;
+        ${(lines || []).length
+          ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+          : '<div class="version_diff_section_empty">Нет изменений</div>'}
+      </section>`).join('');
+    container.innerHTML = `
+      <div class="version_diff_summary">
+        <div class="version_diff_summary_title">Изменений: ${totalChanges}</div>
+        <div class="version_diff_counters">
+          ${groups.map(([title, lines, className]) => `
+            <span class="version_diff_counter ${className}">${title}: ${(lines || []).length}</span>`).join('')}
+        </div>
+        ${importantChanges.length ? `
+          <ul class="version_diff_preview">
+            ${importantChanges.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+          </ul>` : '<div class="version_diff_empty">Версии не отличаются</div>'}
+        ${totalChanges ? `
+          <details class="version_diff_details">
+            <summary>Показать все изменения</summary>
+            <div class="version_diff_full">${fullDiffHtml}</div>
+          </details>` : ''}
+      </div>
+    `;
   } catch (error) {
     container.textContent = `Сравнение недоступно: ${error.message}`;
   }
@@ -527,37 +528,46 @@ async function loadDocuments(claimId) {
     return;
   }
   currentDocuments = page.content || [];
-  if (!currentDocuments.length) {
+  const displayedDocuments = currentDocuments
+    .filter((item) => item.documentType !== 'CALCULATION_APPENDIX')
+    .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0));
+  if (!displayedDocuments.length) {
     selectedDocumentId = null;
     list.textContent = 'Документы ещё не сформированы';
   } else {
-    const claimDocuments = currentDocuments.filter((item) =>
+    const claimDocuments = displayedDocuments.filter((item) =>
       ['CLAIM_PDF', 'CLAIM_DOCX'].includes(item.documentType)
     );
-    selectedDocumentId = claimDocuments.find((item) => item.status === 'ACTIVE')?.id
-      || claimDocuments[0]?.id
-      || null;
+    selectedDocumentId = claimDocuments[0]?.id || null;
     const typeLabels = {
       CLAIM_PDF: 'Претензия PDF',
       CLAIM_DOCX: 'Претензия DOCX',
       CALCULATION_PDF: 'Расчёт задолженности PDF',
       CALCULATION_XLSX: 'Расчёт задолженности XLSX',
     };
-    const statusLabels = {
-      ACTIVE: 'действующий',
-      ARCHIVED: 'архивный',
-      DRAFT: 'черновик',
-      GENERATED: 'сформирован',
+    const getClaimVersionNumber = (document) => {
+      const storedVersion = document.description?.match(/Версия претензии:\s*(\d+)/i)?.[1];
+      if (storedVersion) return storedVersion;
+
+      const documentCreatedAt = new Date(document.createdAt || 0).getTime();
+      return [...currentVersions]
+        .filter((version) => new Date(version.createdAt || 0).getTime() <= documentCreatedAt)
+        .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))[0]
+        ?.versionNumber || null;
     };
-    list.innerHTML = currentDocuments.map((document) => `
+    list.innerHTML = displayedDocuments.map((document) => {
+      const versionNumber = getClaimVersionNumber(document);
+      const versionLabel = versionNumber ? `Версия претензии №${versionNumber}` : 'Версия претензии не определена';
+      return `
       <div class="document_item">
         ${['CLAIM_PDF', 'CLAIM_DOCX'].includes(document.documentType) ? `<label>
           <input type="radio" name="document_to_send" value="${document.id}"
                  ${document.id === selectedDocumentId ? 'checked' : ''}>
-          ${escapeHtml(document.documentNumber || typeLabels[document.documentType])} · ${escapeHtml(statusLabels[document.status] || document.status)}
-        </label>` : `<span>${escapeHtml(typeLabels[document.documentType] || document.documentType)} · ${escapeHtml(statusLabels[document.status] || document.status)}</span>`}
+          ${escapeHtml(document.documentNumber || typeLabels[document.documentType])} · ${escapeHtml(versionLabel)}
+        </label>` : `<span>${escapeHtml(typeLabels[document.documentType] || document.documentType)} · ${escapeHtml(versionLabel)}</span>`}
         <button class="action_btn document_download" data-id="${document.id}">Скачать</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     list.querySelectorAll('input[name="document_to_send"]').forEach((radio) => {
       radio.addEventListener('change', () => {
         selectedDocumentId = radio.value;
@@ -640,9 +650,9 @@ async function reloadClaim(claimId) {
   const claim = await getClaim(claimId);
   fillClaimCard(claim);
   await loadClaimContext(claim);
+  await loadVersions(claimId);
   await Promise.allSettled([
     loadHistory(claimId),
-    loadVersions(claimId),
     loadDocuments(claimId),
     loadSendChecklist(claimId),
   ]);
@@ -669,7 +679,7 @@ async function generateSelectedClaimDocument(claimId) {
     outputType: document.getElementById('document_format').value,
     documentNumber: currentClaim.claimNumber,
     documentDate: new Date().toISOString().slice(0, 10),
-    description: `Претензия ${currentClaim.claimNumber}`,
+    description: `Претензия ${currentClaim.claimNumber}. Версия претензии: ${finalVersion.versionNumber}`,
     claimText: finalVersion.content,
     data,
   });
@@ -835,13 +845,11 @@ async function initClaimCardPage() {
     } catch (error) { showError(error); }
   });
 
-  for (const buttonId of ['btn_generate_document', 'btn_generate_new_document']) {
-    document.getElementById(buttonId).addEventListener('click', async () => {
-      try {
-        await generateSelectedClaimDocument(claimId);
-      } catch (error) { showError(error); }
-    });
-  }
+  document.getElementById('btn_generate_document').addEventListener('click', async () => {
+    try {
+      await generateSelectedClaimDocument(claimId);
+    } catch (error) { showError(error); }
+  });
 
   for (const format of ['pdf', 'xlsx']) {
     document.getElementById(`btn_download_calculation_${format}`).addEventListener('click', async () => {

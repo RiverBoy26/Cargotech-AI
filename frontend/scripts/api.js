@@ -21,7 +21,7 @@ const STATUS_MAP = {
   PAID: { text: 'Оплачено', className: 'status-pill-success paid' },
   ESCALATED_TO_COURT: { text: 'Эскалация', className: 'status-pill-danger escalation' },
   CANCELLED: { text: 'Отменено', className: 'status-pill-info draft' },
-  CANCELLED_PAID: { text: 'Оплачено до отправки', className: 'status-pill-success paid' },
+  CANCELLED_PAID: { text: 'Оплачено до отправки', className: 'status-pill-success status-pill-paid-before-send paid' },
   CLOSED_IN_COURT: { text: 'Закрыто', className: 'status-pill-success closed' },
 };
 

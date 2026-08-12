@@ -308,9 +308,20 @@ header {
 /*  Статус */
 
 .status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 6px 18px;
   border-radius: 20px;
   border: 1px solid #DDE1E6;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.status-pill-paid-before-send {
+  padding-inline: 12px;
+  font-size: 13px;
 }
 
 .status-pill-success {
