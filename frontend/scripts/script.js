@@ -130,7 +130,6 @@ function resetClaimForm() {
   document.getElementById('claim_shipment_id').value = '';
   document.getElementById('claim_type').value = '';
   document.getElementById('claim_number').value = '';
-  document.getElementById('claim_principal_debt').value = '';
   document.getElementById('claim_reason').value = '';
   claimFormError.textContent = '';
 }

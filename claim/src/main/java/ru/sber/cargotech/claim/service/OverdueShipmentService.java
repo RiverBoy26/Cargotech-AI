@@ -66,13 +66,16 @@ public class OverdueShipmentService {
             return null;
         }
 
-        ClaimEntity claim = claimRepository
-            .findFirstByOrganizationIdAndShipmentIdAndStatusNotIn(
+        ClaimEntity latestClaim = claimRepository
+            .findFirstByOrganizationIdAndShipmentIdOrderByCreatedAtDesc(
                 user.organizationId(),
-                shipment.getId(),
-                CLOSED_STATUSES
+                shipment.getId()
             )
             .orElse(null);
+        if (latestClaim != null && CLOSED_STATUSES.contains(latestClaim.getStatus())) {
+            return null;
+        }
+        ClaimEntity claim = latestClaim;
         var client = partyService.getEntity(user.organizationId(), shipment.getClientId());
         var expeditor = partyService.getEntity(user.organizationId(), shipment.getExpeditorId());
 

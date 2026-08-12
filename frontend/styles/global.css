@@ -152,10 +152,10 @@ header {
   margin-bottom: 16px;
 }
 
-/* Сетка полей: 4 колонки в первой строке, широкие поля на всю ширину */
+/* Сетка полей: 3 колонки в первой строке, широкие поля на всю ширину */
 .add_claim_form_fields {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-bottom: 16px;
 }
