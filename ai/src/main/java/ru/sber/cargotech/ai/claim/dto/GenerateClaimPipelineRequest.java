@@ -33,8 +33,14 @@ public record GenerateClaimPipelineRequest(
             String contractId,
 
             @JsonProperty("client_id")
-            String clientId
+            String clientId,
+
+            @JsonProperty("organization_id")
+            String organizationId
     ) {
+        public RagOptions(Boolean enabled, String contractId, String clientId) {
+            this(enabled, contractId, clientId, null);
+        }
     }
 
     public GenerateClaimRequest toGenerateClaimRequest() {

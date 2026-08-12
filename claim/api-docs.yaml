@@ -696,6 +696,25 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ContractResponse"
+  /api/v1/contracts/{contractId}/rag/reindex:
+    post:
+      tags:
+      - contract-controller
+      operationId: reindexContractRag
+      parameters:
+      - name: contractId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: Contract RAG reindex scheduled after transaction commit
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContractResponse"
   /api/v1/claims/{claimId}:
     get:
       tags:
@@ -1228,6 +1247,26 @@ components:
         jurisdiction:
           type: string
         documentId:
+          type: string
+          format: uuid
+        extractionStatus:
+          type: string
+          enum: [NOT_STARTED, PENDING, REVIEW_REQUIRED, CONFIRMED, FAILED]
+        extractionConfirmedAt:
+          type: string
+          format: date-time
+        extractionConfirmedBy:
+          type: string
+          format: uuid
+        ragIndexStatus:
+          type: string
+          enum: [NOT_INDEXED, PENDING, INDEXED, FAILED]
+        ragIndexedAt:
+          type: string
+          format: date-time
+        ragIndexError:
+          type: string
+        ragSourceDocumentId:
           type: string
           format: uuid
         createdAt:

@@ -43,6 +43,7 @@ rag:
     example-min-score: ${RAG_EXAMPLE_MIN_SCORE:0.40}
 
 ai:
+  internal-api-key: ${INTERNAL_API_KEY:cargotech-local-internal-key}
   diagnostics:
     endpoints-enabled: ${AI_DIAGNOSTICS_ENDPOINTS_ENABLED:false}
   limits:

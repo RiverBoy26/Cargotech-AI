@@ -70,6 +70,12 @@ public class ContractController {
         return contractService.confirmExtraction(currentUserProvider.getRequiredUser(), contractId);
     }
 
+    @PostMapping("/{contractId}/rag/reindex")
+    @PreAuthorize("hasAuthority('CONTRACT_UPDATE')")
+    public ContractResponse reindexContractRag(@PathVariable UUID contractId) {
+        return contractService.requestRagReindex(currentUserProvider.getRequiredUser(), contractId);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('CONTRACT_CREATE')")

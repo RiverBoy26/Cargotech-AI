@@ -8,6 +8,7 @@ public record RagChunk(
         RagChunkType chunkType,
 
         String claimType,
+        String organizationId,
         String clientId,
 
         String contractId,
@@ -29,6 +30,43 @@ public record RagChunk(
 
         Map<String, Object> extra
 ) {
+    private static final Set<String> RESERVED_PAYLOAD_KEYS = Set.of(
+            "chunk_id", "rag_collection", "chunk_type",
+            "claim_type", "organization_id", "client_id",
+            "contract_id", "contract_number", "contract_date", "contour", "contract_type",
+            "source_id", "source_title",
+            "section_title", "clause_number",
+            "text", "citation", "is_current"
+    );
+
+    public RagChunk(
+            String chunkId,
+            RagCollection ragCollection,
+            RagChunkType chunkType,
+            String claimType,
+            String clientId,
+            String contractId,
+            String contractNumber,
+            String contractDate,
+            String contour,
+            String contractType,
+            String sourceId,
+            String sourceTitle,
+            String sectionTitle,
+            String clauseNumber,
+            String text,
+            String citation,
+            Boolean isCurrent,
+            Map<String, Object> extra
+    ) {
+        this(
+                chunkId, ragCollection, chunkType, claimType, null, clientId,
+                contractId, contractNumber, contractDate, contour, contractType,
+                sourceId, sourceTitle, sectionTitle, clauseNumber, text, citation,
+                isCurrent, extra
+        );
+    }
+
     public String embeddingText() {
         StringBuilder builder = new StringBuilder();
 
@@ -53,6 +91,7 @@ public record RagChunk(
         put(payload, "chunk_type", chunkType == null ? null : chunkType.name());
 
         put(payload, "claim_type", claimType);
+        put(payload, "organization_id", organizationId);
         put(payload, "client_id", clientId);
 
         put(payload, "contract_id", contractId);
@@ -74,7 +113,9 @@ public record RagChunk(
 
         if (extra != null) {
             for (Map.Entry<String, Object> entry : extra.entrySet()) {
-                put(payload, entry.getKey(), entry.getValue());
+                if (!RESERVED_PAYLOAD_KEYS.contains(entry.getKey())) {
+                    put(payload, entry.getKey(), entry.getValue());
+                }
             }
         }
 
@@ -86,18 +127,9 @@ public record RagChunk(
             return null;
         }
 
-        Set<String> known = Set.of(
-                "chunk_id", "rag_collection", "chunk_type",
-                "claim_type", "client_id",
-                "contract_id", "contract_number", "contract_date", "contour", "contract_type",
-                "source_id", "source_title",
-                "section_title", "clause_number",
-                "text", "citation", "is_current"
-        );
-
         Map<String, Object> extra = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : payload.entrySet()) {
-            if (!known.contains(entry.getKey())) {
+            if (!RESERVED_PAYLOAD_KEYS.contains(entry.getKey())) {
                 extra.put(entry.getKey(), entry.getValue());
             }
         }
@@ -108,6 +140,7 @@ public record RagChunk(
                 enumValue(RagChunkType.class, str(payload.get("chunk_type"))),
 
                 str(payload.get("claim_type")),
+                str(payload.get("organization_id")),
                 str(payload.get("client_id")),
 
                 str(payload.get("contract_id")),

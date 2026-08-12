@@ -20,6 +20,7 @@ import ru.sber.cargotech.claim.entity.ContractExtractedValue;
 import ru.sber.cargotech.claim.enums.ClauseType;
 import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
+import ru.sber.cargotech.claim.enums.ContractRagStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
@@ -101,6 +102,10 @@ public class ContractService {
 
         ClaimContract contract = getEntity(user.organizationId(), id);
         UUID previousDocumentId = contract.getDocumentId();
+        UUID previousClientId = contract.getClientId();
+        String previousNumber = contract.getNumber();
+        LocalDate previousSignedAt = contract.getSignedAt();
+        ContractStatus previousStatus = contract.getStatus();
         UUID expeditorId = user.organizationId();
         validateParties(user.organizationId(), request.clientId(), expeditorId);
         String requestedNumber = request.number().trim();
@@ -113,10 +118,40 @@ public class ContractService {
         ClaimContract saved = contractRepository.save(contract);
         outboxWriter.write("CONTRACT", saved.getId(), "CONTRACT_UPDATED", user.organizationId(), user.userId(), Map.of("contractId", saved.getId()));
         if (!Objects.equals(previousDocumentId, saved.getDocumentId())) {
+            if (previousDocumentId != null) {
+                eventPublisher.publishEvent(new ContractRagDeleteRequestedEvent(
+                    saved.getId(), user.organizationId(), previousClientId, previousDocumentId
+                ));
+            }
+            resetRagState(saved);
             if (saved.getDocumentId() == null) {
                 clearExtraction(saved);
             } else {
                 requestExtraction(saved, user);
+            }
+        } else if (saved.getDocumentId() != null
+            && saved.getExtractionStatus() == ContractExtractionStatus.CONFIRMED) {
+            boolean ragMetadataChanged = !Objects.equals(previousClientId, saved.getClientId())
+                || !Objects.equals(previousNumber, saved.getNumber())
+                || !Objects.equals(previousSignedAt, saved.getSignedAt());
+            if (previousStatus == ContractStatus.ACTIVE && saved.getStatus() != ContractStatus.ACTIVE) {
+                eventPublisher.publishEvent(new ContractRagDeleteRequestedEvent(
+                    saved.getId(), user.organizationId(), previousClientId, previousDocumentId
+                ));
+                resetRagState(saved);
+                contractRepository.save(saved);
+            } else if (saved.getStatus() == ContractStatus.ACTIVE
+                && (previousStatus != ContractStatus.ACTIVE || ragMetadataChanged)) {
+                if (!Objects.equals(previousClientId, saved.getClientId())) {
+                    eventPublisher.publishEvent(new ContractRagDeleteRequestedEvent(
+                        saved.getId(), user.organizationId(), previousClientId, previousDocumentId
+                    ));
+                }
+                markRagPending(saved);
+                contractRepository.save(saved);
+                eventPublisher.publishEvent(new ContractRagIndexRequestedEvent(
+                    saved.getId(), user.organizationId(), user.userId(), saved.getDocumentId()
+                ));
             }
         }
         return toResponse(user.organizationId(), saved);
@@ -131,6 +166,9 @@ public class ContractService {
         contract.setUpdatedBy(user.userId());
         contractRepository.save(contract);
         outboxWriter.write("CONTRACT", contract.getId(), "CONTRACT_DELETED", user.organizationId(), user.userId(), Map.of("contractId", contract.getId()));
+        eventPublisher.publishEvent(new ContractRagDeleteRequestedEvent(
+            contract.getId(), user.organizationId(), contract.getClientId(), null
+        ));
     }
 
     public ClaimContract getEntity(UUID organizationId, UUID id) {
@@ -200,6 +238,7 @@ public class ContractService {
         contract.setExtractionStatus(ContractExtractionStatus.CONFIRMED);
         contract.setExtractionConfirmedAt(OffsetDateTime.now());
         contract.setExtractionConfirmedBy(user.userId());
+        markRagPending(contract);
         contract.setUpdatedBy(user.userId());
         try {
             contractRepository.saveAndFlush(contract);
@@ -210,7 +249,76 @@ public class ContractService {
             "CONTRACT", contractId, "CONTRACT_EXTRACTION_CONFIRMED",
             user.organizationId(), user.userId(), Map.of("contractId", contractId)
         );
+        eventPublisher.publishEvent(new ContractRagIndexRequestedEvent(
+            contractId, user.organizationId(), user.userId(), contract.getDocumentId()
+        ));
         return toExtractionResponse(contract);
+    }
+
+    @Transactional
+    public ContractResponse requestRagReindex(CurrentClaimUser user, UUID contractId) {
+        ClaimContract contract = getEntity(user.organizationId(), contractId);
+        if (contract.getStatus() != ContractStatus.ACTIVE
+            || contract.getExtractionStatus() != ContractExtractionStatus.CONFIRMED
+            || contract.getDocumentId() == null) {
+            throw ClaimException.conflict("RAG можно переиндексировать только для подтверждённого договора с документом");
+        }
+        markRagPending(contract);
+        contract.setUpdatedBy(user.userId());
+        contractRepository.save(contract);
+        outboxWriter.write(
+            "CONTRACT", contractId, "CONTRACT_RAG_REINDEX_REQUESTED",
+            user.organizationId(), user.userId(), Map.of("contractId", contractId)
+        );
+        eventPublisher.publishEvent(new ContractRagIndexRequestedEvent(
+            contractId, user.organizationId(), user.userId(), contract.getDocumentId()
+        ));
+        return toResponse(user.organizationId(), contract);
+    }
+
+    @Transactional(readOnly = true)
+    public ContractRagSnapshot getRagSnapshot(UUID organizationId, UUID contractId, UUID documentId) {
+        ClaimContract contract = getEntity(organizationId, contractId);
+        if (contract.getStatus() != ContractStatus.ACTIVE
+            || contract.getExtractionStatus() != ContractExtractionStatus.CONFIRMED
+            || contract.getDocumentId() == null
+            || !contract.getDocumentId().equals(documentId)) {
+            throw ClaimException.conflict("Договор больше не готов к RAG-индексации");
+        }
+        return new ContractRagSnapshot(
+            contract.getId(), contract.getOrganizationId(), contract.getClientId(),
+            contract.getDocumentId(), contract.getNumber(), contract.getSignedAt()
+        );
+    }
+
+    @Transactional
+    public void markRagIndexed(UUID organizationId, UUID contractId, UUID documentId) {
+        contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId)
+            .filter(contract -> documentId.equals(contract.getDocumentId()))
+            .filter(contract -> contract.getExtractionStatus() == ContractExtractionStatus.CONFIRMED)
+            .filter(contract -> contract.getStatus() == ContractStatus.ACTIVE)
+            .ifPresent(contract -> {
+                contract.setRagIndexStatus(ContractRagStatus.INDEXED);
+                contract.setRagIndexedAt(OffsetDateTime.now());
+                contract.setRagIndexError(null);
+                contract.setRagSourceDocumentId(documentId);
+                contractRepository.save(contract);
+            });
+    }
+
+    @Transactional
+    public void markRagFailed(UUID organizationId, UUID contractId, UUID documentId, String safeError) {
+        contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId)
+            .filter(contract -> documentId.equals(contract.getDocumentId()))
+            .filter(contract -> contract.getExtractionStatus() == ContractExtractionStatus.CONFIRMED)
+            .filter(contract -> contract.getStatus() == ContractStatus.ACTIVE)
+            .ifPresent(contract -> {
+                contract.setRagIndexStatus(ContractRagStatus.FAILED);
+                contract.setRagIndexedAt(null);
+                contract.setRagIndexError(trimError(safeError));
+                contract.setRagSourceDocumentId(documentId);
+                contractRepository.save(contract);
+            });
     }
 
     private void apply(
@@ -283,6 +391,10 @@ public class ContractService {
             contract.getExtractionStatus(),
             contract.getExtractionConfirmedAt(),
             contract.getExtractionConfirmedBy(),
+            contract.getRagIndexStatus(),
+            contract.getRagIndexedAt(),
+            contract.getRagIndexError(),
+            contract.getRagSourceDocumentId(),
             contract.getCreatedAt(),
             contract.getUpdatedAt()
         );
@@ -536,4 +648,33 @@ public class ContractService {
         if (value == null || value.isBlank()) return null;
         return value.trim();
     }
+
+    private void markRagPending(ClaimContract contract) {
+        contract.setRagIndexStatus(ContractRagStatus.PENDING);
+        contract.setRagIndexedAt(null);
+        contract.setRagIndexError(null);
+        contract.setRagSourceDocumentId(contract.getDocumentId());
+    }
+
+    private void resetRagState(ClaimContract contract) {
+        contract.setRagIndexStatus(ContractRagStatus.NOT_INDEXED);
+        contract.setRagIndexedAt(null);
+        contract.setRagIndexError(null);
+        contract.setRagSourceDocumentId(null);
+    }
+
+    private String trimError(String value) {
+        if (value == null || value.isBlank()) return "CONTRACT_RAG_INDEXING_FAILED";
+        String normalized = value.replaceAll("[\\r\\n\\t]+", " ").trim();
+        return normalized.length() <= 1000 ? normalized : normalized.substring(0, 1000);
+    }
+
+    public record ContractRagSnapshot(
+        UUID contractId,
+        UUID organizationId,
+        UUID clientId,
+        UUID documentId,
+        String contractNumber,
+        LocalDate contractDate
+    ) {}
 }

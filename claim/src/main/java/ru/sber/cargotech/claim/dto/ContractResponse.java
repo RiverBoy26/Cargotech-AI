@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.dto;
 
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
+import ru.sber.cargotech.claim.enums.ContractRagStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.PenaltyCapBase;
@@ -41,6 +42,10 @@ public record ContractResponse(
     ContractExtractionStatus extractionStatus,
     OffsetDateTime extractionConfirmedAt,
     UUID extractionConfirmedBy,
+    ContractRagStatus ragIndexStatus,
+    OffsetDateTime ragIndexedAt,
+    String ragIndexError,
+    UUID ragSourceDocumentId,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt
 ) {

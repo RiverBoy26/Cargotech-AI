@@ -266,7 +266,8 @@ public class ClaimGenerationPipelineService {
             ragContext = ragSearchService.retrieveClaimContext(
                     request.caseFacts().claimType(),
                     ragOptions.contractId(),
-                    ragOptions.clientId()
+                    ragOptions.clientId(),
+                    ragOptions.organizationId()
             );
         } catch (RuntimeException exception) {
             if (hasProvidedContractContext(request)) {
@@ -354,13 +355,25 @@ public class ClaimGenerationPipelineService {
         return "PASSED";
     }
 
-    private List<GenerateClaimRequest.ContractContextChunk> mergeContractContext(
+    List<GenerateClaimRequest.ContractContextChunk> mergeContractContext(
             List<GenerateClaimRequest.ContractContextChunk> primary,
             List<GenerateClaimRequest.ContractContextChunk> secondary
     ) {
         java.util.LinkedHashMap<String, GenerateClaimRequest.ContractContextChunk> merged = new java.util.LinkedHashMap<>();
-        for (GenerateClaimRequest.ContractContextChunk item : concat(primary, secondary)) {
+        java.util.Set<String> verifiedClauses = new java.util.HashSet<>();
+        for (GenerateClaimRequest.ContractContextChunk item : primary == null ? List.<GenerateClaimRequest.ContractContextChunk>of() : primary) {
             if (item == null) continue;
+            if (!isBlank(item.clauseNumber())) verifiedClauses.add(normalize(item.clauseNumber()));
+            String key = !isBlank(item.chunkId())
+                    ? "id:" + item.chunkId()
+                    : "clause:" + item.clauseNumber() + ":" + item.text();
+            merged.putIfAbsent(key, item);
+        }
+        for (GenerateClaimRequest.ContractContextChunk item : secondary == null ? List.<GenerateClaimRequest.ContractContextChunk>of() : secondary) {
+            if (item == null) continue;
+            if (!isBlank(item.clauseNumber()) && verifiedClauses.contains(normalize(item.clauseNumber()))) {
+                continue;
+            }
             String key = !isBlank(item.chunkId())
                     ? "id:" + item.chunkId()
                     : "clause:" + item.clauseNumber() + ":" + item.text();

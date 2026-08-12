@@ -27,20 +27,22 @@ class RagSearchServiceTenantIsolationTest {
         when(qdrantClient.queryPoints(anyList(), anyMap(), anyInt(), any())).thenReturn(Map.of("result", Map.of("points", List.of())));
 
         RagSearchService service = new RagSearchService(embeddingClient, qdrantClient, properties);
-        service.retrieveClaimContext(GenerateClaimRequest.ClaimType.PAYMENT_DELAY, "contract-1", "client-A");
+        service.retrieveClaimContext(GenerateClaimRequest.ClaimType.PAYMENT_DELAY, "contract-1", "client-A", "org-A");
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> filters = ArgumentCaptor.forClass(Map.class);
-        verify(qdrantClient, times(6)).queryPoints(anyList(), filters.capture(), anyInt(), any());
+        verify(qdrantClient, times(7)).queryPoints(anyList(), filters.capture(), anyInt(), any());
 
         List<Map<String, Object>> contractFilters = filters.getAllValues().stream()
                 .filter(filter -> RagCollection.CONTRACT_CONTEXT.name().equals(filter.get("rag_collection")))
                 .toList();
 
-        assertThat(contractFilters).hasSize(3);
+        assertThat(contractFilters).hasSize(4);
         assertThat(contractFilters).allSatisfy(filter -> {
             assertThat(filter).containsEntry("contract_id", "contract-1");
             assertThat(filter).containsEntry("client_id", "client-A");
+            assertThat(filter).containsEntry("organization_id", "org-A");
+            assertThat(filter.get("claim_type")).isEqualTo(List.of("PAYMENT_DELAY", "ALL"));
         });
     }
 

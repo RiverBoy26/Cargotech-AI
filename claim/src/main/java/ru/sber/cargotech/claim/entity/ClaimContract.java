@@ -12,6 +12,7 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
+import ru.sber.cargotech.claim.enums.ContractRagStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.PenaltyCapBase;
@@ -113,6 +114,19 @@ public class ClaimContract {
 
     @Column(name = "extraction_confirmed_by")
     private UUID extractionConfirmedBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rag_index_status", nullable = false, length = 32)
+    private ContractRagStatus ragIndexStatus = ContractRagStatus.NOT_INDEXED;
+
+    @Column(name = "rag_indexed_at")
+    private OffsetDateTime ragIndexedAt;
+
+    @Column(name = "rag_index_error", length = 1000)
+    private String ragIndexError;
+
+    @Column(name = "rag_source_document_id")
+    private UUID ragSourceDocumentId;
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;

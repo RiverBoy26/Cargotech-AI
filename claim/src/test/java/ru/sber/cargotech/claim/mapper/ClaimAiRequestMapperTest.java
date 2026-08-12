@@ -8,6 +8,9 @@ import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.ClaimType;
+import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
+import ru.sber.cargotech.claim.enums.ContractRagStatus;
+import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
@@ -39,7 +42,14 @@ class ClaimAiRequestMapperTest {
 
         ClaimContract contract = new ClaimContract();
         contract.setId(contractId);
+        contract.setOrganizationId(userOrganizationId());
         contract.setClientId(clientId);
+        UUID documentId = UUID.randomUUID();
+        contract.setDocumentId(documentId);
+        contract.setRagSourceDocumentId(documentId);
+        contract.setStatus(ContractStatus.ACTIVE);
+        contract.setExtractionStatus(ContractExtractionStatus.CONFIRMED);
+        contract.setRagIndexStatus(ContractRagStatus.INDEXED);
         contract.setNumber("ДО-2026-001");
         contract.setSignedAt(LocalDate.of(2026, 7, 1));
         contract.setPaymentDays(5);
@@ -91,12 +101,20 @@ class ClaimAiRequestMapperTest {
                         "Структурированные условия ответственности",
                         "Структурированный срок ответа на претензию"
                 );
+        assertThat(result.ragOptions().organizationId()).isEqualTo(contract.getOrganizationId().toString());
+        assertThat(result.ragOptions().enabled()).isTrue();
         assertThat(result.templateContext().templateStructure())
                 .contains(
                         "Исходящий номер и дата претензии",
                         "Перечень приложений",
                         "Подпись представителя кредитора с основанием полномочий"
                 );
+
+        contract.setRagIndexStatus(ContractRagStatus.FAILED);
+        AiGenerateClaimRequest afterIndexFailure = mapper.map(
+                claim, creditor, debtor, contract, shipment, calculation, user
+        );
+        assertThat(afterIndexFailure.ragOptions().enabled()).isFalse();
     }
 
     private ClaimParty party(String name, String inn, String address) {
@@ -105,5 +123,9 @@ class ClaimAiRequestMapperTest {
         party.setInn(inn);
         party.setLegalAddress(address);
         return party;
+    }
+
+    private UUID userOrganizationId() {
+        return UUID.fromString("10000000-0000-0000-0000-000000000001");
     }
 }

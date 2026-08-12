@@ -13,6 +13,7 @@ import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ContractExtractedValue;
 import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
+import ru.sber.cargotech.claim.enums.ContractRagStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
@@ -132,7 +133,29 @@ class ContractServiceTest {
         assertThat(contract.getPaymentScheduleType()).isEqualTo(PaymentScheduleType.NEXT_PAYMENT_DAY);
         assertThat(contract.getPaymentWeekDays()).isEqualTo("TUESDAY,THURSDAY");
         assertThat(contract.getPenaltyType()).isEqualTo(PenaltyType.CONTRACT_PENALTY);
+        assertThat(contract.getRagIndexStatus()).isEqualTo(ContractRagStatus.PENDING);
+        assertThat(contract.getRagSourceDocumentId()).isEqualTo(contract.getDocumentId());
         verify(contractClauseRepository, never()).save(any());
+        verify(eventPublisher).publishEvent(any(ContractRagIndexRequestedEvent.class));
+    }
+
+    @Test
+    void manualReindexRequiresConfirmedContractAndPublishesRetry() {
+        UUID organizationId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+        ClaimContract contract = contract(contractId, organizationId, ContractExtractionStatus.CONFIRMED);
+        contract.setStatus(ContractStatus.ACTIVE);
+        contract.setNumber("Д-42");
+        when(contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId))
+            .thenReturn(Optional.of(contract));
+        when(partyService.getEntity(organizationId, contract.getClientId())).thenReturn(party(contract.getClientId(), "Клиент"));
+        when(partyService.getEntity(organizationId, organizationId)).thenReturn(party(organizationId, "Экспедитор"));
+
+        var response = service().requestRagReindex(user, contractId);
+
+        assertThat(response.ragIndexStatus()).isEqualTo(ContractRagStatus.PENDING);
+        verify(eventPublisher).publishEvent(any(ContractRagIndexRequestedEvent.class));
     }
 
     @Test
@@ -153,6 +176,36 @@ class ContractServiceTest {
         assertThatThrownBy(() -> service().confirmExtraction(user, contractId))
             .isInstanceOf(ClaimException.class)
             .hasMessage("Договор с таким номером уже существует");
+    }
+
+    @Test
+    void softDeleteSchedulesScopedRagDeletion() {
+        UUID organizationId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+        ClaimContract contract = contract(contractId, organizationId, ContractExtractionStatus.CONFIRMED);
+        when(contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId))
+            .thenReturn(Optional.of(contract));
+
+        service().delete(user, contractId);
+
+        assertThat(contract.getDeletedAt()).isNotNull();
+        verify(eventPublisher).publishEvent(any(ContractRagDeleteRequestedEvent.class));
+    }
+
+    @Test
+    void asynchronousCompletionCannotMarkInactiveContractAsIndexed() {
+        UUID organizationId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        ClaimContract contract = contract(contractId, organizationId, ContractExtractionStatus.CONFIRMED);
+        contract.setStatus(ContractStatus.ARCHIVED);
+        when(contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId))
+            .thenReturn(Optional.of(contract));
+
+        service().markRagIndexed(organizationId, contractId, contract.getDocumentId());
+
+        assertThat(contract.getRagIndexStatus()).isEqualTo(ContractRagStatus.NOT_INDEXED);
+        verify(contractRepository, never()).save(contract);
     }
 
     private ContractService service() {

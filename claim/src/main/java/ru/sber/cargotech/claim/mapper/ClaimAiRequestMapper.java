@@ -118,11 +118,20 @@ public class ClaimAiRequestMapper {
                 ),
                 List.of(),
                 new AiGenerateClaimRequest.RagOptions(
-                        true,
+                        contractRagReady(contract),
                         contract.getId().toString(),
-                        contract.getClientId().toString()
+                        contract.getClientId().toString(),
+                        contract.getOrganizationId().toString()
                 )
         );
+    }
+
+    private boolean contractRagReady(ClaimContract contract) {
+        return contract.getStatus() == ru.sber.cargotech.claim.enums.ContractStatus.ACTIVE
+            && contract.getExtractionStatus() == ru.sber.cargotech.claim.enums.ContractExtractionStatus.CONFIRMED
+            && contract.getRagIndexStatus() == ru.sber.cargotech.claim.enums.ContractRagStatus.INDEXED
+            && contract.getDocumentId() != null
+            && contract.getDocumentId().equals(contract.getRagSourceDocumentId());
     }
 
     private AiGenerateClaimRequest.ClaimType mapClaimType(ClaimEntity claim) {

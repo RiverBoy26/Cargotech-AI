@@ -200,6 +200,7 @@ services:
       GIGACHAT_CLIENT_ID: ${GIGACHAT_CLIENT_ID:-}
       GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-}
       GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in .env}
       AI_DIAGNOSTICS_ENDPOINTS_ENABLED: ${AI_DIAGNOSTICS_ENDPOINTS_ENABLED:-false}
     ports:
       - "${AI_PORT:-8084}:8084"
@@ -221,7 +222,7 @@ services:
       PAYMENT_SERVICE_URL: http://payment:8082
       AI_SERVICE_URL: http://ai:8084
       DOCUMENT_SERVICE_URL: http://document:8085
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-cargotech-local-internal-key}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in .env}
     ports:
       - "${CLAIM_PORT:-8083}:8083"
     depends_on:
@@ -247,7 +248,7 @@ services:
       MAILTRAP_SMTP_PORT: ${MAILTRAP_SMTP_PORT:-2525}
       MAILTRAP_SMTP_USERNAME: ${MAILTRAP_SMTP_USERNAME:-}
       MAILTRAP_SMTP_PASSWORD: ${MAILTRAP_SMTP_PASSWORD:-}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-cargotech-local-internal-key}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in .env}
     ports:
       - "${DOCUMENT_PORT:-8085}:8085"
     volumes:

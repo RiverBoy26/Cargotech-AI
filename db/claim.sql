@@ -115,6 +115,10 @@ CREATE TABLE cargotech.claim_contracts (
 	extraction_status varchar(32) DEFAULT 'NOT_STARTED' NOT NULL,
 	extraction_confirmed_at timestamptz NULL,
 	extraction_confirmed_by uuid NULL,
+	rag_index_status varchar(32) DEFAULT 'NOT_INDEXED' NOT NULL,
+	rag_indexed_at timestamptz NULL,
+	rag_index_error varchar(1000) NULL,
+	rag_source_document_id uuid NULL,
 	deleted_at timestamptz NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	created_by uuid NULL,
@@ -125,6 +129,7 @@ CREATE TABLE cargotech.claim_contracts (
 	CONSTRAINT chk_contract_number_required_when_active CHECK (((status)::text = 'DRAFT'::text OR number IS NOT NULL)),
 	CONSTRAINT claim_contracts_claim_response_days_check CHECK (((claim_response_days IS NULL) OR (claim_response_days >= 0))),
 	CONSTRAINT claim_contracts_extraction_status_check CHECK (((extraction_status)::text = ANY ((ARRAY['NOT_STARTED'::character varying, 'PENDING'::character varying, 'REVIEW_REQUIRED'::character varying, 'CONFIRMED'::character varying, 'FAILED'::character varying])::text[]))),
+	CONSTRAINT claim_contracts_rag_index_status_check CHECK (((rag_index_status)::text = ANY ((ARRAY['NOT_INDEXED'::character varying, 'PENDING'::character varying, 'INDEXED'::character varying, 'FAILED'::character varying])::text[]))),
 	CONSTRAINT claim_contracts_payment_days_check CHECK (((payment_days IS NULL) OR (payment_days >= 0))),
 	CONSTRAINT claim_contracts_payment_day_type_check CHECK (((payment_day_type IS NULL) OR ((payment_day_type)::text = ANY ((ARRAY['CALENDAR_DAYS'::character varying, 'WORKING_DAYS'::character varying, 'BANKING_DAYS'::character varying])::text[])))),
 	CONSTRAINT claim_contracts_claim_response_day_type_check CHECK (((claim_response_day_type IS NULL) OR ((claim_response_day_type)::text = ANY ((ARRAY['CALENDAR_DAYS'::character varying, 'WORKING_DAYS'::character varying, 'BANKING_DAYS'::character varying])::text[])))),
@@ -146,6 +151,7 @@ CREATE INDEX idx_claim_contracts_deleted ON cargotech.claim_contracts USING btre
 CREATE INDEX idx_claim_contracts_expeditor ON cargotech.claim_contracts USING btree (expeditor_id);
 CREATE INDEX idx_claim_contracts_number_trgm ON cargotech.claim_contracts USING gin (number gin_trgm_ops);
 CREATE INDEX idx_claim_contracts_org ON cargotech.claim_contracts USING btree (organization_id);
+CREATE INDEX idx_claim_contracts_rag_status ON cargotech.claim_contracts USING btree (organization_id, rag_index_status) WHERE (deleted_at IS NULL);
 CREATE INDEX idx_claim_contracts_status ON cargotech.claim_contracts USING btree (status);
 CREATE UNIQUE INDEX uq_claim_contracts_number ON cargotech.claim_contracts USING btree (organization_id, number);
 
