@@ -7,6 +7,7 @@ import ru.sber.cargotech.claim.enums.ClauseType;
 import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.math.BigDecimal;
 import java.time.DateTimeException;
@@ -29,7 +30,7 @@ public class ContractTextExtractionService {
      */
     private static final Pattern DAYS = Pattern.compile(
         "(?iu)(\\d{1,3})\\s*(?:\\([^\\r\\n)]{1,80}\\)\\s*)?" +
-            "(?:(?:рабоч|календарн|банковск)\\p{L}*\\s+)?дн(?:ей|я|ь)(?!\\p{L})"
+            "(?:(рабоч\\p{L}*|календарн\\p{L}*|банковск\\p{L}*)\\s+)?дн(?:ей|я|ь)(?!\\p{L})"
     );
     private static final Pattern RATE = Pattern.compile("(?iu)(\\d{1,3}(?:[.,]\\d{1,6})?)\\s*%");
     private static final Pattern CLAUSE_NUMBER = Pattern.compile("(?iu)^(?:п(?:ункт)?\\.?\\s*)?(\\d+(?:\\.\\d+)+)\\.?");
@@ -63,10 +64,12 @@ public class ContractTextExtractionService {
         ContractExtractionField.CONTRACT_NUMBER,
         ContractExtractionField.SIGNED_AT,
         ContractExtractionField.PAYMENT_DAYS,
+        ContractExtractionField.PAYMENT_DAY_TYPE,
         ContractExtractionField.PAYMENT_START_EVENT,
         ContractExtractionField.PENALTY_TYPE,
         ContractExtractionField.PENALTY_RATE,
         ContractExtractionField.CLAIM_RESPONSE_DAYS,
+        ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE,
         ContractExtractionField.JURISDICTION
     );
     private static final Map<String, Integer> MONTHS = Map.ofEntries(
@@ -107,6 +110,15 @@ public class ContractTextExtractionService {
                     fragment,
                     page,
                     confidence("0.92"),
+                    null
+                ));
+                TermDayType paymentDayType = termDayType(paymentDays.group(2));
+                putOnce(scalars, candidate(
+                    ContractExtractionField.PAYMENT_DAY_TYPE,
+                    paymentDayType == null ? null : paymentDayType.name(),
+                    fragment,
+                    page,
+                    paymentDayType == null ? null : confidence("0.93"),
                     null
                 ));
                 PaymentStartEvent event = paymentStartEvent(lower);
@@ -173,6 +185,15 @@ public class ContractTextExtractionService {
                         fragment,
                         page,
                         confidence("0.89"),
+                        null
+                    ));
+                    TermDayType responseDayType = termDayType(responseDays.group(2));
+                    putOnce(scalars, candidate(
+                        ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE,
+                        responseDayType == null ? null : responseDayType.name(),
+                        fragment,
+                        page,
+                        responseDayType == null ? null : confidence("0.90"),
                         null
                     ));
                 }
@@ -354,11 +375,25 @@ public class ContractTextExtractionService {
     }
 
     private PaymentStartEvent paymentStartEvent(String lower) {
-        // "более поздняя из двух дат" and similar combined anchors cannot be represented
-        // by the current enum and must stay for human review instead of being simplified.
+        // Combined anchors cannot be represented safely as a single event.
         if (containsAny(lower, "более поздн", "наступившей позднее", "которая наступит позднее")) return null;
 
         List<PaymentStartEvent> events = new ArrayList<>();
+        if (lower.contains("реестр") && containsAny(
+            lower, "включения рейса", "включения перевозки", "включен в реестр", "включения в реестр",
+            "включения оказанных услуг в реестр", "включения услуги в реестр"
+        )) {
+            events.add(PaymentStartEvent.REGISTRY_INCLUDED);
+        }
+        if (containsAny(
+            lower,
+            "полного комплекта документов",
+            "полного пакета документов",
+            "комплекта закрывающих документов",
+            "пакета закрывающих документов"
+        ) && containsAny(lower, "получен", "предоставлен", "передан", "направлен", "представлен")) {
+            events.add(PaymentStartEvent.DOCUMENT_PACKAGE_RECEIVED);
+        }
         if (containsAny(lower, "ттн", "товарно-транспорт")
             || lower.matches("(?su).*транспортн\\p{L}*\\s+накладн\\p{L}*.*")) {
             events.add(PaymentStartEvent.TTN_SIGNED);
@@ -372,6 +407,15 @@ public class ContractTextExtractionService {
             events.add(PaymentStartEvent.INVOICE_DATE);
         }
         return events.stream().distinct().count() == 1 ? events.get(0) : null;
+    }
+
+    private TermDayType termDayType(String rawUnit) {
+        if (rawUnit == null || rawUnit.isBlank()) return null;
+        String unit = rawUnit.toLowerCase(Locale.ROOT);
+        if (unit.startsWith("календарн")) return TermDayType.CALENDAR_DAYS;
+        if (unit.startsWith("рабоч")) return TermDayType.WORKING_DAYS;
+        if (unit.startsWith("банковск")) return TermDayType.BANKING_DAYS;
+        return null;
     }
 
     private String jurisdiction(String fragment) {

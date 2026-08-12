@@ -15,17 +15,22 @@ const EXTRACTION_STATUS_LABEL = {
 };
 const EXTRACTION_FIELD_LABEL = {
   CONTRACT_NUMBER: 'Номер договора', SIGNED_AT: 'Дата договора',
-  PAYMENT_DAYS: 'Срок оплаты', PAYMENT_START_EVENT: 'Начало срока оплаты',
+  PAYMENT_DAYS: 'Срок оплаты', PAYMENT_DAY_TYPE: 'Тип дней срока оплаты', PAYMENT_START_EVENT: 'Начало срока оплаты',
   PENALTY_TYPE: 'Вид неустойки', PENALTY_RATE: 'Ставка',
-  CLAIM_RESPONSE_DAYS: 'Срок ответа', JURISDICTION: 'Подсудность', EXACT_CLAUSE: 'Точный пункт договора',
+  CLAIM_RESPONSE_DAYS: 'Срок ответа', CLAIM_RESPONSE_DAY_TYPE: 'Тип дней срока ответа', JURISDICTION: 'Подсудность', EXACT_CLAUSE: 'Точный пункт договора',
 };
 const CONTRACT_REVIEW_SCALAR_FIELDS = [
-  'CONTRACT_NUMBER', 'SIGNED_AT', 'PAYMENT_DAYS', 'PAYMENT_START_EVENT',
-  'PENALTY_TYPE', 'PENALTY_RATE', 'CLAIM_RESPONSE_DAYS', 'JURISDICTION',
+  'CONTRACT_NUMBER', 'SIGNED_AT', 'PAYMENT_DAYS', 'PAYMENT_DAY_TYPE', 'PAYMENT_START_EVENT',
+  'PENALTY_TYPE', 'PENALTY_RATE', 'CLAIM_RESPONSE_DAYS', 'CLAIM_RESPONSE_DAY_TYPE', 'JURISDICTION',
 ];
 const PAYMENT_START_EVENT_OPTIONS = {
   ACT_SIGNED: 'Дата подписания акта', UNLOADING_DATE: 'Дата выгрузки',
   TTN_SIGNED: 'Дата подписания ТТН', INVOICE_DATE: 'Дата счёта',
+  REGISTRY_INCLUDED: 'Дата включения рейса в реестр',
+  DOCUMENT_PACKAGE_RECEIVED: 'Дата получения полного комплекта документов',
+};
+const TERM_DAY_TYPE_OPTIONS = {
+  CALENDAR_DAYS: 'Календарные дни', WORKING_DAYS: 'Рабочие дни', BANKING_DAYS: 'Банковские дни',
 };
 const PENALTY_TYPE_OPTIONS = {
   CONTRACT_PENALTY: 'Договорная неустойка', ARTICLE_395: 'Статья 395 ГК РФ', NONE: 'Не начисляется',
@@ -147,6 +152,10 @@ async function loadParties() {
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
 }
 
+function termDayTypeLabel(value) {
+  return { CALENDAR_DAYS: 'календарных дней', WORKING_DAYS: 'рабочих дней', BANKING_DAYS: 'банковских дней' }[value] || 'дней';
+}
+
 async function loadContracts() {
   const list = document.getElementById('contracts_list');
   list.textContent = 'Загрузка...';
@@ -167,7 +176,7 @@ async function loadContracts() {
           }">${escapeAdmin(CONTRACT_STATUS_LABEL[contract.status] || contract.status)}</span>
         </div>
         <div>
-          <div>${contract.paymentDays == null ? 'Не указан' : `${contract.paymentDays} дней`}</div>
+          <div>${contract.paymentDays == null ? 'Не указан' : `${contract.paymentDays} ${escapeAdmin(termDayTypeLabel(contract.paymentDayType))}`}</div>
           <small>${escapeAdmin(EXTRACTION_STATUS_LABEL[contract.extractionStatus] || contract.extractionStatus)}</small>
           ${['REVIEW_REQUIRED', 'CONFIRMED'].includes(contract.extractionStatus)
             ? `<button class="secondary_btn contract_review_btn" type="button" data-contract-id="${escapeAdmin(contract.id)}">${contract.extractionStatus === 'CONFIRMED' ? 'Просмотреть / изменить' : 'Проверить и подтвердить'}</button>`
@@ -204,6 +213,9 @@ function renderContractCandidateInput(candidate, index) {
   const common = `class="form_input contract_candidate_value" data-candidate-index="${index}"`;
   if (candidate.field === 'PAYMENT_START_EVENT') {
     return `<select ${common}>${renderSelectOptions(PAYMENT_START_EVENT_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'PAYMENT_DAY_TYPE' || candidate.field === 'CLAIM_RESPONSE_DAY_TYPE') {
+    return `<select ${common}>${renderSelectOptions(TERM_DAY_TYPE_OPTIONS, value)}</select>`;
   }
   if (candidate.field === 'PENALTY_TYPE') {
     return `<select ${common}>${renderSelectOptions(PENALTY_TYPE_OPTIONS, value)}</select>`;
@@ -569,6 +581,18 @@ function updateShipmentClient() {
   const contractId = document.getElementById('shipment_contract_id').value;
   const contract = shipmentContracts.find((item) => item.id === contractId);
   document.getElementById('shipment_client_name').value = contract?.clientName || 'Выберите договор';
+  const anchorLabel = document.getElementById('shipment_payment_anchor_label');
+  const anchorHint = document.getElementById('shipment_payment_anchor_hint');
+  const labels = {
+    REGISTRY_INCLUDED: 'Дата включения рейса в реестр',
+    DOCUMENT_PACKAGE_RECEIVED: 'Дата получения полного комплекта документов',
+  };
+  if (anchorLabel) anchorLabel.textContent = labels[contract?.paymentStartEvent] || 'Дата договорного события начала срока оплаты';
+  if (anchorHint) {
+    anchorHint.textContent = labels[contract?.paymentStartEvent]
+      ? 'Обязательна для расчёта просрочки по выбранному договору.'
+      : 'Заполняется для нестандартного договорного события, если оно не совпадает с актом, выгрузкой, ТТН или счётом.';
+  }
 }
 
 async function loadShipmentContracts() {
@@ -604,6 +628,7 @@ function resetShipmentForm() {
   document.getElementById('shipment_loading_date').value = '';
   document.getElementById('shipment_unloading_date').value = '';
   document.getElementById('shipment_act_signed_at').value = '';
+  document.getElementById('shipment_payment_start_event_date').value = '';
   document.getElementById('shipment_service_amount').value = '';
   document.getElementById('shipment_currency').value = 'RUB';
   const externalIdInput = document.getElementById('shipment_external_id');
@@ -664,6 +689,7 @@ document.getElementById('save_shipment_btn').addEventListener('click', async () 
   setOptional(payload, 'loadingDate', loadingDate);
   setOptional(payload, 'unloadingDate', unloadingDate);
   setOptional(payload, 'actSignedAt', document.getElementById('shipment_act_signed_at').value);
+  setOptional(payload, 'paymentStartEventDate', document.getElementById('shipment_payment_start_event_date').value);
   setOptional(payload, 'externalId', document.getElementById('shipment_external_id')?.value.trim() || '');
 
   saveButton.disabled = true;

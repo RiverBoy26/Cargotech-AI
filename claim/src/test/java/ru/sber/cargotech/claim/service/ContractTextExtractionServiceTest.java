@@ -116,7 +116,7 @@ class ContractTextExtractionServiceTest {
             .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_START_EVENT)
             .singleElement()
             .satisfies(value -> {
-                assertThat(value.value()).isNull();
+                assertThat(value.value()).isEqualTo("DOCUMENT_PACKAGE_RECEIVED");
                 assertThat(value.source()).contains("полного комплекта документов");
             });
         assertThat(values)
@@ -205,6 +205,44 @@ class ContractTextExtractionServiceTest {
             .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_DAYS)
             .singleElement()
             .satisfies(value -> assertThat(value.sourcePage()).isNull());
+    }
+
+    @Test
+    void extractsBankingDayUnitRegistryAnchorAndClaimResponseUnit() {
+        String text = """
+            8.2. Заказчик производит оплату оказанных услуг в течение 5 (пяти) банковских дней после включения рейса в согласованный Сторонами реестр выполненных перевозок.
+            10.2. Сторона, получившая претензию, рассматривает ее и направляет мотивированный письменный ответ в течение 10 (десять) календарных дней.
+            """;
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PAYMENT_DAY_TYPE);
+            assertThat(value.value()).isEqualTo("BANKING_DAYS");
+            assertThat(value.clauseNumber()).isEqualTo("8.2");
+        });
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PAYMENT_START_EVENT);
+            assertThat(value.value()).isEqualTo("REGISTRY_INCLUDED");
+            assertThat(value.clauseNumber()).isEqualTo("8.2");
+        });
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE);
+            assertThat(value.value()).isEqualTo("CALENDAR_DAYS");
+            assertThat(value.clauseNumber()).isEqualTo("10.2");
+        });
+    }
+
+    @Test
+    void extractsFullDocumentPackageAsPaymentAnchor() {
+        List<ContractExtractionCandidateRequest> values = service.extract(
+            "7.6. Клиент осуществляет оплату в течение 60 календарных дней с момента предоставления полного пакета документов."
+        ).candidates();
+
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PAYMENT_START_EVENT);
+            assertThat(value.value()).isEqualTo("DOCUMENT_PACKAGE_RECEIVED");
+        });
     }
 
 }

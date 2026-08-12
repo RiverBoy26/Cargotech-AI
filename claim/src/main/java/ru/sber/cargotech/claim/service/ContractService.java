@@ -23,6 +23,7 @@ import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimContractClauseRepository;
 import ru.sber.cargotech.claim.repository.ClaimContractRepository;
@@ -222,10 +223,12 @@ public class ContractService {
         contract.setValidTo(request.validTo());
         contract.setStatus(request.status() == null ? ContractStatus.ACTIVE : request.status());
         contract.setPaymentDays(request.paymentDays());
+        contract.setPaymentDayType(request.paymentDayType());
         contract.setPaymentStartEvent(request.paymentStartEvent());
         contract.setPenaltyType(request.penaltyType() == null ? PenaltyType.NONE : request.penaltyType());
         contract.setPenaltyRate(request.penaltyRate());
         contract.setClaimResponseDays(request.claimResponseDays());
+        contract.setClaimResponseDayType(request.claimResponseDayType());
         contract.setJurisdiction(request.jurisdiction());
         contract.setDocumentId(request.documentId());
         contract.setUpdatedBy(userId);
@@ -255,10 +258,12 @@ public class ContractService {
             contract.getValidTo(),
             contract.getStatus(),
             contract.getPaymentDays(),
+            contract.getPaymentDayType(),
             contract.getPaymentStartEvent(),
             contract.getPenaltyType(),
             contract.getPenaltyRate(),
             contract.getClaimResponseDays(),
+            contract.getClaimResponseDayType(),
             contract.getJurisdiction(),
             contract.getDocumentId(),
             contract.getExtractionStatus(),
@@ -360,10 +365,12 @@ public class ContractService {
         contract.setNumber(null);
         contract.setSignedAt(null);
         contract.setPaymentDays(null);
+        contract.setPaymentDayType(null);
         contract.setPaymentStartEvent(null);
         contract.setPenaltyType(null);
         contract.setPenaltyRate(null);
         contract.setClaimResponseDays(null);
+        contract.setClaimResponseDayType(null);
         contract.setJurisdiction(null);
         contractClauseRepository.deleteByContractIdAndExtractedTrue(contract.getId());
 
@@ -379,10 +386,12 @@ public class ContractService {
                     case CONTRACT_NUMBER -> contract.setNumber(contractNumber(value));
                     case SIGNED_AT -> contract.setSignedAt(contractSignedAt(value));
                     case PAYMENT_DAYS -> contract.setPaymentDays(nonNegativeInteger(value));
+                    case PAYMENT_DAY_TYPE -> contract.setPaymentDayType(TermDayType.valueOf(value));
                     case PAYMENT_START_EVENT -> contract.setPaymentStartEvent(PaymentStartEvent.valueOf(value));
                     case PENALTY_TYPE -> contract.setPenaltyType(PenaltyType.valueOf(value));
                     case PENALTY_RATE -> contract.setPenaltyRate(nonNegativeDecimal(value));
                     case CLAIM_RESPONSE_DAYS -> contract.setClaimResponseDays(nonNegativeInteger(value));
+                    case CLAIM_RESPONSE_DAY_TYPE -> contract.setClaimResponseDayType(TermDayType.valueOf(value));
                     case JURISDICTION -> contract.setJurisdiction(value);
                     case EXACT_CLAUSE -> { }
                 }

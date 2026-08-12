@@ -22,6 +22,7 @@ public record ShipmentRequest(
     LocalDate actSignedAt,
     LocalDate ttnSignedAt,
     LocalDate invoiceDate,
+    LocalDate paymentStartEventDate,
     @NotNull @PositiveOrZero BigDecimal serviceAmount,
     @Size(max = 10) String currency,
     ShipmentStatus status,

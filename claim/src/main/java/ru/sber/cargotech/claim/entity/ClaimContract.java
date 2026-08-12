@@ -14,6 +14,7 @@ import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -57,6 +58,10 @@ public class ClaimContract {
     private Integer paymentDays;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "payment_day_type", length = 32)
+    private TermDayType paymentDayType;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_start_event", length = 64)
     private PaymentStartEvent paymentStartEvent;
 
@@ -69,6 +74,10 @@ public class ClaimContract {
 
     @Column(name = "claim_response_days")
     private Integer claimResponseDays;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "claim_response_day_type", length = 32)
+    private TermDayType claimResponseDayType;
 
     private String jurisdiction;
 

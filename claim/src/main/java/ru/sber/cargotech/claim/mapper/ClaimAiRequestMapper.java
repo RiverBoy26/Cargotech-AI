@@ -9,6 +9,7 @@ import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.TermDayType;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.time.LocalDate;
@@ -216,7 +217,7 @@ public class ClaimAiRequestMapper {
                     null,
                     "Структурированные условия оплаты",
                     "Оплата должна быть произведена в течение " + contract.getPaymentDays()
-                            + " календарных дней. Начало отсчёта срока: "
+                            + " " + termDayTypeLabel(contract.getPaymentDayType()) + ". Начало отсчёта срока: "
                             + paymentStartEventLabel(contract.getPaymentStartEvent())
                             + ". Номер пункта договора в карточке не указан; в тексте следует писать «согласно условиям договора»."
             ));
@@ -244,7 +245,8 @@ public class ClaimAiRequestMapper {
                     null,
                     "Структурированный срок ответа на претензию",
                     "Срок направления ответа на претензию: " + contract.getClaimResponseDays()
-                            + " календарных дней с даты получения претензии. Номер пункта договора в карточке не указан."
+                            + " " + termDayTypeLabel(contract.getClaimResponseDayType())
+                            + " с даты получения претензии. Номер пункта договора в карточке не указан."
             ));
         }
 
@@ -260,6 +262,17 @@ public class ClaimAiRequestMapper {
             case UNLOADING_DATE -> "дата выгрузки";
             case TTN_SIGNED -> "дата подписания транспортной накладной";
             case INVOICE_DATE -> "дата выставления счёта";
+            case REGISTRY_INCLUDED -> "дата включения рейса в согласованный реестр";
+            case DOCUMENT_PACKAGE_RECEIVED -> "дата получения полного комплекта документов";
+        };
+    }
+
+    private String termDayTypeLabel(TermDayType type) {
+        if (type == null) return "календарных дней";
+        return switch (type) {
+            case CALENDAR_DAYS -> "календарных дней";
+            case WORKING_DAYS -> "рабочих дней";
+            case BANKING_DAYS -> "банковских дней";
         };
     }
 

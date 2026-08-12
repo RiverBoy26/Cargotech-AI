@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Size;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -22,10 +23,12 @@ public record ContractRequest(
     LocalDate validTo,
     ContractStatus status,
     @Min(0) Integer paymentDays,
+    TermDayType paymentDayType,
     PaymentStartEvent paymentStartEvent,
     PenaltyType penaltyType,
     @PositiveOrZero BigDecimal penaltyRate,
     @Min(0) Integer claimResponseDays,
+    TermDayType claimResponseDayType,
     String jurisdiction,
     UUID documentId
 ) {

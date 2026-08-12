@@ -249,6 +249,11 @@
                         <input class="form_input" id="shipment_act_signed_at" name="shipment_act_signed_at" autocomplete="off" type="date">
                     </div>
                     <div class="form_field">
+                        <label class="form_label" id="shipment_payment_anchor_label" for="shipment_payment_start_event_date">Дата договорного события начала срока оплаты</label>
+                        <input class="form_input" id="shipment_payment_start_event_date" name="shipment_payment_start_event_date" autocomplete="off" type="date">
+                        <small class="panel_subtitle" id="shipment_payment_anchor_hint">Заполняется для нестандартного договорного события, если оно не совпадает с актом, выгрузкой, ТТН или счётом.</small>
+                    </div>
+                    <div class="form_field">
                         <label class="form_label" for="shipment_service_amount">Стоимость перевозки *</label>
                         <input class="form_input" id="shipment_service_amount" name="shipment_service_amount" autocomplete="off" type="number" required min="0" step="0.01" placeholder="0,00">
                     </div>

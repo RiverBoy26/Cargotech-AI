@@ -51,7 +51,7 @@ class ShipmentServiceTest {
 
         ShipmentRequest request = new ShipmentRequest(
             "РЕЙС-1", clientId, organizationId, contractId,
-            null, null, null, null, null, null, null,
+            null, null, null, null, null, null, null, null,
             BigDecimal.TEN, "RUB", ShipmentStatus.CREATED, null
         );
 

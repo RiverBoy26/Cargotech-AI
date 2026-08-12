@@ -4,6 +4,7 @@ import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -23,10 +24,12 @@ public record ContractResponse(
     LocalDate validTo,
     ContractStatus status,
     Integer paymentDays,
+    TermDayType paymentDayType,
     PaymentStartEvent paymentStartEvent,
     PenaltyType penaltyType,
     BigDecimal penaltyRate,
     Integer claimResponseDays,
+    TermDayType claimResponseDayType,
     String jurisdiction,
     UUID documentId,
     ContractExtractionStatus extractionStatus,

@@ -191,10 +191,12 @@ class ContractServiceTest {
                     case CONTRACT_NUMBER -> number;
                     case SIGNED_AT -> "2026-08-12";
                     case PAYMENT_DAYS -> paymentDays;
+                    case PAYMENT_DAY_TYPE -> "CALENDAR_DAYS";
                     case PAYMENT_START_EVENT -> "ACT_SIGNED";
                     case PENALTY_TYPE -> "CONTRACT_PENALTY";
                     case PENALTY_RATE -> "0.1";
                     case CLAIM_RESPONSE_DAYS -> "10";
+                    case CLAIM_RESPONSE_DAY_TYPE -> "CALENDAR_DAYS";
                     case JURISDICTION -> "Арбитражный суд Новосибирской области";
                     case EXACT_CLAUSE -> null;
                 },
