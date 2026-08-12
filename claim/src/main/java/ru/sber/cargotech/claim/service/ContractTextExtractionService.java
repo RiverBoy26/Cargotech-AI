@@ -240,7 +240,11 @@ public class ContractTextExtractionService {
                 addClauseOnce(clauses, clause(fragment, page, ClauseType.CLAIM_PROCEDURE));
             }
 
-            if (containsAny(lower, "подсудн", "арбитражный суд", "арбитражном суде")) {
+            if (containsAny(
+                lower,
+                "подсудн", "арбитражный суд", "арбитражном суде",
+                "месту нахождения ответчика", "месту нахождения истца"
+            )) {
                 putOnce(scalars, candidate(
                     ContractExtractionField.JURISDICTION,
                     jurisdiction(fragment),
@@ -456,8 +460,9 @@ public class ContractTextExtractionService {
 
         List<PaymentStartEvent> events = new ArrayList<>();
         if (lower.contains("реестр") && containsAny(
-            lower, "включения рейса", "включения перевозки", "включен в реестр", "включения в реестр",
-            "включения оказанных услуг в реестр", "включения услуги в реестр"
+            lower, "после включения рейса", "с даты включения рейса", "со дня включения рейса",
+            "после включения перевозки", "с даты включения перевозки", "включен в реестр",
+            "включения в реестр", "включения оказанных услуг в реестр", "включения услуги в реестр"
         )) {
             events.add(PaymentStartEvent.REGISTRY_INCLUDED);
         }
@@ -470,19 +475,28 @@ public class ContractTextExtractionService {
         ) && containsAny(lower, "получен", "предоставлен", "передан", "направлен", "представлен")) {
             events.add(PaymentStartEvent.DOCUMENT_PACKAGE_RECEIVED);
         }
-        if (containsAny(lower, "ттн", "товарно-транспорт")
-            || lower.matches("(?su).*транспортн\\p{L}*\\s+накладн\\p{L}*.*")) {
+
+        // Match the event that actually starts the term instead of every document merely mentioned
+        // in the same sentence. Example: "со дня фактической выгрузки груза, указанной в
+        // транспортной накладной" is UNLOADING_DATE, not TTN_SIGNED.
+        if (matchesAnchor(lower, "(?:фактическ\\p{L}*\\s+)?(?:выгрузк\\p{L}*|разгрузк\\p{L}*)")) {
+            events.add(PaymentStartEvent.UNLOADING_DATE);
+        }
+        if (matchesAnchor(lower, "(?:подписан\\p{L}*(?:\\s+\\p{L}+){0,3}\\s+)?(?:ттн|товарно-транспортн\\p{L}*\\s+накладн\\p{L}*|транспортн\\p{L}*\\s+накладн\\p{L}*)")) {
             events.add(PaymentStartEvent.TTN_SIGNED);
         }
-        if (lower.matches("(?su).*подписан\\p{L}*(?:\\s+\\p{L}+){0,3}\\s+акт\\p{L}*.*")
-            || containsAny(lower, "акт оказанных услуг")) {
+        if (matchesAnchor(lower, "(?:подписан\\p{L}*(?:\\s+\\p{L}+){0,3}\\s+)?акт\\p{L}*(?:\\s+оказанн\\p{L}*\\s+услуг)?")) {
             events.add(PaymentStartEvent.ACT_SIGNED);
         }
-        if (containsAny(lower, "разгруз", "выгруз")) events.add(PaymentStartEvent.UNLOADING_DATE);
-        if (INVOICE_WORD.matcher(lower).find() && !containsAny(lower, "комплект документов", "комплекта документов", "упд")) {
+        if (matchesAnchor(lower, "(?:(?:выставленн|полученн)\\p{L}*\\s+)?(?:сч[её]т\\p{L}*|инвойс\\p{L}*)")) {
             events.add(PaymentStartEvent.INVOICE_DATE);
         }
         return events.stream().distinct().count() == 1 ? events.get(0) : null;
+    }
+
+    private boolean matchesAnchor(String lower, String eventPattern) {
+        String prefix = "(?:с\\s+(?:даты|момента|дня)|со\\s+дня|после|от\\s+даты)\\s+";
+        return lower.matches("(?su).*" + prefix + eventPattern + ".*");
     }
 
     private TermDayType termDayType(String rawUnit) {
@@ -495,6 +509,10 @@ public class ContractTextExtractionService {
     }
 
     private String jurisdiction(String fragment) {
+        String lower = fragment.toLowerCase(Locale.ROOT);
+        if (lower.contains("по месту нахождения ответчика")) return "По месту нахождения ответчика";
+        if (lower.contains("по месту нахождения истца")) return "По месту нахождения истца";
+
         Matcher matcher = ARBITRATION_COURT.matcher(fragment);
         if (!matcher.find()) return fragment;
         String value = matcher.group(1).trim();

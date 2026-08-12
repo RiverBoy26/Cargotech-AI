@@ -600,7 +600,8 @@ header {
 
   #contract_form .add_user_form_fields,
   .contract_review_grid,
-  .contract_clause_grid {
+  .contract_clause_grid,
+  .contract_payment_schedule_grid {
     grid-template-columns: 1fr;
   }
 }
@@ -629,6 +630,46 @@ header {
   gap: 12px;
 }
 
+
+
+.contract_optional_badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #59636f;
+  background: #f1f3f5;
+}
+
+.contract_payment_schedule_add {
+  margin-top: 14px;
+}
+
+.contract_payment_schedule_section {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #eadfd6;
+  border-radius: 10px;
+  background: #fffaf6;
+}
+
+.contract_payment_schedule_header h4 {
+  margin: 0 0 5px;
+  font-size: 15px;
+}
+
+.contract_payment_schedule_header p {
+  margin: 0 0 12px;
+  color: #59636f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.contract_payment_schedule_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
 
 .contract_weekday_picker {
   display: flex;

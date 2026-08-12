@@ -279,4 +279,34 @@ class ContractTextExtractionServiceTest {
             .containsExactly("8.2", "8.4");
     }
 
+    @Test
+    void recognizesActualUnloadingAsAnchorEvenWhenClauseMentionsTransportWaybill() {
+        String text = "8.2. Заказчик производит оплату оказанных услуг в течение 30 (тридцати) календарных дней, исчисляемых со дня фактической выгрузки груза, указанной в транспортной накладной.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_START_EVENT)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("UNLOADING_DATE");
+                assertThat(value.clauseNumber()).isEqualTo("8.2");
+            });
+    }
+
+    @Test
+    void extractsGenericJurisdictionByDefendantLocation() {
+        String text = "10.3. При недостижении соглашения спор подлежит рассмотрению по месту нахождения ответчика в соответствии с правилами арбитражного процессуального законодательства.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.JURISDICTION)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("По месту нахождения ответчика");
+                assertThat(value.clauseNumber()).isEqualTo("10.3");
+            });
+    }
+
 }

@@ -16,7 +16,7 @@ const EXTRACTION_STATUS_LABEL = {
 const EXTRACTION_FIELD_LABEL = {
   CONTRACT_NUMBER: 'Номер договора', SIGNED_AT: 'Дата договора',
   PAYMENT_DAYS: 'Срок оплаты', PAYMENT_DAY_TYPE: 'Тип дней срока оплаты', PAYMENT_START_EVENT: 'Начало срока оплаты',
-  PAYMENT_SCHEDULE_TYPE: 'Порядок платёжных дней', PAYMENT_WEEK_DAYS: 'Платёжные дни недели',
+  PAYMENT_SCHEDULE_TYPE: 'Перенос срока оплаты', PAYMENT_WEEK_DAYS: 'Платёжные дни',
   PENALTY_TYPE: 'Вид неустойки', PENALTY_RATE: 'Ставка',
   CLAIM_RESPONSE_DAYS: 'Срок ответа', CLAIM_RESPONSE_DAY_TYPE: 'Тип дней срока ответа', JURISDICTION: 'Подсудность', EXACT_CLAUSE: 'Точный пункт договора',
 };
@@ -25,6 +25,7 @@ const CONTRACT_REVIEW_SCALAR_FIELDS = [
   'PAYMENT_SCHEDULE_TYPE', 'PAYMENT_WEEK_DAYS',
   'PENALTY_TYPE', 'PENALTY_RATE', 'CLAIM_RESPONSE_DAYS', 'CLAIM_RESPONSE_DAY_TYPE', 'JURISDICTION',
 ];
+const PAYMENT_SCHEDULE_FIELDS = new Set(['PAYMENT_SCHEDULE_TYPE', 'PAYMENT_WEEK_DAYS']);
 const PAYMENT_START_EVENT_OPTIONS = {
   ACT_SIGNED: 'Дата подписания акта', UNLOADING_DATE: 'Дата выгрузки',
   TTN_SIGNED: 'Дата подписания ТТН', INVOICE_DATE: 'Дата счёта',
@@ -273,6 +274,9 @@ function renderContractCandidateInput(candidate, index) {
 
 function extractionReliability(candidate) {
   if (candidate.manuallyEdited) return '<span class="contract_manual_badge">Изменено вручную</span>';
+  if (candidate.confidence == null && PAYMENT_SCHEDULE_FIELDS.has(candidate.field)) {
+    return '<span class="contract_optional_badge">Не найдено в договоре — необязательное условие</span>';
+  }
   if (candidate.confidence == null) return '<span class="contract_missing_badge">Не найдено — требуется ручная проверка</span>';
   const percent = Math.round(Number(candidate.confidence) * 100);
   const level = percent >= 90 ? 'высокая' : percent >= 75 ? 'средняя' : 'низкая';
@@ -310,6 +314,22 @@ function renderContractClause(candidate, index) {
     </article>`;
 }
 
+function renderPaymentScheduleSection(entries) {
+  if (!entries.length) return '';
+  return `
+    <section class="contract_payment_schedule_section">
+      <div class="contract_payment_schedule_header">
+        <div>
+          <h4>Особые условия оплаты</h4>
+          <p>Этот блок нужен только если договор задаёт отдельные платёжные дни и переносит срок на ближайший такой день.</p>
+        </div>
+      </div>
+      <div class="contract_payment_schedule_grid">
+        ${entries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}
+      </div>
+    </section>`;
+}
+
 function normalizedCandidate(candidate) {
   return {
     field: candidate.field,
@@ -335,10 +355,14 @@ function renderContractReview(panel, contractId, extraction) {
     const rightOrder = right.field === 'EXACT_CLAUSE' ? 100 : CONTRACT_REVIEW_SCALAR_FIELDS.indexOf(right.field);
     return leftOrder - rightOrder;
   });
-  const draft = { ...extraction, candidates };
+  const draft = { ...extraction, candidates, showPaymentSchedule: Boolean(extraction.showPaymentSchedule) };
   contractExtractionDrafts.set(contractId, draft);
   const candidateEntries = candidates.map((candidate, index) => ({ candidate, index }));
-  const scalarEntries = candidateEntries.filter(({ candidate }) => candidate.field !== 'EXACT_CLAUSE');
+  const scalarEntries = candidateEntries.filter(({ candidate }) =>
+    candidate.field !== 'EXACT_CLAUSE' && !PAYMENT_SCHEDULE_FIELDS.has(candidate.field)
+  );
+  const scheduleEntries = candidateEntries.filter(({ candidate }) => PAYMENT_SCHEDULE_FIELDS.has(candidate.field));
+  const hasPaymentSchedule = scheduleEntries.some(({ candidate }) => Boolean(candidate.value));
   const clauseEntries = candidateEntries.filter(({ candidate }) => candidate.field === 'EXACT_CLAUSE');
   panel.innerHTML = `
     <div class="contract_extraction_title">Проверка условий договора</div>
@@ -346,6 +370,9 @@ function renderContractReview(panel, contractId, extraction) {
     <div class="contract_review_grid">
       ${scalarEntries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}
     </div>
+    ${(hasPaymentSchedule || draft.showPaymentSchedule)
+      ? renderPaymentScheduleSection(scheduleEntries)
+      : '<button class="secondary_btn contract_payment_schedule_add" type="button">+ Добавить особые условия оплаты</button>'}
     <section class="contract_clause_section">
       <div class="contract_clause_section_header">
         <div>
@@ -368,6 +395,10 @@ function renderContractReview(panel, contractId, extraction) {
     </div>`;
 
   panel.querySelector('.contract_review_close').addEventListener('click', () => { panel.hidden = true; });
+  panel.querySelector('.contract_payment_schedule_add')?.addEventListener('click', () => {
+    draft.showPaymentSchedule = true;
+    renderContractReview(panel, contractId, draft);
+  });
   panel.querySelector('.contract_clause_add').addEventListener('click', () => {
     draft.candidates.push(normalizedCandidate({ field: 'EXACT_CLAUSE', manuallyEdited: true }));
     renderContractReview(panel, contractId, draft);
@@ -408,6 +439,7 @@ function collectContractReview(panel, contractId) {
   const draft = contractExtractionDrafts.get(contractId);
   return draft.candidates.map((candidate, index) => {
     const item = panel.querySelector(`[data-review-index="${index}"]`);
+    if (!item) return { ...candidate };
     const value = candidate.field === 'PAYMENT_WEEK_DAYS'
       ? (Array.from(item.querySelectorAll('.contract_weekday_checkbox:checked'))
           .map((input) => input.value)
