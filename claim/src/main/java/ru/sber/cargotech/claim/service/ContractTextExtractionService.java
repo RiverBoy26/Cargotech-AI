@@ -6,17 +6,21 @@ import ru.sber.cargotech.claim.dto.SubmitContractExtractionRequest;
 import ru.sber.cargotech.claim.enums.ClauseType;
 import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.math.BigDecimal;
 import java.time.DateTimeException;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -60,12 +64,24 @@ public class ContractTextExtractionService {
         "(?iu)(арбитражн(?:ый|ом)\\s+суд(?:е)?\\s+[\\p{L}0-9№«»\"()\\-\\s]{2,140}?)(?=[,.;]|$)"
     );
 
+    private static final Map<DayOfWeek, Pattern> WEEK_DAY_PATTERNS = Map.ofEntries(
+        Map.entry(DayOfWeek.MONDAY, Pattern.compile("(?iu)(?<!\\p{L})понедельник\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.TUESDAY, Pattern.compile("(?iu)(?<!\\p{L})вторник\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.WEDNESDAY, Pattern.compile("(?iu)(?<!\\p{L})сред(?:а|ы|у|е|ой)(?!\\p{L})")),
+        Map.entry(DayOfWeek.THURSDAY, Pattern.compile("(?iu)(?<!\\p{L})четверг\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.FRIDAY, Pattern.compile("(?iu)(?<!\\p{L})пятниц\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.SATURDAY, Pattern.compile("(?iu)(?<!\\p{L})суббот\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.SUNDAY, Pattern.compile("(?iu)(?<!\\p{L})воскресень\\p{L}*(?!\\p{L})"))
+    );
+
     private static final List<ContractExtractionField> REVIEW_FIELDS = List.of(
         ContractExtractionField.CONTRACT_NUMBER,
         ContractExtractionField.SIGNED_AT,
         ContractExtractionField.PAYMENT_DAYS,
         ContractExtractionField.PAYMENT_DAY_TYPE,
         ContractExtractionField.PAYMENT_START_EVENT,
+        ContractExtractionField.PAYMENT_SCHEDULE_TYPE,
+        ContractExtractionField.PAYMENT_WEEK_DAYS,
         ContractExtractionField.PENALTY_TYPE,
         ContractExtractionField.PENALTY_RATE,
         ContractExtractionField.CLAIM_RESPONSE_DAYS,
@@ -128,6 +144,30 @@ public class ContractTextExtractionService {
                     fragment,
                     page,
                     event == null ? null : confidence("0.88"),
+                    null
+                ));
+                addClauseOnce(clauses, clause(fragment, page, ClauseType.PAYMENT_TERMS));
+            }
+
+            Set<DayOfWeek> paymentWeekDays = paymentWeekDays(lower);
+            if (!paymentWeekDays.isEmpty() && isNextPaymentDaySchedule(lower)) {
+                putOnce(scalars, candidate(
+                    ContractExtractionField.PAYMENT_SCHEDULE_TYPE,
+                    PaymentScheduleType.NEXT_PAYMENT_DAY.name(),
+                    fragment,
+                    page,
+                    confidence("0.90"),
+                    null
+                ));
+                putOnce(scalars, candidate(
+                    ContractExtractionField.PAYMENT_WEEK_DAYS,
+                    paymentWeekDays.stream()
+                        .sorted()
+                        .map(DayOfWeek::name)
+                        .collect(java.util.stream.Collectors.joining(",")),
+                    fragment,
+                    page,
+                    confidence("0.92"),
                     null
                 ));
                 addClauseOnce(clauses, clause(fragment, page, ClauseType.PAYMENT_TERMS));
@@ -245,6 +285,29 @@ public class ContractTextExtractionService {
 
     private boolean isPaymentTermClause(String fragment) {
         return PAYMENT_TERM_SIGNAL.matcher(fragment).find();
+    }
+
+    private boolean isNextPaymentDaySchedule(String lower) {
+        if (!containsAny(lower, "платежн", "платёжн")) return false;
+        return containsAny(
+            lower,
+            "ближайший следующий платежный день",
+            "ближайший следующий платёжный день",
+            "ближайший платежный день",
+            "ближайший платёжный день",
+            "первый платежный день",
+            "первый платёжный день"
+        );
+    }
+
+    private Set<DayOfWeek> paymentWeekDays(String lower) {
+        Set<DayOfWeek> result = new LinkedHashSet<>();
+        for (Map.Entry<DayOfWeek, Pattern> entry : WEEK_DAY_PATTERNS.entrySet()) {
+            if (entry.getValue().matcher(lower).find()) {
+                result.add(entry.getKey());
+            }
+        }
+        return result;
     }
 
     private boolean isPaymentPenaltyClause(String lower) {
@@ -370,8 +433,21 @@ public class ContractTextExtractionService {
     }
 
     private void addClauseOnce(List<ContractExtractionCandidateRequest> target, ContractExtractionCandidateRequest value) {
-        boolean exists = target.stream().anyMatch(item -> item.value().equals(value.value()));
+        String normalized = normalizedClauseBody(value.value());
+        boolean exists = target.stream().anyMatch(item ->
+            item.clauseType() == value.clauseType()
+                && normalizedClauseBody(item.value()).equals(normalized)
+        );
         if (!exists) target.add(value);
+    }
+
+    private String normalizedClauseBody(String value) {
+        if (value == null) return "";
+        return value
+            .replaceFirst("(?iu)^(?:п(?:ункт)?\\.?\\s*)?\\d+(?:\\.\\d+)+\\.?\\s*", "")
+            .replaceAll("\\s+", " ")
+            .trim()
+            .toLowerCase(Locale.ROOT);
     }
 
     private PaymentStartEvent paymentStartEvent(String lower) {

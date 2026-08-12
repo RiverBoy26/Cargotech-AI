@@ -12,6 +12,7 @@ import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.TermDayType;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -219,6 +220,7 @@ public class ClaimAiRequestMapper {
                     "Оплата должна быть произведена в течение " + contract.getPaymentDays()
                             + " " + termDayTypeLabel(contract.getPaymentDayType()) + ". Начало отсчёта срока: "
                             + paymentStartEventLabel(contract.getPaymentStartEvent())
+                            + paymentScheduleLabel(contract)
                             + ". Номер пункта договора в карточке не указан; в тексте следует писать «согласно условиям договора»."
             ));
         }
@@ -251,6 +253,40 @@ public class ClaimAiRequestMapper {
         }
 
         return List.copyOf(context);
+    }
+
+    private String paymentScheduleLabel(ClaimContract contract) {
+        if (contract.getPaymentScheduleType() == null || contract.getPaymentWeekDays() == null
+                || contract.getPaymentWeekDays().isBlank()) {
+            return "";
+        }
+        if (contract.getPaymentScheduleType() != ru.sber.cargotech.claim.enums.PaymentScheduleType.NEXT_PAYMENT_DAY) {
+            return "";
+        }
+        String days = java.util.Arrays.stream(contract.getPaymentWeekDays().split(","))
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .map(this::weekDayLabel)
+            .collect(java.util.stream.Collectors.joining(", "));
+        return days.isBlank()
+            ? ""
+            : ". Если расчётная дата не является платёжным днём, срок переносится на ближайший следующий платёжный день (" + days + ")";
+    }
+
+    private String weekDayLabel(String value) {
+        try {
+            return switch (DayOfWeek.valueOf(value)) {
+                case MONDAY -> "понедельник";
+                case TUESDAY -> "вторник";
+                case WEDNESDAY -> "среда";
+                case THURSDAY -> "четверг";
+                case FRIDAY -> "пятница";
+                case SATURDAY -> "суббота";
+                case SUNDAY -> "воскресенье";
+            };
+        } catch (IllegalArgumentException exception) {
+            return value;
+        }
     }
 
     private String paymentStartEventLabel(PaymentStartEvent event) {

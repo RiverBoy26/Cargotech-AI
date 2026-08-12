@@ -22,6 +22,7 @@ import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 import ru.sber.cargotech.claim.exception.ClaimException;
@@ -32,9 +33,11 @@ import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -225,6 +228,9 @@ public class ContractService {
         contract.setPaymentDays(request.paymentDays());
         contract.setPaymentDayType(request.paymentDayType());
         contract.setPaymentStartEvent(request.paymentStartEvent());
+        contract.setPaymentScheduleType(request.paymentScheduleType());
+        contract.setPaymentWeekDays(normalizePaymentWeekDays(request.paymentWeekDays()));
+        validatePaymentSchedule(contract);
         contract.setPenaltyType(request.penaltyType() == null ? PenaltyType.NONE : request.penaltyType());
         contract.setPenaltyRate(request.penaltyRate());
         contract.setClaimResponseDays(request.claimResponseDays());
@@ -260,6 +266,8 @@ public class ContractService {
             contract.getPaymentDays(),
             contract.getPaymentDayType(),
             contract.getPaymentStartEvent(),
+            contract.getPaymentScheduleType(),
+            contract.getPaymentWeekDays(),
             contract.getPenaltyType(),
             contract.getPenaltyRate(),
             contract.getClaimResponseDays(),
@@ -367,6 +375,8 @@ public class ContractService {
         contract.setPaymentDays(null);
         contract.setPaymentDayType(null);
         contract.setPaymentStartEvent(null);
+        contract.setPaymentScheduleType(null);
+        contract.setPaymentWeekDays(null);
         contract.setPenaltyType(null);
         contract.setPenaltyRate(null);
         contract.setClaimResponseDays(null);
@@ -388,6 +398,8 @@ public class ContractService {
                     case PAYMENT_DAYS -> contract.setPaymentDays(nonNegativeInteger(value));
                     case PAYMENT_DAY_TYPE -> contract.setPaymentDayType(TermDayType.valueOf(value));
                     case PAYMENT_START_EVENT -> contract.setPaymentStartEvent(PaymentStartEvent.valueOf(value));
+                    case PAYMENT_SCHEDULE_TYPE -> contract.setPaymentScheduleType(PaymentScheduleType.valueOf(value));
+                    case PAYMENT_WEEK_DAYS -> contract.setPaymentWeekDays(normalizePaymentWeekDays(value));
                     case PENALTY_TYPE -> contract.setPenaltyType(PenaltyType.valueOf(value));
                     case PENALTY_RATE -> contract.setPenaltyRate(nonNegativeDecimal(value));
                     case CLAIM_RESPONSE_DAYS -> contract.setClaimResponseDays(nonNegativeInteger(value));
@@ -399,6 +411,7 @@ public class ContractService {
                 throw ClaimException.validation("Неверный формат извлечённого поля " + candidate.getField() + ": " + value);
             }
         }
+        validatePaymentSchedule(contract);
         if (contract.getNumber() == null) {
             throw ClaimException.validation("Укажите номер договора перед подтверждением");
         }
@@ -415,6 +428,41 @@ public class ContractService {
         clause.setCreatedBy(userId);
         clause.setUpdatedBy(userId);
         contractClauseRepository.save(clause);
+    }
+
+    private void validatePaymentSchedule(ClaimContract contract) {
+        String weekDays = normalizePaymentWeekDays(contract.getPaymentWeekDays());
+        contract.setPaymentWeekDays(weekDays);
+        if (contract.getPaymentScheduleType() == null) {
+            if (weekDays != null) {
+                throw ClaimException.validation("Платёжные дни нельзя указать без порядка применения платёжного календаря");
+            }
+            return;
+        }
+        if (contract.getPaymentScheduleType() == PaymentScheduleType.NEXT_PAYMENT_DAY && weekDays == null) {
+            throw ClaimException.validation("Для переноса на ближайший платёжный день укажите дни недели");
+        }
+    }
+
+    private String normalizePaymentWeekDays(String value) {
+        String normalized = blankToNull(value);
+        if (normalized == null) return null;
+
+        Set<DayOfWeek> days = new LinkedHashSet<>();
+        for (String token : normalized.split(",")) {
+            String item = token.trim();
+            if (item.isEmpty()) continue;
+            try {
+                days.add(DayOfWeek.valueOf(item.toUpperCase(java.util.Locale.ROOT)));
+            } catch (IllegalArgumentException exception) {
+                throw ClaimException.validation("Неизвестный платёжный день недели: " + item);
+            }
+        }
+        if (days.isEmpty()) return null;
+        return days.stream()
+            .sorted()
+            .map(DayOfWeek::name)
+            .collect(java.util.stream.Collectors.joining(","));
     }
 
     private int nonNegativeInteger(String value) {

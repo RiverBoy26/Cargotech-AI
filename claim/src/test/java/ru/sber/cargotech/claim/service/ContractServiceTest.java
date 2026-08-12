@@ -15,6 +15,7 @@ import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimContractClauseRepository;
@@ -128,6 +129,8 @@ class ContractServiceTest {
         assertThat(contract.getSignedAt()).isEqualTo(LocalDate.of(2026, 8, 12));
         assertThat(contract.getPaymentDays()).isEqualTo(30);
         assertThat(contract.getPaymentStartEvent()).isEqualTo(PaymentStartEvent.ACT_SIGNED);
+        assertThat(contract.getPaymentScheduleType()).isEqualTo(PaymentScheduleType.NEXT_PAYMENT_DAY);
+        assertThat(contract.getPaymentWeekDays()).isEqualTo("TUESDAY,THURSDAY");
         assertThat(contract.getPenaltyType()).isEqualTo(PenaltyType.CONTRACT_PENALTY);
         verify(contractClauseRepository, never()).save(any());
     }
@@ -193,6 +196,8 @@ class ContractServiceTest {
                     case PAYMENT_DAYS -> paymentDays;
                     case PAYMENT_DAY_TYPE -> "CALENDAR_DAYS";
                     case PAYMENT_START_EVENT -> "ACT_SIGNED";
+                    case PAYMENT_SCHEDULE_TYPE -> "NEXT_PAYMENT_DAY";
+                    case PAYMENT_WEEK_DAYS -> "TUESDAY,THURSDAY";
                     case PENALTY_TYPE -> "CONTRACT_PENALTY";
                     case PENALTY_RATE -> "0.1";
                     case CLAIM_RESPONSE_DAYS -> "10";

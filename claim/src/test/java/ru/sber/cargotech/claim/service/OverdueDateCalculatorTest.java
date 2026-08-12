@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.time.LocalDate;
@@ -54,4 +55,41 @@ class OverdueDateCalculatorTest {
 
         assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract)).isNull();
     }
+
+    @Test
+    void nextPaymentDayScheduleShiftsDueDateToAllowedWeekday() {
+        ClaimContract contract = new ClaimContract();
+        contract.setPaymentStartEvent(PaymentStartEvent.DOCUMENT_PACKAGE_RECEIVED);
+        contract.setPaymentDays(45);
+        contract.setPaymentDayType(TermDayType.CALENDAR_DAYS);
+        contract.setPaymentScheduleType(PaymentScheduleType.NEXT_PAYMENT_DAY);
+        contract.setPaymentWeekDays("TUESDAY,THURSDAY");
+
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setPaymentStartEventDate(LocalDate.of(2026, 6, 1));
+
+        // 01.06 + 45 calendar days = Thursday 16.07.2026, already an allowed payment day.
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract))
+            .isEqualTo(LocalDate.of(2026, 7, 17));
+
+        shipment.setPaymentStartEventDate(LocalDate.of(2026, 6, 2));
+        // 02.06 + 45 = Friday 17.07; next allowed payment day is Tuesday 21.07.
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract))
+            .isEqualTo(LocalDate.of(2026, 7, 22));
+    }
+
+    @Test
+    void incompletePaymentScheduleDoesNotInventDeadline() {
+        ClaimContract contract = new ClaimContract();
+        contract.setPaymentStartEvent(PaymentStartEvent.ACT_SIGNED);
+        contract.setPaymentDays(5);
+        contract.setPaymentDayType(TermDayType.CALENDAR_DAYS);
+        contract.setPaymentScheduleType(PaymentScheduleType.NEXT_PAYMENT_DAY);
+
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setActSignedAt(LocalDate.of(2026, 8, 1));
+
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract)).isNull();
+    }
+
 }

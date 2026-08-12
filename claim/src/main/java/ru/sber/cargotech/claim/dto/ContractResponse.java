@@ -3,6 +3,7 @@ package ru.sber.cargotech.claim.dto;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 
@@ -26,6 +27,8 @@ public record ContractResponse(
     Integer paymentDays,
     TermDayType paymentDayType,
     PaymentStartEvent paymentStartEvent,
+    PaymentScheduleType paymentScheduleType,
+    String paymentWeekDays,
     PenaltyType penaltyType,
     BigDecimal penaltyRate,
     Integer claimResponseDays,

@@ -245,4 +245,38 @@ class ContractTextExtractionServiceTest {
         });
     }
 
+
+    @Test
+    void extractsNextPaymentDayScheduleAndDeduplicatesRepeatedScheduleClause() {
+        String text = """
+            8.2. Клиент производит оплату оказанных услуг в течение 45 (сорока пяти) календарных дней с даты получения полного комплекта документов.
+            8.4. Платежные дни Клиента — вторник и четверг. Если 45-й день приходится между платежными днями, платеж производится в ближайший следующий платежный день.
+            9.4. Платежные дни Клиента — вторник и четверг. Если 45-й день приходится между платежными днями, платеж производится в ближайший следующий платежный день.
+            """;
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_SCHEDULE_TYPE)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("NEXT_PAYMENT_DAY");
+                assertThat(value.clauseNumber()).isEqualTo("8.4");
+            });
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_WEEK_DAYS)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("TUESDAY,THURSDAY");
+                assertThat(value.clauseNumber()).isEqualTo("8.4");
+            });
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.EXACT_CLAUSE)
+            .filteredOn(value -> value.clauseType() == ru.sber.cargotech.claim.enums.ClauseType.PAYMENT_TERMS)
+            .extracting(ContractExtractionCandidateRequest::clauseNumber)
+            .containsExactly("8.2", "8.4");
+    }
+
 }

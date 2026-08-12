@@ -628,3 +628,33 @@ header {
   display: grid;
   gap: 12px;
 }
+
+
+.contract_weekday_picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 44px;
+  align-items: center;
+}
+
+.contract_weekday_option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #f0b487;
+  border-radius: 10px;
+  background: #fff7f1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.contract_weekday_option input {
+  margin: 0;
+}
+
+.contract_weekday_option:has(input:checked) {
+  background: #ffe9d8;
+  border-color: #f36a21;
+}

@@ -16,11 +16,13 @@ const EXTRACTION_STATUS_LABEL = {
 const EXTRACTION_FIELD_LABEL = {
   CONTRACT_NUMBER: 'Номер договора', SIGNED_AT: 'Дата договора',
   PAYMENT_DAYS: 'Срок оплаты', PAYMENT_DAY_TYPE: 'Тип дней срока оплаты', PAYMENT_START_EVENT: 'Начало срока оплаты',
+  PAYMENT_SCHEDULE_TYPE: 'Порядок платёжных дней', PAYMENT_WEEK_DAYS: 'Платёжные дни недели',
   PENALTY_TYPE: 'Вид неустойки', PENALTY_RATE: 'Ставка',
   CLAIM_RESPONSE_DAYS: 'Срок ответа', CLAIM_RESPONSE_DAY_TYPE: 'Тип дней срока ответа', JURISDICTION: 'Подсудность', EXACT_CLAUSE: 'Точный пункт договора',
 };
 const CONTRACT_REVIEW_SCALAR_FIELDS = [
   'CONTRACT_NUMBER', 'SIGNED_AT', 'PAYMENT_DAYS', 'PAYMENT_DAY_TYPE', 'PAYMENT_START_EVENT',
+  'PAYMENT_SCHEDULE_TYPE', 'PAYMENT_WEEK_DAYS',
   'PENALTY_TYPE', 'PENALTY_RATE', 'CLAIM_RESPONSE_DAYS', 'CLAIM_RESPONSE_DAY_TYPE', 'JURISDICTION',
 ];
 const PAYMENT_START_EVENT_OPTIONS = {
@@ -31,6 +33,13 @@ const PAYMENT_START_EVENT_OPTIONS = {
 };
 const TERM_DAY_TYPE_OPTIONS = {
   CALENDAR_DAYS: 'Календарные дни', WORKING_DAYS: 'Рабочие дни', BANKING_DAYS: 'Банковские дни',
+};
+const PAYMENT_SCHEDULE_TYPE_OPTIONS = {
+  NEXT_PAYMENT_DAY: 'Ближайший следующий платёжный день',
+};
+const PAYMENT_WEEK_DAY_OPTIONS = {
+  MONDAY: 'Пн', TUESDAY: 'Вт', WEDNESDAY: 'Ср', THURSDAY: 'Чт',
+  FRIDAY: 'Пт', SATURDAY: 'Сб', SUNDAY: 'Вс',
 };
 const PENALTY_TYPE_OPTIONS = {
   CONTRACT_PENALTY: 'Договорная неустойка', ARTICLE_395: 'Статья 395 ГК РФ', NONE: 'Не начисляется',
@@ -156,6 +165,19 @@ function termDayTypeLabel(value) {
   return { CALENDAR_DAYS: 'календарных дней', WORKING_DAYS: 'рабочих дней', BANKING_DAYS: 'банковских дней' }[value] || 'дней';
 }
 
+function paymentWeekDaysLabel(value) {
+  if (!value) return '';
+  return value.split(',')
+    .map((day) => PAYMENT_WEEK_DAY_OPTIONS[day.trim()] || day.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+function paymentScheduleSummary(contract) {
+  if (contract.paymentScheduleType !== 'NEXT_PAYMENT_DAY' || !contract.paymentWeekDays) return '';
+  return ` → следующий платёжный день (${paymentWeekDaysLabel(contract.paymentWeekDays)})`;
+}
+
 async function loadContracts() {
   const list = document.getElementById('contracts_list');
   list.textContent = 'Загрузка...';
@@ -176,7 +198,9 @@ async function loadContracts() {
           }">${escapeAdmin(CONTRACT_STATUS_LABEL[contract.status] || contract.status)}</span>
         </div>
         <div>
-          <div>${contract.paymentDays == null ? 'Не указан' : `${contract.paymentDays} ${escapeAdmin(termDayTypeLabel(contract.paymentDayType))}`}</div>
+          <div>${contract.paymentDays == null
+            ? 'Не указан'
+            : `${contract.paymentDays} ${escapeAdmin(termDayTypeLabel(contract.paymentDayType))}${escapeAdmin(paymentScheduleSummary(contract))}`}</div>
           <small>${escapeAdmin(EXTRACTION_STATUS_LABEL[contract.extractionStatus] || contract.extractionStatus)}</small>
           ${['REVIEW_REQUIRED', 'CONFIRMED'].includes(contract.extractionStatus)
             ? `<button class="secondary_btn contract_review_btn" type="button" data-contract-id="${escapeAdmin(contract.id)}">${contract.extractionStatus === 'CONFIRMED' ? 'Просмотреть / изменить' : 'Проверить и подтвердить'}</button>`
@@ -216,6 +240,19 @@ function renderContractCandidateInput(candidate, index) {
   }
   if (candidate.field === 'PAYMENT_DAY_TYPE' || candidate.field === 'CLAIM_RESPONSE_DAY_TYPE') {
     return `<select ${common}>${renderSelectOptions(TERM_DAY_TYPE_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'PAYMENT_SCHEDULE_TYPE') {
+    return `<select ${common}>${renderSelectOptions(PAYMENT_SCHEDULE_TYPE_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'PAYMENT_WEEK_DAYS') {
+    const selected = new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean));
+    return `<div class="contract_weekday_picker" data-candidate-index="${index}">
+      ${Object.entries(PAYMENT_WEEK_DAY_OPTIONS).map(([day, label]) => `
+        <label class="contract_weekday_option">
+          <input class="contract_weekday_checkbox" type="checkbox" value="${escapeAdmin(day)}" ${selected.has(day) ? 'checked' : ''}>
+          <span>${escapeAdmin(label)}</span>
+        </label>`).join('')}
+    </div>`;
   }
   if (candidate.field === 'PENALTY_TYPE') {
     return `<select ${common}>${renderSelectOptions(PENALTY_TYPE_OPTIONS, value)}</select>`;
@@ -371,7 +408,11 @@ function collectContractReview(panel, contractId) {
   const draft = contractExtractionDrafts.get(contractId);
   return draft.candidates.map((candidate, index) => {
     const item = panel.querySelector(`[data-review-index="${index}"]`);
-    const value = item.querySelector('.contract_candidate_value')?.value.trim() || null;
+    const value = candidate.field === 'PAYMENT_WEEK_DAYS'
+      ? (Array.from(item.querySelectorAll('.contract_weekday_checkbox:checked'))
+          .map((input) => input.value)
+          .join(',') || null)
+      : (item.querySelector('.contract_candidate_value')?.value.trim() || null);
     const clauseNumberInput = item.querySelector('.contract_clause_number');
     const clauseTypeInput = item.querySelector('.contract_clause_type');
     const clauseNumber = clauseNumberInput ? (clauseNumberInput.value.trim() || null) : (candidate.clauseNumber || null);
