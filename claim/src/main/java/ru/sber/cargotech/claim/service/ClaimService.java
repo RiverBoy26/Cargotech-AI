@@ -1,11 +1,15 @@
 package ru.sber.cargotech.claim.service;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.client.PaymentClient;
@@ -69,6 +73,12 @@ public class ClaimService {
     private final ClaimVersionService versionService;
     private final ClaimOutboxWriter outboxWriter;
     private DocumentTextClient documentTextClient;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Autowired(required = false)
     void setDocumentTextClient(DocumentTextClient documentTextClient) {
@@ -482,6 +492,10 @@ public class ClaimService {
             );
         }
 
+        // Payment preflight updates the same claim through the internal API and
+        // increments its optimistic-lock version in a separate transaction.
+        // Reload it before changing the delivery status to avoid saving a stale entity.
+        entityManager.refresh(claim);
         claim.setSentAt(OffsetDateTime.now());
         claim.setUpdatedBy(user.userId());
         claimRepository.save(claim);
@@ -752,7 +766,7 @@ public class ClaimService {
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         return historyRepository.findByClaimIdOrderByChangedAtAsc(claim.getId())
             .stream()
-            .map(this::toStatusHistory)
+            .map(history -> toStatusHistory(history, claim))
             .toList();
     }
 
@@ -872,17 +886,49 @@ public class ClaimService {
         historyRepository.save(history);
     }
 
-    private StatusHistoryResponse toStatusHistory(ClaimStatusHistory history) {
+    private StatusHistoryResponse toStatusHistory(ClaimStatusHistory history, ClaimEntity claim) {
+        boolean systemActor = SYSTEM_ACTOR_ID.equals(history.getChangedBy());
         return new StatusHistoryResponse(
             history.getId(),
             history.getClaimId(),
             history.getPreviousStatus(),
             history.getNewStatus(),
-            history.getReason(),
+            systemActor ? stripSystemPrefix(history.getReason()) : history.getReason(),
             history.getChangedBy(),
-            SYSTEM_ACTOR_ID.equals(history.getChangedBy()) ? "SYSTEM" : "USER",
+            systemActor ? systemActorLabel(claim) : userFullName(history.getChangedBy()),
             history.getChangedAt()
         );
+    }
+
+    private String systemActorLabel(ClaimEntity claim) {
+        UUID lawyerId = claim.getAssignedLawyerId() != null
+            ? claim.getAssignedLawyerId()
+            : claim.getCreatedBy();
+        String lawyerName = userFullName(lawyerId);
+        String clientName = partyService.getEntity(claim.getOrganizationId(), claim.getDebtorId()).getName();
+        return lawyerName + " - " + clientName;
+    }
+
+    private String userFullName(UUID userId) {
+        if (userId == null || SYSTEM_ACTOR_ID.equals(userId)) return "Неизвестный пользователь";
+        try {
+            return jdbcTemplate.queryForObject(
+                """
+                select concat_ws(' ', last_name, first_name, middle_name)
+                from cargotech.auth_users
+                where id = ?
+                """,
+                String.class,
+                userId
+            );
+        } catch (EmptyResultDataAccessException exception) {
+            return "Пользователь " + userId;
+        }
+    }
+
+    private String stripSystemPrefix(String reason) {
+        if (reason == null) return null;
+        return reason.replaceFirst("(?i)^SYSTEM:\\s*", "");
     }
 
     private void ensureValidationAllowsSend(ClaimEntity claim) {

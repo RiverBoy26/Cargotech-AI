@@ -28,3 +28,4 @@
 storage
 
 *.crt
+ai/certs/*.crt

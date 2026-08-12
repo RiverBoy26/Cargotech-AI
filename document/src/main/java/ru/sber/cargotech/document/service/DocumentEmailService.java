@@ -52,6 +52,7 @@ public class DocumentEmailService {
     }
 
     @PreAuthorize("hasAuthority('DOCUMENT_SEND')")
+    @Transactional
     public DocumentEmailDeliveryResponse send(
         UUID documentId,
         SendDocumentEmailRequest request,

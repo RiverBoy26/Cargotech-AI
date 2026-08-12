@@ -221,7 +221,7 @@ function renderHistoryItem(item) {
   const title = item.newStatus
     ? `${item.previousStatus || '—'} → ${item.newStatus}`
     : (item.text || 'Комментарий');
-  const subtitle = item.reason || item.text || '';
+  const subtitle = item.newStatus ? (item.reason || '') : '';
   const actor = item.changedByLabel || item.authorName || item.changedBy || item.authorId || '—';
   return `
     <div class="history_item">
