@@ -230,12 +230,13 @@ public class ClaimAiRequestMapper {
             String rate = contract.getPenaltyRate() == null
                     ? "ставка в карточке не указана"
                     : "ставка " + contract.getPenaltyRate().stripTrailingZeros().toPlainString() + "%";
+            String cap = penaltyCapLabel(contract);
             context.add(new AiGenerateClaimRequest.ContractContextChunk(
                     prefix + "-penalty",
                     null,
                     "Структурированные условия ответственности",
                     "Вид ответственности за просрочку: " + penaltyTypeLabel(contract.getPenaltyType())
-                            + "; " + rate
+                            + "; " + rate + cap
                             + ". Номер пункта договора в карточке не указан; запрещено выдумывать номер пункта."
             ));
         }
@@ -310,6 +311,19 @@ public class ClaimAiRequestMapper {
             case WORKING_DAYS -> "рабочих дней";
             case BANKING_DAYS -> "банковских дней";
         };
+    }
+
+    private String penaltyCapLabel(ClaimContract contract) {
+        if (contract.getPenaltyCapPercent() == null || contract.getPenaltyCapBase() == null) return "";
+        String base = switch (contract.getPenaltyCapBase()) {
+            case PRINCIPAL_DEBT -> "основного долга";
+            case OUTSTANDING_DEBT -> "непогашенной задолженности";
+            case SHIPMENT_COST -> "стоимости соответствующей перевозки";
+            case INVOICE_AMOUNT -> "суммы соответствующего счёта";
+        };
+        return "; договорное ограничение: не более "
+            + contract.getPenaltyCapPercent().stripTrailingZeros().toPlainString()
+            + "% от " + base;
     }
 
     private String penaltyTypeLabel(ru.sber.cargotech.claim.enums.PenaltyType penaltyType) {

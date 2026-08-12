@@ -23,6 +23,7 @@ import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
+import ru.sber.cargotech.claim.enums.PenaltyCapBase;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 import ru.sber.cargotech.claim.exception.ClaimException;
@@ -231,10 +232,13 @@ public class ContractService {
         contract.setPaymentScheduleType(request.paymentScheduleType());
         contract.setPaymentWeekDays(normalizePaymentWeekDays(request.paymentWeekDays()));
         validatePaymentSchedule(contract);
-        contract.setPenaltyType(request.penaltyType() == null ? PenaltyType.NONE : request.penaltyType());
+        contract.setPenaltyType(request.penaltyType() == null ? PenaltyType.ARTICLE_395 : request.penaltyType());
         contract.setPenaltyRate(request.penaltyRate());
-        contract.setClaimResponseDays(request.claimResponseDays());
-        contract.setClaimResponseDayType(request.claimResponseDayType());
+        contract.setPenaltyCapPercent(request.penaltyCapPercent());
+        contract.setPenaltyCapBase(request.penaltyCapBase());
+        validatePenaltyCap(contract);
+        contract.setClaimResponseDays(request.claimResponseDays() == null ? 30 : request.claimResponseDays());
+        contract.setClaimResponseDayType(request.claimResponseDayType() == null ? TermDayType.CALENDAR_DAYS : request.claimResponseDayType());
         contract.setJurisdiction(request.jurisdiction());
         contract.setDocumentId(request.documentId());
         contract.setUpdatedBy(userId);
@@ -270,6 +274,8 @@ public class ContractService {
             contract.getPaymentWeekDays(),
             contract.getPenaltyType(),
             contract.getPenaltyRate(),
+            contract.getPenaltyCapPercent(),
+            contract.getPenaltyCapBase(),
             contract.getClaimResponseDays(),
             contract.getClaimResponseDayType(),
             contract.getJurisdiction(),
@@ -379,6 +385,8 @@ public class ContractService {
         contract.setPaymentWeekDays(null);
         contract.setPenaltyType(null);
         contract.setPenaltyRate(null);
+        contract.setPenaltyCapPercent(null);
+        contract.setPenaltyCapBase(null);
         contract.setClaimResponseDays(null);
         contract.setClaimResponseDayType(null);
         contract.setJurisdiction(null);
@@ -402,6 +410,8 @@ public class ContractService {
                     case PAYMENT_WEEK_DAYS -> contract.setPaymentWeekDays(normalizePaymentWeekDays(value));
                     case PENALTY_TYPE -> contract.setPenaltyType(PenaltyType.valueOf(value));
                     case PENALTY_RATE -> contract.setPenaltyRate(nonNegativeDecimal(value));
+                    case PENALTY_CAP_PERCENT -> contract.setPenaltyCapPercent(nonNegativeDecimal(value));
+                    case PENALTY_CAP_BASE -> contract.setPenaltyCapBase(PenaltyCapBase.valueOf(value));
                     case CLAIM_RESPONSE_DAYS -> contract.setClaimResponseDays(nonNegativeInteger(value));
                     case CLAIM_RESPONSE_DAY_TYPE -> contract.setClaimResponseDayType(TermDayType.valueOf(value));
                     case JURISDICTION -> contract.setJurisdiction(value);
@@ -412,6 +422,10 @@ public class ContractService {
             }
         }
         validatePaymentSchedule(contract);
+        validatePenaltyCap(contract);
+        if (contract.getPenaltyType() == null) contract.setPenaltyType(PenaltyType.ARTICLE_395);
+        if (contract.getClaimResponseDays() == null) contract.setClaimResponseDays(30);
+        if (contract.getClaimResponseDayType() == null) contract.setClaimResponseDayType(TermDayType.CALENDAR_DAYS);
         if (contract.getNumber() == null) {
             throw ClaimException.validation("Укажите номер договора перед подтверждением");
         }
@@ -428,6 +442,19 @@ public class ContractService {
         clause.setCreatedBy(userId);
         clause.setUpdatedBy(userId);
         contractClauseRepository.save(clause);
+    }
+
+    private void validatePenaltyCap(ClaimContract contract) {
+        if (contract.getPenaltyCapPercent() == null && contract.getPenaltyCapBase() == null) return;
+        if (contract.getPenaltyType() != PenaltyType.CONTRACT_PENALTY) {
+            throw ClaimException.validation("Ограничение размера применяется только к договорной неустойке");
+        }
+        if (contract.getPenaltyCapPercent() == null || contract.getPenaltyCapBase() == null) {
+            throw ClaimException.validation("Для ограничения неустойки укажите и процент, и базу расчёта");
+        }
+        if (contract.getPenaltyCapPercent().signum() < 0) {
+            throw ClaimException.validation("Лимит неустойки не может быть отрицательным");
+        }
     }
 
     private void validatePaymentSchedule(ClaimContract contract) {

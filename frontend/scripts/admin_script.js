@@ -18,14 +18,18 @@ const EXTRACTION_FIELD_LABEL = {
   PAYMENT_DAYS: 'Срок оплаты', PAYMENT_DAY_TYPE: 'Тип дней срока оплаты', PAYMENT_START_EVENT: 'Начало срока оплаты',
   PAYMENT_SCHEDULE_TYPE: 'Перенос срока оплаты', PAYMENT_WEEK_DAYS: 'Платёжные дни',
   PENALTY_TYPE: 'Вид неустойки', PENALTY_RATE: 'Ставка',
+  PENALTY_CAP_PERCENT: 'Максимальный размер неустойки, %', PENALTY_CAP_BASE: 'База ограничения',
   CLAIM_RESPONSE_DAYS: 'Срок ответа', CLAIM_RESPONSE_DAY_TYPE: 'Тип дней срока ответа', JURISDICTION: 'Подсудность', EXACT_CLAUSE: 'Точный пункт договора',
 };
 const CONTRACT_REVIEW_SCALAR_FIELDS = [
   'CONTRACT_NUMBER', 'SIGNED_AT', 'PAYMENT_DAYS', 'PAYMENT_DAY_TYPE', 'PAYMENT_START_EVENT',
   'PAYMENT_SCHEDULE_TYPE', 'PAYMENT_WEEK_DAYS',
-  'PENALTY_TYPE', 'PENALTY_RATE', 'CLAIM_RESPONSE_DAYS', 'CLAIM_RESPONSE_DAY_TYPE', 'JURISDICTION',
+  'PENALTY_TYPE', 'PENALTY_RATE', 'PENALTY_CAP_PERCENT', 'PENALTY_CAP_BASE',
+  'CLAIM_RESPONSE_DAYS', 'CLAIM_RESPONSE_DAY_TYPE', 'JURISDICTION',
 ];
 const PAYMENT_SCHEDULE_FIELDS = new Set(['PAYMENT_SCHEDULE_TYPE', 'PAYMENT_WEEK_DAYS']);
+const PENALTY_CAP_FIELDS = new Set(['PENALTY_CAP_PERCENT', 'PENALTY_CAP_BASE']);
+const SPECIAL_CONTRACT_FIELDS = new Set([...PAYMENT_SCHEDULE_FIELDS, ...PENALTY_CAP_FIELDS]);
 const PAYMENT_START_EVENT_OPTIONS = {
   ACT_SIGNED: 'Дата подписания акта', UNLOADING_DATE: 'Дата выгрузки',
   TTN_SIGNED: 'Дата подписания ТТН', INVOICE_DATE: 'Дата счёта',
@@ -44,6 +48,12 @@ const PAYMENT_WEEK_DAY_OPTIONS = {
 };
 const PENALTY_TYPE_OPTIONS = {
   CONTRACT_PENALTY: 'Договорная неустойка', ARTICLE_395: 'Статья 395 ГК РФ', NONE: 'Не начисляется',
+};
+const PENALTY_CAP_BASE_OPTIONS = {
+  PRINCIPAL_DEBT: 'Основной долг',
+  OUTSTANDING_DEBT: 'Непогашенная задолженность',
+  SHIPMENT_COST: 'Стоимость соответствующей перевозки',
+  INVOICE_AMOUNT: 'Сумма соответствующего счёта',
 };
 const CLAUSE_TYPE_OPTIONS = {
   PAYMENT_TERMS: 'Условия оплаты', PENALTY: 'Неустойка',
@@ -258,29 +268,48 @@ function renderContractCandidateInput(candidate, index) {
   if (candidate.field === 'PENALTY_TYPE') {
     return `<select ${common}>${renderSelectOptions(PENALTY_TYPE_OPTIONS, value)}</select>`;
   }
+  if (candidate.field === 'PENALTY_CAP_BASE') {
+    return `<select ${common}>${renderSelectOptions(PENALTY_CAP_BASE_OPTIONS, value)}</select>`;
+  }
   if (candidate.field === 'JURISDICTION') {
     return `<textarea ${common} rows="2" maxlength="1000" placeholder="Не найдено в договоре">${escapeAdmin(value)}</textarea>`;
   }
   const types = {
-    SIGNED_AT: 'date', PAYMENT_DAYS: 'number', PENALTY_RATE: 'number', CLAIM_RESPONSE_DAYS: 'number',
+    SIGNED_AT: 'date', PAYMENT_DAYS: 'number', PENALTY_RATE: 'number', PENALTY_CAP_PERCENT: 'number', CLAIM_RESPONSE_DAYS: 'number',
   };
   const type = types[candidate.field] || 'text';
   const numberAttributes = type === 'number'
-    ? ` min="0" step="${candidate.field === 'PENALTY_RATE' ? '0.0001' : '1'}"`
+    ? ` min="0" step="${['PENALTY_RATE', 'PENALTY_CAP_PERCENT'].includes(candidate.field) ? '0.0001' : '1'}"`
     : '';
   const required = candidate.field === 'CONTRACT_NUMBER' ? ' required maxlength="128"' : '';
   return `<input ${common} type="${type}" value="${escapeAdmin(value)}"${numberAttributes}${required} placeholder="Не найдено в договоре">`;
 }
 
+function isLegalFallbackCandidate(candidate) {
+  if (candidate.confidence != null || candidate.manuallyEdited) return false;
+  if (candidate.field === 'PENALTY_TYPE' && candidate.value === 'ARTICLE_395') return true;
+  if (candidate.field === 'CLAIM_RESPONSE_DAYS' && String(candidate.value) === '30') return true;
+  if (candidate.field === 'CLAIM_RESPONSE_DAY_TYPE' && candidate.value === 'CALENDAR_DAYS') return true;
+  return false;
+}
+
+function legalFallbackLabel(candidate) {
+  if (candidate.field === 'PENALTY_TYPE') return 'Договорная неустойка не установлена — применяется ст. 395 ГК РФ';
+  return 'Договорный срок не установлен — применяется 30 календарных дней по ч. 5 ст. 4 АПК РФ';
+}
+
 function extractionReliability(candidate) {
   if (candidate.manuallyEdited) return '<span class="contract_manual_badge">Изменено вручную</span>';
-  if (candidate.confidence == null && PAYMENT_SCHEDULE_FIELDS.has(candidate.field)) {
-    return '<span class="contract_optional_badge">Не найдено в договоре — необязательное условие</span>';
+  if (isLegalFallbackCandidate(candidate)) {
+    return `<span class="contract_fallback_badge">${escapeAdmin(legalFallbackLabel(candidate))}</span>`;
+  }
+  if (candidate.confidence == null && SPECIAL_CONTRACT_FIELDS.has(candidate.field)) {
+    return '<span class="contract_optional_badge">Особое условие не установлено</span>';
   }
   if (candidate.confidence == null) return '<span class="contract_missing_badge">Не найдено — требуется ручная проверка</span>';
   const percent = Math.round(Number(candidate.confidence) * 100);
   const level = percent >= 90 ? 'высокая' : percent >= 75 ? 'средняя' : 'низкая';
-  return `Надёжность извлечения: ${level} (${percent}%)`;
+  return `Надёжность автоматического извлечения: ${level}`;
 }
 
 function renderContractScalar(candidate, index) {
@@ -291,7 +320,9 @@ function renderContractScalar(candidate, index) {
       <small class="contract_candidate_reliability">${extractionReliability(candidate)}</small>
       ${candidate.source
         ? `<blockquote>${escapeAdmin(candidate.source)}${candidate.sourcePage ? ` · стр. ${candidate.sourcePage}` : ''}${candidate.clauseNumber ? ` · п. ${escapeAdmin(candidate.clauseNumber)}` : ''}</blockquote>`
-        : '<p class="contract_source_missing">Источник не найден. Система не создаёт ссылку на пункт автоматически.</p>'}
+        : isLegalFallbackCandidate(candidate)
+          ? '<p class="contract_source_fallback">Это юридический fallback, а не извлечённый пункт договора. Ссылка на несуществующий пункт не создаётся.</p>'
+          : '<p class="contract_source_missing">Источник не найден. Система не создаёт ссылку на пункт автоматически.</p>'}
     </article>`;
 }
 
@@ -314,19 +345,26 @@ function renderContractClause(candidate, index) {
     </article>`;
 }
 
-function renderPaymentScheduleSection(entries) {
+function renderSpecialContractTerms(entries) {
   if (!entries.length) return '';
+  const paymentEntries = entries.filter(({ candidate }) => PAYMENT_SCHEDULE_FIELDS.has(candidate.field));
+  const penaltyEntries = entries.filter(({ candidate }) => PENALTY_CAP_FIELDS.has(candidate.field));
+  const hasPayment = paymentEntries.some(({ candidate }) => Boolean(candidate.value));
+  const hasPenaltyCap = penaltyEntries.some(({ candidate }) => Boolean(candidate.value));
   return `
-    <section class="contract_payment_schedule_section">
+    <section class="contract_payment_schedule_section contract_special_terms_section">
       <div class="contract_payment_schedule_header">
         <div>
-          <h4>Особые условия оплаты</h4>
-          <p>Этот блок нужен только если договор задаёт отдельные платёжные дни и переносит срок на ближайший такой день.</p>
+          <h4>Особые условия договора</h4>
+          <p>Редкие условия показываются только когда они действительно найдены или добавлены вручную. Они влияют на расчёт, но не перегружают основную карточку.</p>
         </div>
       </div>
-      <div class="contract_payment_schedule_grid">
-        ${entries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}
-      </div>
+      ${hasPayment || paymentEntries.some(({ candidate }) => candidate.manuallyEdited)
+        ? `<div class="contract_special_term_group"><strong>Платёжный календарь</strong><div class="contract_payment_schedule_grid">${paymentEntries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}</div></div>`
+        : ''}
+      ${hasPenaltyCap || penaltyEntries.some(({ candidate }) => candidate.manuallyEdited)
+        ? `<div class="contract_special_term_group"><strong>Ограничение договорной неустойки</strong><div class="contract_payment_schedule_grid">${penaltyEntries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}</div></div>`
+        : ''}
     </section>`;
 }
 
@@ -355,24 +393,24 @@ function renderContractReview(panel, contractId, extraction) {
     const rightOrder = right.field === 'EXACT_CLAUSE' ? 100 : CONTRACT_REVIEW_SCALAR_FIELDS.indexOf(right.field);
     return leftOrder - rightOrder;
   });
-  const draft = { ...extraction, candidates, showPaymentSchedule: Boolean(extraction.showPaymentSchedule) };
+  const draft = { ...extraction, candidates, showSpecialTerms: Boolean(extraction.showSpecialTerms) };
   contractExtractionDrafts.set(contractId, draft);
   const candidateEntries = candidates.map((candidate, index) => ({ candidate, index }));
   const scalarEntries = candidateEntries.filter(({ candidate }) =>
-    candidate.field !== 'EXACT_CLAUSE' && !PAYMENT_SCHEDULE_FIELDS.has(candidate.field)
+    candidate.field !== 'EXACT_CLAUSE' && !SPECIAL_CONTRACT_FIELDS.has(candidate.field)
   );
-  const scheduleEntries = candidateEntries.filter(({ candidate }) => PAYMENT_SCHEDULE_FIELDS.has(candidate.field));
-  const hasPaymentSchedule = scheduleEntries.some(({ candidate }) => Boolean(candidate.value));
+  const specialEntries = candidateEntries.filter(({ candidate }) => SPECIAL_CONTRACT_FIELDS.has(candidate.field));
+  const hasSpecialTerms = specialEntries.some(({ candidate }) => Boolean(candidate.value));
   const clauseEntries = candidateEntries.filter(({ candidate }) => candidate.field === 'EXACT_CLAUSE');
   panel.innerHTML = `
     <div class="contract_extraction_title">Проверка условий договора</div>
-    <p class="contract_review_hint">Проверьте найденные значения. Пустые поля не подменяются бизнес-default’ами и могут быть заполнены вручную.</p>
+    <p class="contract_review_hint">Проверьте найденные значения. Юридические fallback-и отмечены отдельно и не выдаются за условия договора.</p>
     <div class="contract_review_grid">
       ${scalarEntries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}
     </div>
-    ${(hasPaymentSchedule || draft.showPaymentSchedule)
-      ? renderPaymentScheduleSection(scheduleEntries)
-      : '<button class="secondary_btn contract_payment_schedule_add" type="button">+ Добавить особые условия оплаты</button>'}
+    ${(hasSpecialTerms || draft.showSpecialTerms)
+      ? renderSpecialContractTerms(specialEntries)
+      : '<button class="secondary_btn contract_special_terms_add" type="button">+ Добавить особые условия договора</button>'}
     <section class="contract_clause_section">
       <div class="contract_clause_section_header">
         <div>
@@ -395,8 +433,12 @@ function renderContractReview(panel, contractId, extraction) {
     </div>`;
 
   panel.querySelector('.contract_review_close').addEventListener('click', () => { panel.hidden = true; });
-  panel.querySelector('.contract_payment_schedule_add')?.addEventListener('click', () => {
-    draft.showPaymentSchedule = true;
+  panel.querySelector('.contract_special_terms_add')?.addEventListener('click', () => {
+    draft.showSpecialTerms = true;
+    for (const field of SPECIAL_CONTRACT_FIELDS) {
+      const candidate = draft.candidates.find((item) => item.field === field);
+      if (candidate) candidate.manuallyEdited = true;
+    }
     renderContractReview(panel, contractId, draft);
   });
   panel.querySelector('.contract_clause_add').addEventListener('click', () => {

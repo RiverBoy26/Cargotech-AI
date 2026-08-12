@@ -20,6 +20,7 @@ import ru.sber.cargotech.claim.security.CurrentClaimUser;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -103,6 +104,13 @@ public class ClaimCalculationService {
                 ? article395RateProvider.periods(overdueStartDate, calculationDate)
                 : List.of()
         );
+        accruedPenaltyAmount = PenaltyCapCalculator.apply(
+            accruedPenaltyAmount,
+            contract.getPenaltyCapPercent(),
+            contract.getPenaltyCapBase(),
+            principalDebt,
+            paidAmount
+        );
         ClaimPaymentAllocationCalculator.AllocationResult paymentAllocation =
                 ClaimPaymentAllocationCalculator.allocate(
                         principalDebt,
@@ -133,24 +141,28 @@ public class ClaimCalculationService {
             penaltyType,
             penaltyRate,
             overdueDays,
-            paymentAllocations.size()
+            paymentAllocations.size(),
+            contract.getPenaltyCapPercent(),
+            contract.getPenaltyCapBase()
         ));
-        calculation.setInputSnapshot(Map.of(
-            "shipmentId", shipment.getId().toString(),
-            "contractId", contract.getId().toString(),
-            "serviceAmount", principalDebt,
-            "paidAmount", paidAmount,
-            "accruedPenaltyAmount", accruedPenaltyAmount,
-            "paidPenaltyAmount", paidPenaltyAmount,
-            "paymentAllocations", paymentAllocations.stream()
-                .map(allocation -> Map.of(
-                    "paymentDate", allocation.paymentDate().toString(),
-                    "amount", allocation.amount()
-                ))
-                .toList(),
-            "paymentStartEvent", contract.getPaymentStartEvent() == null ? "" : contract.getPaymentStartEvent().name(),
-            "paymentDays", contract.getPaymentDays() == null ? 0 : contract.getPaymentDays()
-        ));
+        Map<String, Object> inputSnapshot = new LinkedHashMap<>();
+        inputSnapshot.put("shipmentId", shipment.getId().toString());
+        inputSnapshot.put("contractId", contract.getId().toString());
+        inputSnapshot.put("serviceAmount", principalDebt);
+        inputSnapshot.put("paidAmount", paidAmount);
+        inputSnapshot.put("accruedPenaltyAmount", accruedPenaltyAmount);
+        inputSnapshot.put("paidPenaltyAmount", paidPenaltyAmount);
+        inputSnapshot.put("paymentAllocations", paymentAllocations.stream()
+            .map(allocation -> Map.of(
+                "paymentDate", allocation.paymentDate().toString(),
+                "amount", allocation.amount()
+            ))
+            .toList());
+        inputSnapshot.put("paymentStartEvent", contract.getPaymentStartEvent() == null ? "" : contract.getPaymentStartEvent().name());
+        inputSnapshot.put("paymentDays", contract.getPaymentDays() == null ? 0 : contract.getPaymentDays());
+        inputSnapshot.put("penaltyCapPercent", contract.getPenaltyCapPercent() == null ? "" : contract.getPenaltyCapPercent());
+        inputSnapshot.put("penaltyCapBase", contract.getPenaltyCapBase() == null ? "" : contract.getPenaltyCapBase().name());
+        calculation.setInputSnapshot(inputSnapshot);
         calculation.setCreatedBy(user.userId());
         ClaimCalculation saved = calculationRepository.save(calculation);
         log.debug("Расчёт сохранён: claimId={}, calculationId={}, version={}", claim.getId(), saved.getId(), saved.getCalculationVersion());
@@ -189,7 +201,9 @@ public class ClaimCalculationService {
         PenaltyType type,
         BigDecimal rate,
         int days,
-        int paymentCount
+        int paymentCount,
+        BigDecimal penaltyCapPercent,
+        ru.sber.cargotech.claim.enums.PenaltyCapBase penaltyCapBase
     ) {
         if (type == PenaltyType.NONE) {
             return "Неустойка не начисляется";
@@ -200,7 +214,8 @@ public class ClaimCalculationService {
         if (type == PenaltyType.ARTICLE_395) {
             return base + " × " + rate + "% × " + days + " дней / 365";
         }
-        return base + " × " + rate + "% × " + days + " дней";
+        return base + " × " + rate + "% × " + days + " дней"
+            + PenaltyCapCalculator.describe(penaltyCapPercent, penaltyCapBase);
     }
 
     private static BigDecimal money(BigDecimal value) {

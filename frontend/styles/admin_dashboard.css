@@ -699,3 +699,33 @@ header {
   background: #ffe9d8;
   border-color: #f36a21;
 }
+
+.contract_fallback_badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #73510f;
+  background: #fff4cf;
+}
+
+.contract_source_fallback {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #73510f;
+}
+
+.contract_special_terms_add {
+  margin-top: 14px;
+}
+
+.contract_special_term_group + .contract_special_term_group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eadfd6;
+}
+
+.contract_special_term_group > strong {
+  display: block;
+  margin-bottom: 10px;
+}

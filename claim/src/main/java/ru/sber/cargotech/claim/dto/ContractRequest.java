@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Size;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
+import ru.sber.cargotech.claim.enums.PenaltyCapBase;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 
@@ -30,6 +31,8 @@ public record ContractRequest(
     @Size(max = 128) String paymentWeekDays,
     PenaltyType penaltyType,
     @PositiveOrZero BigDecimal penaltyRate,
+    @PositiveOrZero BigDecimal penaltyCapPercent,
+    PenaltyCapBase penaltyCapBase,
     @Min(0) Integer claimResponseDays,
     TermDayType claimResponseDayType,
     String jurisdiction,

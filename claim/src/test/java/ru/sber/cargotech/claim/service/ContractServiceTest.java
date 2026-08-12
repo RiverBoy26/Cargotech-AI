@@ -200,6 +200,8 @@ class ContractServiceTest {
                     case PAYMENT_WEEK_DAYS -> "TUESDAY,THURSDAY";
                     case PENALTY_TYPE -> "CONTRACT_PENALTY";
                     case PENALTY_RATE -> "0.1";
+                    case PENALTY_CAP_PERCENT -> "20";
+                    case PENALTY_CAP_BASE -> "SHIPMENT_COST";
                     case CLAIM_RESPONSE_DAYS -> "10";
                     case CLAIM_RESPONSE_DAY_TYPE -> "CALENDAR_DAYS";
                     case JURISDICTION -> "Арбитражный суд Новосибирской области";

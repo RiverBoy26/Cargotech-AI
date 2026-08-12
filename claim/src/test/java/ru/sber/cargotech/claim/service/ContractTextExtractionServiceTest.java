@@ -42,19 +42,53 @@ class ContractTextExtractionServiceTest {
     }
 
     @Test
-    void doesNotInventMissingTerms() {
+    void doesNotInventContractTermsAndKeepsLegalFallbacksSourceFree() {
         List<ContractExtractionCandidateRequest> values = service.extract(
             "1.1. Перевозчик обязуется доставить груз по заявке заказчика."
         ).candidates();
 
         assertThat(values)
-            .filteredOn(value -> value.field() != ContractExtractionField.EXACT_CLAUSE)
+            .filteredOn(value -> value.field() != ContractExtractionField.EXACT_CLAUSE
+                && value.field() != ContractExtractionField.PENALTY_TYPE
+                && value.field() != ContractExtractionField.CLAIM_RESPONSE_DAYS
+                && value.field() != ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE)
             .allSatisfy(value -> {
                 assertThat(value.value()).isNull();
                 assertThat(value.source()).isNull();
                 assertThat(value.confidence()).isNull();
                 assertThat(value.clauseNumber()).isNull();
             });
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_TYPE)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("ARTICLE_395");
+                assertThat(value.source()).isNull();
+                assertThat(value.confidence()).isNull();
+                assertThat(value.clauseNumber()).isNull();
+            });
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.CLAIM_RESPONSE_DAYS)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("30");
+                assertThat(value.source()).isNull();
+                assertThat(value.confidence()).isNull();
+                assertThat(value.clauseNumber()).isNull();
+            });
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("CALENDAR_DAYS");
+                assertThat(value.source()).isNull();
+                assertThat(value.confidence()).isNull();
+                assertThat(value.clauseNumber()).isNull();
+            });
+
         assertThat(values).noneMatch(value -> value.field() == ContractExtractionField.EXACT_CLAUSE);
     }
 
@@ -125,7 +159,7 @@ class ContractTextExtractionServiceTest {
     }
 
     @Test
-    void genericPenaltyAndUnrelatedPercentageDoNotBecomePaymentPenalty() {
+    void genericPenaltyAndUnrelatedPercentageDoNotBecomeContractPaymentPenalty() {
         String text = """
             9.2. Штрафы и неустойки не освобождают Стороны от исполнения основного обязательства. Уплата санкций производится на основании письменного требования.
             9.5. За неподачу транспортного средства виновная Сторона уплачивает штраф в размере 15 % стоимости перевозки.
@@ -134,9 +168,18 @@ class ContractTextExtractionServiceTest {
         List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
 
         assertThat(values)
-            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_TYPE
-                || value.field() == ContractExtractionField.PENALTY_RATE)
-            .allSatisfy(value -> assertThat(value.value()).isNull());
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_TYPE)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("ARTICLE_395");
+                assertThat(value.source()).isNull();
+                assertThat(value.confidence()).isNull();
+                assertThat(value.clauseNumber()).isNull();
+            });
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_RATE)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isNull());
         assertThat(values)
             .filteredOn(value -> value.field() == ContractExtractionField.EXACT_CLAUSE)
             .noneMatch(value -> value.clauseType() == ru.sber.cargotech.claim.enums.ClauseType.PENALTY);
@@ -306,6 +349,137 @@ class ContractTextExtractionServiceTest {
             .satisfies(value -> {
                 assertThat(value.value()).isEqualTo("По месту нахождения ответчика");
                 assertThat(value.clauseNumber()).isEqualTo("10.3");
+            });
+    }
+
+    @Test
+    void explicitMissingPenaltyUsesArticle395FallbackAndKeepsContractSource() {
+        String text = "8.4. Стороны отдельно не устанавливают договорную неустойку за задержку оплаты; ответственность определяется применимым законодательством Российской Федерации.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_TYPE)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("ARTICLE_395");
+                assertThat(value.source()).contains("не устанавливают договорную неустойку");
+                assertThat(value.clauseNumber()).isEqualTo("8.4");
+                assertThat(value.confidence()).isNull();
+            });
+    }
+
+    @Test
+    void missingPenaltyAndClaimResponseUseLegalFallbacksWithoutInventingContractClause() {
+        List<ContractExtractionCandidateRequest> values = service.extract(
+            "1.1. Экспедитор оказывает услуги по заявкам Клиента."
+        ).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_TYPE)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("ARTICLE_395");
+                assertThat(value.source()).isNull();
+                assertThat(value.clauseNumber()).isNull();
+                assertThat(value.confidence()).isNull();
+            });
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.CLAIM_RESPONSE_DAYS)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("30");
+                assertThat(value.source()).isNull();
+                assertThat(value.clauseNumber()).isNull();
+                assertThat(value.confidence()).isNull();
+            });
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isEqualTo("CALENDAR_DAYS"));
+    }
+
+    @Test
+    void explicitMissingClaimResponseUsesThirtyDayFallbackAndKeepsSource() {
+        String text = "10.2. Специальный срок ответа на претензию настоящим Договором не установлен.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.CLAIM_RESPONSE_DAYS)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("30");
+                assertThat(value.source()).contains("не установлен");
+                assertThat(value.clauseNumber()).isEqualTo("10.2");
+                assertThat(value.confidence()).isNull();
+            });
+    }
+
+    @Test
+    void extractsPenaltyCapPercentAndShipmentCostBase() {
+        String text = "9.4. При нарушении Заказчиком срока оплаты Перевозчик вправе потребовать уплаты неустойки: 0,2 % от суммы непогашенной задолженности за каждый день просрочки, но совокупно не более 20 % стоимости соответствующей перевозки.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PENALTY_CAP_PERCENT);
+            assertThat(value.value()).isEqualTo("20");
+            assertThat(value.clauseNumber()).isEqualTo("9.4");
+        });
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PENALTY_CAP_BASE);
+            assertThat(value.value()).isEqualTo("SHIPMENT_COST");
+        });
+    }
+
+    @Test
+    void extractsPenaltyCapEqualToPrincipalDebtAsOneHundredPercent() {
+        String text = "9.4. При просрочке оплаты начисляется неустойка 0,1 % от суммы просроченного платежа за каждый день, но не более размера основного долга.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PENALTY_CAP_PERCENT);
+            assertThat(value.value()).isEqualTo("100");
+        });
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PENALTY_CAP_BASE);
+            assertThat(value.value()).isEqualTo("PRINCIPAL_DEBT");
+        });
+    }
+
+    @Test
+    void combinesPaymentScheduleTypeAndWeekdayFromSeparateClauses() {
+        String text = """
+            8.2. Клиент производит оплату в первый установленный Клиентом платежный день после истечения 60 календарных дней с даты получения полного комплекта документов.
+            8.4. Платежным днем является пятница; если она является нерабочим праздничным днем, платеж производится в следующий рабочий день.
+            """;
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PAYMENT_SCHEDULE_TYPE);
+            assertThat(value.value()).isEqualTo("NEXT_PAYMENT_DAY");
+        });
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.PAYMENT_WEEK_DAYS);
+            assertThat(value.value()).isEqualTo("FRIDAY");
+        });
+    }
+
+    @Test
+    void recognizesFormattedTransportWaybillAsPaymentAnchor() {
+        String text = "8.2. Оплата производится в течение 21 календарного дня с даты оформления транспортной накладной.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_START_EVENT)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("TTN_SIGNED");
+                assertThat(value.clauseNumber()).isEqualTo("8.2");
             });
     }
 

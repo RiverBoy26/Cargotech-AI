@@ -14,6 +14,7 @@ import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
+import ru.sber.cargotech.claim.enums.PenaltyCapBase;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 
@@ -83,6 +84,13 @@ public class ClaimContract {
 
     @Column(name = "penalty_rate", precision = 12, scale = 6)
     private BigDecimal penaltyRate;
+
+    @Column(name = "penalty_cap_percent", precision = 12, scale = 6)
+    private BigDecimal penaltyCapPercent;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "penalty_cap_base", length = 32)
+    private PenaltyCapBase penaltyCapBase;
 
     @Column(name = "claim_response_days")
     private Integer claimResponseDays;

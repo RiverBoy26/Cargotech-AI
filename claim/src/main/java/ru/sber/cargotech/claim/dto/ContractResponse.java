@@ -4,6 +4,7 @@ import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
+import ru.sber.cargotech.claim.enums.PenaltyCapBase;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 
@@ -31,6 +32,8 @@ public record ContractResponse(
     String paymentWeekDays,
     PenaltyType penaltyType,
     BigDecimal penaltyRate,
+    BigDecimal penaltyCapPercent,
+    PenaltyCapBase penaltyCapBase,
     Integer claimResponseDays,
     TermDayType claimResponseDayType,
     String jurisdiction,
