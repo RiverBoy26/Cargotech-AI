@@ -604,3 +604,27 @@ header {
     grid-template-columns: 1fr;
   }
 }
+
+.contract_clause_section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e6e9ed;
+}
+
+.contract_clause_section_header h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.contract_clause_section_header p,
+.contract_clause_empty {
+  margin: 0 0 12px;
+  color: #59636f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.contract_clause_list {
+  display: grid;
+  gap: 12px;
+}

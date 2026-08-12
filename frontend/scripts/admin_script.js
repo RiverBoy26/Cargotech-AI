@@ -288,15 +288,29 @@ function renderContractReview(panel, contractId, extraction) {
   });
   const draft = { ...extraction, candidates };
   contractExtractionDrafts.set(contractId, draft);
+  const candidateEntries = candidates.map((candidate, index) => ({ candidate, index }));
+  const scalarEntries = candidateEntries.filter(({ candidate }) => candidate.field !== 'EXACT_CLAUSE');
+  const clauseEntries = candidateEntries.filter(({ candidate }) => candidate.field === 'EXACT_CLAUSE');
   panel.innerHTML = `
     <div class="contract_extraction_title">Проверка условий договора</div>
     <p class="contract_review_hint">Проверьте найденные значения. Пустые поля не подменяются бизнес-default’ами и могут быть заполнены вручную.</p>
     <div class="contract_review_grid">
-      ${candidates.map((candidate, index) => candidate.field === 'EXACT_CLAUSE'
-        ? renderContractClause(candidate, index)
-        : renderContractScalar(candidate, index)).join('')}
+      ${scalarEntries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}
     </div>
-    <button class="secondary_btn contract_clause_add" type="button">+ Добавить пункт вручную</button>
+    <section class="contract_clause_section">
+      <div class="contract_clause_section_header">
+        <div>
+          <h4>Найденные пункты-первоисточники</h4>
+          <p>Это не дополнительные настройки договора. Здесь сохраняются точные фрагменты, на которые система сможет ссылаться в претензии и использовать как договорный контекст. Удаляйте только явно нерелевантные пункты.</p>
+        </div>
+      </div>
+      <div class="contract_clause_list">
+        ${clauseEntries.length
+          ? clauseEntries.map(({ candidate, index }) => renderContractClause(candidate, index)).join('')
+          : '<p class="contract_clause_empty">Релевантные пункты автоматически не найдены. Их можно добавить вручную.</p>'}
+      </div>
+      <button class="secondary_btn contract_clause_add" type="button">+ Добавить пункт вручную</button>
+    </section>
     <p class="form_error contract_review_error" role="alert"></p>
     <div class="add_user_form_actions">
       <button class="secondary_btn contract_review_close" type="button">Закрыть</button>

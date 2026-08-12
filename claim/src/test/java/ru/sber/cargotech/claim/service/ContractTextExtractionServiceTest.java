@@ -86,4 +86,125 @@ class ContractTextExtractionServiceTest {
                 || value.field() == ContractExtractionField.SIGNED_AT)
             .allSatisfy(value -> assertThat(value.value()).isNull());
     }
+
+
+    @Test
+    void extractsParenthesizedPaymentAndClaimDaysWithoutPickingUnrelatedThirtyDayClause() {
+        String text = """
+            8.2. Клиент производит оплату оказанных услуг в течение 45 (сорока пяти) календарных дней с даты получения полного комплекта документов.
+            10.2. Сторона, получившая претензию, рассматривает ее и направляет мотивированный письменный ответ в течение 30 (тридцать) календарных дней.
+            15.3. Любая Сторона вправе отказаться от дальнейшего исполнения рамочного Договора, уведомив другую Сторону за 30 календарных дней, при условии завершения взаиморасчетов.
+            """;
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_DAYS)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("45");
+                assertThat(value.clauseNumber()).isEqualTo("8.2");
+            });
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.CLAIM_RESPONSE_DAYS)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("30");
+                assertThat(value.clauseNumber()).isEqualTo("10.2");
+            });
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_START_EVENT)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isNull();
+                assertThat(value.source()).contains("полного комплекта документов");
+            });
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.EXACT_CLAUSE)
+            .noneMatch(value -> value.value().startsWith("15.3."));
+    }
+
+    @Test
+    void genericPenaltyAndUnrelatedPercentageDoNotBecomePaymentPenalty() {
+        String text = """
+            9.2. Штрафы и неустойки не освобождают Стороны от исполнения основного обязательства. Уплата санкций производится на основании письменного требования.
+            9.5. За неподачу транспортного средства виновная Сторона уплачивает штраф в размере 15 % стоимости перевозки.
+            """;
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_TYPE
+                || value.field() == ContractExtractionField.PENALTY_RATE)
+            .allSatisfy(value -> assertThat(value.value()).isNull());
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.EXACT_CLAUSE)
+            .noneMatch(value -> value.clauseType() == ru.sber.cargotech.claim.enums.ClauseType.PENALTY);
+    }
+
+    @Test
+    void extractsOnlyPenaltyExplicitlyConnectedWithPaymentDelay() {
+        String text = """
+            9.2. Штрафы и неустойки не освобождают Стороны от исполнения основного обязательства.
+            9.4. При нарушении Клиентом срока оплаты Экспедитор вправе потребовать уплаты неустойки 0,05 % от суммы просроченного платежа за каждый календарный день просрочки.
+            """;
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_TYPE)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("CONTRACT_PENALTY");
+                assertThat(value.clauseNumber()).isEqualTo("9.4");
+            });
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_RATE)
+            .singleElement()
+            .satisfies(value -> {
+                assertThat(value.value()).isEqualTo("0.05");
+                assertThat(value.clauseNumber()).isEqualTo("9.4");
+            });
+    }
+
+    @Test
+    void claimAttachmentsAreNotMisclassifiedAsClaimProcedure() {
+        String text = """
+            10.2. Сторона, получившая претензию, рассматривает ее и направляет мотивированный письменный ответ в течение 30 (тридцать) календарных дней.
+            12.5. К претензии по повреждению или недостаче груза прилагаются транспортная накладная, коммерческий акт или акт расхождений, расчет ущерба и документы о стоимости груза.
+            """;
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.EXACT_CLAUSE)
+            .anyMatch(value -> value.value().startsWith("10.2."))
+            .noneMatch(value -> value.value().startsWith("12.5."));
+    }
+
+    @Test
+    void extractsCleanJurisdictionInsteadOfWholeClause() {
+        List<ContractExtractionCandidateRequest> values = service.extract(
+            "10.3. При недостижении соглашения спор подлежит рассмотрению в Арбитражном суде Алтайского края."
+        ).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.JURISDICTION)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isEqualTo("Арбитражный суд Алтайского края"));
+    }
+
+    @Test
+    void doesNotInventDocxPageNumberWhenExtractorCannotMapParagraphsToPages() {
+        List<ContractExtractionCandidateRequest> values = service.extract(
+            "8.2. Клиент производит оплату услуг в течение 45 календарных дней с даты подписания акта.",
+            "APACHE_POI"
+        ).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_DAYS)
+            .singleElement()
+            .satisfies(value -> assertThat(value.sourcePage()).isNull());
+    }
+
 }

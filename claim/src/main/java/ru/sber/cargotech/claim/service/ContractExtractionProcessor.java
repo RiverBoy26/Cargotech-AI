@@ -22,7 +22,7 @@ public class ContractExtractionProcessor {
     public void process(ContractExtractionRequestedEvent event) {
         try {
             var document = documentTextClient.getText(event.documentId());
-            var result = extractionService.extract(document.text());
+            var result = extractionService.extract(document.text(), document.extractionMethod());
             contractService.completeAutomaticExtraction(
                 event.organizationId(), event.contractId(), event.requestedBy(), result
             );
