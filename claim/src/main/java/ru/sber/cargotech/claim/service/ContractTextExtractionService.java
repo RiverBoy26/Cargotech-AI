@@ -9,6 +9,8 @@ import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 
 import java.math.BigDecimal;
+import java.time.DateTimeException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +26,32 @@ public class ContractTextExtractionService {
     private static final Pattern RATE = Pattern.compile("(?iu)(\\d{1,3}(?:[.,]\\d{1,6})?)\\s*%");
     private static final Pattern CLAUSE_NUMBER = Pattern.compile("(?iu)^(?:п(?:ункт)?\\.?\\s*)?(\\d+(?:\\.\\d+)+)\\.?");
     private static final Pattern PAGE_MARKER = Pattern.compile("^\\[\\[PAGE:(\\d+)]]$");
+    private static final Pattern CONTRACT_NUMBER = Pattern.compile(
+        "(?iu)договор(?:-заявка)?[^\\r\\n№]{0,80}(?:№|N)\\s*([\\p{L}\\p{N}][\\p{L}\\p{N}./_-]{0,127})"
+    );
+    private static final Pattern CONTRACT_DATE_NUMERIC = Pattern.compile(
+        "(?iu)договор(?:-заявка)?[^\\r\\n]{0,160}?от\\s+(\\d{1,2})[./-](\\d{1,2})[./-](\\d{4})"
+    );
+    private static final Pattern CONTRACT_DATE_TEXT = Pattern.compile(
+        "(?iu)договор(?:-заявка)?[^\\r\\n]{0,160}?от\\s+(\\d{1,2})\\s+" +
+            "(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})"
+    );
+    private static final List<ContractExtractionField> REVIEW_FIELDS = List.of(
+        ContractExtractionField.CONTRACT_NUMBER,
+        ContractExtractionField.SIGNED_AT,
+        ContractExtractionField.PAYMENT_DAYS,
+        ContractExtractionField.PAYMENT_START_EVENT,
+        ContractExtractionField.PENALTY_TYPE,
+        ContractExtractionField.PENALTY_RATE,
+        ContractExtractionField.CLAIM_RESPONSE_DAYS,
+        ContractExtractionField.JURISDICTION
+    );
+    private static final Map<String, Integer> MONTHS = Map.ofEntries(
+        Map.entry("января", 1), Map.entry("февраля", 2), Map.entry("марта", 3),
+        Map.entry("апреля", 4), Map.entry("мая", 5), Map.entry("июня", 6),
+        Map.entry("июля", 7), Map.entry("августа", 8), Map.entry("сентября", 9),
+        Map.entry("октября", 10), Map.entry("ноября", 11), Map.entry("декабря", 12)
+    );
 
     public SubmitContractExtractionRequest extract(String sourceText) {
         String text = normalize(sourceText);
@@ -34,6 +62,8 @@ public class ContractTextExtractionService {
             String fragment = textFragment.text();
             int page = textFragment.page();
             String lower = fragment.toLowerCase(Locale.ROOT);
+
+            extractContractHeader(fragment, page, scalars);
 
             if (containsAny(lower, "оплат", "расчет", "расчёт") && containsAny(lower, "дн", "срок")) {
                 Matcher days = DAYS.matcher(fragment);
@@ -76,7 +106,10 @@ public class ContractTextExtractionService {
             }
         }
 
-        List<ContractExtractionCandidateRequest> result = new ArrayList<>(scalars.values());
+        List<ContractExtractionCandidateRequest> result = new ArrayList<>();
+        for (ContractExtractionField field : REVIEW_FIELDS) {
+            result.add(scalars.getOrDefault(field, missingCandidate(field)));
+        }
         result.addAll(clauses);
         return new SubmitContractExtractionRequest(List.copyOf(result));
     }
@@ -111,7 +144,7 @@ public class ContractTextExtractionService {
         ContractExtractionField field,
         String value,
         String source,
-        int sourcePage,
+        Integer sourcePage,
         BigDecimal confidence,
         ClauseType clauseType
     ) {
@@ -122,8 +155,72 @@ public class ContractTextExtractionService {
             sourcePage,
             confidence,
             clauseNumber(source),
-            clauseType
+            clauseType,
+            false
         );
+    }
+
+    private ContractExtractionCandidateRequest missingCandidate(ContractExtractionField field) {
+        return new ContractExtractionCandidateRequest(field, null, null, null, null, null, null, false);
+    }
+
+    private void extractContractHeader(
+        String fragment,
+        int page,
+        Map<ContractExtractionField, ContractExtractionCandidateRequest> scalars
+    ) {
+        Matcher number = CONTRACT_NUMBER.matcher(fragment);
+        if (number.find()) {
+            String value = number.group(1).replaceFirst("[.,;:]+$", "");
+            if (!value.isBlank()) {
+                putOnce(scalars, candidate(
+                    ContractExtractionField.CONTRACT_NUMBER,
+                    value,
+                    fragment,
+                    page,
+                    confidence("0.94"),
+                    null
+                ));
+            }
+        }
+
+        Matcher numericDate = CONTRACT_DATE_NUMERIC.matcher(fragment);
+        if (numericDate.find()) {
+            putDateOnce(scalars, fragment, page, numericDate.group(3), numericDate.group(2), numericDate.group(1));
+            return;
+        }
+        Matcher textDate = CONTRACT_DATE_TEXT.matcher(fragment);
+        if (textDate.find()) {
+            Integer month = MONTHS.get(textDate.group(2).toLowerCase(Locale.ROOT));
+            if (month != null) {
+                putDateOnce(scalars, fragment, page, textDate.group(3), month.toString(), textDate.group(1));
+            }
+        }
+    }
+
+    private void putDateOnce(
+        Map<ContractExtractionField, ContractExtractionCandidateRequest> scalars,
+        String source,
+        int page,
+        String year,
+        String month,
+        String day
+    ) {
+        try {
+            LocalDate value = LocalDate.of(
+                Integer.parseInt(year), Integer.parseInt(month), Integer.parseInt(day)
+            );
+            putOnce(scalars, candidate(
+                ContractExtractionField.SIGNED_AT,
+                value.toString(),
+                source,
+                page,
+                confidence("0.90"),
+                null
+            ));
+        } catch (DateTimeException | NumberFormatException ignored) {
+            // Invalid or ambiguous dates remain empty for human review.
+        }
     }
 
     private void putOnce(

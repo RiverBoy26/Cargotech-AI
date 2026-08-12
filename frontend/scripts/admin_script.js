@@ -10,13 +10,30 @@ const CONTRACT_STATUS_LABEL = {
   TERMINATED: 'Расторгнут', ARCHIVED: 'Архивный',
 };
 const EXTRACTION_STATUS_LABEL = {
-  NOT_STARTED: 'Файл не загружен', PENDING: 'Разбор выполняется',
-  REVIEW_REQUIRED: 'Нужно проверить', CONFIRMED: 'Разбор подтверждён', FAILED: 'Ошибка разбора',
+  NOT_STARTED: 'Файл не загружен', PENDING: 'Идёт распознавание',
+  REVIEW_REQUIRED: 'Требуется проверка', CONFIRMED: 'Разбор подтверждён', FAILED: 'Ошибка разбора',
 };
 const EXTRACTION_FIELD_LABEL = {
+  CONTRACT_NUMBER: 'Номер договора', SIGNED_AT: 'Дата договора',
   PAYMENT_DAYS: 'Срок оплаты', PAYMENT_START_EVENT: 'Начало срока оплаты',
   PENALTY_TYPE: 'Вид неустойки', PENALTY_RATE: 'Ставка',
   CLAIM_RESPONSE_DAYS: 'Срок ответа', JURISDICTION: 'Подсудность', EXACT_CLAUSE: 'Точный пункт договора',
+};
+const CONTRACT_REVIEW_SCALAR_FIELDS = [
+  'CONTRACT_NUMBER', 'SIGNED_AT', 'PAYMENT_DAYS', 'PAYMENT_START_EVENT',
+  'PENALTY_TYPE', 'PENALTY_RATE', 'CLAIM_RESPONSE_DAYS', 'JURISDICTION',
+];
+const PAYMENT_START_EVENT_OPTIONS = {
+  ACT_SIGNED: 'Дата подписания акта', UNLOADING_DATE: 'Дата выгрузки',
+  TTN_SIGNED: 'Дата подписания ТТН', INVOICE_DATE: 'Дата счёта',
+};
+const PENALTY_TYPE_OPTIONS = {
+  CONTRACT_PENALTY: 'Договорная неустойка', ARTICLE_395: 'Статья 395 ГК РФ', NONE: 'Не начисляется',
+};
+const CLAUSE_TYPE_OPTIONS = {
+  PAYMENT_TERMS: 'Условия оплаты', PENALTY: 'Неустойка',
+  CLAIM_PROCEDURE: 'Претензионный порядок', JURISDICTION: 'Подсудность',
+  LIABILITY: 'Ответственность', OTHER: 'Другое',
 };
 const PARTY_TYPE_LABEL = { CLIENT: 'Клиент', EXPEDITOR: 'Экспедитор', OTHER: 'Другое' };
 const SHIPMENT_STATUS_LABEL = {
@@ -137,7 +154,7 @@ async function loadContracts() {
     const page = await getContracts();
     list.innerHTML = (page.content || []).map((contract) => `
       <div class="admin_entity_row" data-contract-row="${escapeAdmin(contract.id)}">
-        <div>${escapeAdmin(contract.number)}</div>
+        <div>${contract.number ? escapeAdmin(contract.number) : '<span class="contract_value_missing">Не подтверждён</span>'}</div>
         <div>${escapeAdmin(contract.clientName)}</div>
         <div>${escapeAdmin(contract.expeditorName)}</div>
         <div>
@@ -152,14 +169,215 @@ async function loadContracts() {
         <div>
           <div>${contract.paymentDays == null ? 'Не указан' : `${contract.paymentDays} дней`}</div>
           <small>${escapeAdmin(EXTRACTION_STATUS_LABEL[contract.extractionStatus] || contract.extractionStatus)}</small>
-          ${contract.extractionStatus === 'REVIEW_REQUIRED'
-            ? `<button class="secondary_btn contract_review_btn" type="button" data-contract-id="${escapeAdmin(contract.id)}">Проверить</button>`
+          ${['REVIEW_REQUIRED', 'CONFIRMED'].includes(contract.extractionStatus)
+            ? `<button class="secondary_btn contract_review_btn" type="button" data-contract-id="${escapeAdmin(contract.id)}">${contract.extractionStatus === 'CONFIRMED' ? 'Просмотреть / изменить' : 'Проверить и подтвердить'}</button>`
             : ''}
         </div>
       </div>
       <div class="contract_extraction_panel" id="contract_extraction_${escapeAdmin(contract.id)}" hidden></div>`).join('') || '<div class="admin_entity_empty">Договоров пока нет</div>';
     bindContractExtractionActions();
+    schedulePendingContractRefresh((page.content || []).some((contract) => contract.extractionStatus === 'PENDING'));
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
+}
+
+let pendingContractRefreshTimer = null;
+const contractExtractionDrafts = new Map();
+
+function schedulePendingContractRefresh(hasPending) {
+  if (pendingContractRefreshTimer) clearTimeout(pendingContractRefreshTimer);
+  pendingContractRefreshTimer = hasPending
+    ? setTimeout(() => { loadContracts(); }, 2500)
+    : null;
+}
+
+function renderSelectOptions(options, currentValue) {
+  return [
+    '<option value="">— не найдено —</option>',
+    ...Object.entries(options).map(([value, label]) =>
+      `<option value="${escapeAdmin(value)}" ${value === currentValue ? 'selected' : ''}>${escapeAdmin(label)}</option>`
+    ),
+  ].join('');
+}
+
+function renderContractCandidateInput(candidate, index) {
+  const value = candidate.value || '';
+  const common = `class="form_input contract_candidate_value" data-candidate-index="${index}"`;
+  if (candidate.field === 'PAYMENT_START_EVENT') {
+    return `<select ${common}>${renderSelectOptions(PAYMENT_START_EVENT_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'PENALTY_TYPE') {
+    return `<select ${common}>${renderSelectOptions(PENALTY_TYPE_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'JURISDICTION') {
+    return `<textarea ${common} rows="2" maxlength="1000" placeholder="Не найдено в договоре">${escapeAdmin(value)}</textarea>`;
+  }
+  const types = {
+    SIGNED_AT: 'date', PAYMENT_DAYS: 'number', PENALTY_RATE: 'number', CLAIM_RESPONSE_DAYS: 'number',
+  };
+  const type = types[candidate.field] || 'text';
+  const numberAttributes = type === 'number'
+    ? ` min="0" step="${candidate.field === 'PENALTY_RATE' ? '0.0001' : '1'}"`
+    : '';
+  const required = candidate.field === 'CONTRACT_NUMBER' ? ' required maxlength="128"' : '';
+  return `<input ${common} type="${type}" value="${escapeAdmin(value)}"${numberAttributes}${required} placeholder="Не найдено в договоре">`;
+}
+
+function extractionReliability(candidate) {
+  if (candidate.manuallyEdited) return '<span class="contract_manual_badge">Изменено вручную</span>';
+  if (candidate.confidence == null) return '<span class="contract_missing_badge">Не найдено — требуется ручная проверка</span>';
+  const percent = Math.round(Number(candidate.confidence) * 100);
+  const level = percent >= 90 ? 'высокая' : percent >= 75 ? 'средняя' : 'низкая';
+  return `Надёжность извлечения: ${level} (${percent}%)`;
+}
+
+function renderContractScalar(candidate, index) {
+  return `
+    <article class="contract_extraction_item" data-review-index="${index}" data-contract-field="${escapeAdmin(candidate.field)}">
+      <label class="contract_candidate_label">${escapeAdmin(EXTRACTION_FIELD_LABEL[candidate.field] || candidate.field)}${candidate.field === 'CONTRACT_NUMBER' ? ' *' : ''}</label>
+      ${renderContractCandidateInput(candidate, index)}
+      <small class="contract_candidate_reliability">${extractionReliability(candidate)}</small>
+      ${candidate.source
+        ? `<blockquote>${escapeAdmin(candidate.source)}${candidate.sourcePage ? ` · стр. ${candidate.sourcePage}` : ''}${candidate.clauseNumber ? ` · п. ${escapeAdmin(candidate.clauseNumber)}` : ''}</blockquote>`
+        : '<p class="contract_source_missing">Источник не найден. Система не создаёт ссылку на пункт автоматически.</p>'}
+    </article>`;
+}
+
+function renderContractClause(candidate, index) {
+  return `
+    <article class="contract_extraction_item contract_clause_item" data-review-index="${index}">
+      <div class="contract_clause_header">
+        <strong>Пункт договора</strong>
+        <button class="secondary_btn contract_clause_remove" type="button" data-index="${index}">Удалить</button>
+      </div>
+      <div class="contract_clause_grid">
+        <label>Номер пункта<input class="form_input contract_clause_number" value="${escapeAdmin(candidate.clauseNumber || '')}" maxlength="64" placeholder="Например, 4.2"></label>
+        <label>Категория<select class="form_input form_select contract_clause_type">${renderSelectOptions(CLAUSE_TYPE_OPTIONS, candidate.clauseType || '')}</select></label>
+      </div>
+      <label>Текст пункта<textarea class="form_input contract_candidate_value" rows="3" maxlength="4000">${escapeAdmin(candidate.value || '')}</textarea></label>
+      <small class="contract_candidate_reliability">${extractionReliability(candidate)}</small>
+      ${candidate.source
+        ? `<blockquote>${escapeAdmin(candidate.source)}${candidate.sourcePage ? ` · стр. ${candidate.sourcePage}` : ''}</blockquote>`
+        : '<p class="contract_source_missing">Добавлено вручную — автоматический источник отсутствует.</p>'}
+    </article>`;
+}
+
+function normalizedCandidate(candidate) {
+  return {
+    field: candidate.field,
+    value: candidate.value ?? null,
+    source: candidate.source ?? null,
+    sourcePage: candidate.sourcePage ?? null,
+    confidence: candidate.confidence ?? null,
+    clauseNumber: candidate.clauseNumber ?? null,
+    clauseType: candidate.clauseType ?? null,
+    manuallyEdited: Boolean(candidate.manuallyEdited),
+  };
+}
+
+function renderContractReview(panel, contractId, extraction) {
+  const candidates = (extraction.candidates || []).map(normalizedCandidate);
+  for (const field of CONTRACT_REVIEW_SCALAR_FIELDS) {
+    if (!candidates.some((candidate) => candidate.field === field)) {
+      candidates.push(normalizedCandidate({ field }));
+    }
+  }
+  candidates.sort((left, right) => {
+    const leftOrder = left.field === 'EXACT_CLAUSE' ? 100 : CONTRACT_REVIEW_SCALAR_FIELDS.indexOf(left.field);
+    const rightOrder = right.field === 'EXACT_CLAUSE' ? 100 : CONTRACT_REVIEW_SCALAR_FIELDS.indexOf(right.field);
+    return leftOrder - rightOrder;
+  });
+  const draft = { ...extraction, candidates };
+  contractExtractionDrafts.set(contractId, draft);
+  panel.innerHTML = `
+    <div class="contract_extraction_title">Проверка условий договора</div>
+    <p class="contract_review_hint">Проверьте найденные значения. Пустые поля не подменяются бизнес-default’ами и могут быть заполнены вручную.</p>
+    <div class="contract_review_grid">
+      ${candidates.map((candidate, index) => candidate.field === 'EXACT_CLAUSE'
+        ? renderContractClause(candidate, index)
+        : renderContractScalar(candidate, index)).join('')}
+    </div>
+    <button class="secondary_btn contract_clause_add" type="button">+ Добавить пункт вручную</button>
+    <p class="form_error contract_review_error" role="alert"></p>
+    <div class="add_user_form_actions">
+      <button class="secondary_btn contract_review_close" type="button">Закрыть</button>
+      <button class="secondary_btn contract_review_save" type="button">Сохранить исправления</button>
+      <button class="primary_btn contract_review_confirm" type="button">Подтвердить договор</button>
+    </div>`;
+
+  panel.querySelector('.contract_review_close').addEventListener('click', () => { panel.hidden = true; });
+  panel.querySelector('.contract_clause_add').addEventListener('click', () => {
+    draft.candidates.push(normalizedCandidate({ field: 'EXACT_CLAUSE', manuallyEdited: true }));
+    renderContractReview(panel, contractId, draft);
+  });
+  panel.querySelectorAll('.contract_clause_remove').forEach((button) => {
+    button.addEventListener('click', () => {
+      draft.candidates.splice(Number(button.dataset.index), 1);
+      renderContractReview(panel, contractId, draft);
+    });
+  });
+  panel.querySelector('.contract_review_save').addEventListener('click', async (event) => {
+    try {
+      await saveContractReview(panel, contractId, event.currentTarget, true);
+    } catch (error) {
+      // The error is rendered next to the review actions.
+    }
+  });
+  panel.querySelector('.contract_review_confirm').addEventListener('click', async (event) => {
+    const numberInput = panel.querySelector('[data-contract-field="CONTRACT_NUMBER"] .contract_candidate_value');
+    if (!numberInput?.value.trim()) {
+      panel.querySelector('.contract_review_error').textContent = 'Укажите номер договора перед подтверждением.';
+      return;
+    }
+    event.currentTarget.disabled = true;
+    try {
+      await saveContractReview(panel, contractId, event.currentTarget, false);
+      await confirmContractExtraction(contractId);
+      showToast('Договор подтверждён, карточка заполнена', 'success');
+      await loadContracts();
+    } catch (error) {
+      panel.querySelector('.contract_review_error').textContent = error.message;
+      event.currentTarget.disabled = false;
+    }
+  });
+}
+
+function collectContractReview(panel, contractId) {
+  const draft = contractExtractionDrafts.get(contractId);
+  return draft.candidates.map((candidate, index) => {
+    const item = panel.querySelector(`[data-review-index="${index}"]`);
+    const value = item.querySelector('.contract_candidate_value')?.value.trim() || null;
+    const clauseNumberInput = item.querySelector('.contract_clause_number');
+    const clauseTypeInput = item.querySelector('.contract_clause_type');
+    const clauseNumber = clauseNumberInput ? (clauseNumberInput.value.trim() || null) : (candidate.clauseNumber || null);
+    const clauseType = clauseTypeInput ? (clauseTypeInput.value || null) : (candidate.clauseType || null);
+    const changed = value !== (candidate.value || null)
+      || clauseNumber !== (candidate.clauseNumber || null)
+      || clauseType !== (candidate.clauseType || null);
+    return {
+      ...candidate,
+      value,
+      clauseNumber,
+      clauseType,
+      manuallyEdited: candidate.manuallyEdited || changed,
+    };
+  }).filter((candidate) => candidate.field !== 'EXACT_CLAUSE' || candidate.value);
+}
+
+async function saveContractReview(panel, contractId, button, rerender) {
+  const errorElement = panel.querySelector('.contract_review_error');
+  button.disabled = true;
+  errorElement.textContent = '';
+  try {
+    const extraction = await submitContractExtraction(contractId, collectContractReview(panel, contractId));
+    showToast('Исправления сохранены', 'success');
+    if (rerender) renderContractReview(panel, contractId, extraction);
+    return extraction;
+  } catch (error) {
+    errorElement.textContent = error.message;
+    throw error;
+  } finally {
+    if (button.isConnected) button.disabled = false;
+  }
 }
 
 function bindContractExtractionActions() {
@@ -171,32 +389,7 @@ function bindContractExtractionActions() {
       panel.textContent = 'Загрузка найденных условий...';
       try {
         const extraction = await getContractExtraction(contractId);
-        const candidates = extraction.candidates || [];
-        panel.innerHTML = `
-          <div class="contract_extraction_title">Проверка условий договора</div>
-          ${candidates.length ? candidates.map((candidate) => `
-            <article class="contract_extraction_item">
-              <strong>${escapeAdmin(EXTRACTION_FIELD_LABEL[candidate.field] || candidate.field)}</strong>
-              <div>${escapeAdmin(candidate.value || 'Не найдено')}</div>
-              <small>Уверенность: ${Math.round(Number(candidate.confidence || 0) * 100)}%</small>
-              <blockquote>${escapeAdmin(candidate.source)}${candidate.sourcePage ? ` · стр. ${candidate.sourcePage}` : ''}</blockquote>
-            </article>`).join('') : '<p>В документе не найдено ни одного условия. Поля останутся пустыми.</p>'}
-          <div class="add_user_form_actions">
-            <button class="secondary_btn contract_review_close" type="button">Закрыть</button>
-            <button class="primary_btn contract_review_confirm" type="button">Подтвердить найденные значения</button>
-          </div>`;
-        panel.querySelector('.contract_review_close').addEventListener('click', () => { panel.hidden = true; });
-        panel.querySelector('.contract_review_confirm').addEventListener('click', async (event) => {
-          event.currentTarget.disabled = true;
-          try {
-            await confirmContractExtraction(contractId);
-            showToast('Условия договора подтверждены', 'success');
-            await loadContracts();
-          } catch (error) {
-            showToast(error.message, 'error');
-            event.currentTarget.disabled = false;
-          }
-        });
+        renderContractReview(panel, contractId, extraction);
       } catch (error) {
         panel.textContent = `Ошибка: ${error.message}`;
       }
@@ -311,19 +504,7 @@ async function loadContractClients() {
 
 function resetContractForm() {
   contractForm.classList.remove('add_user_form_visible');
-  document.getElementById('contract_number').value = '';
   document.getElementById('contract_client_id').value = '';
-  document.getElementById('contract_status').value = 'ACTIVE';
-  document.getElementById('contract_signed_at').value = '';
-  document.getElementById('contract_valid_from').value = '';
-  document.getElementById('contract_valid_to').value = '';
-  document.getElementById('contract_payment_days').value = '0';
-  document.getElementById('contract_payment_start_event').value = 'UNLOADING_DATE';
-  document.getElementById('contract_penalty_type').value = 'NONE';
-  document.getElementById('contract_penalty_rate').value = '0';
-  document.getElementById('contract_penalty_rate').disabled = true;
-  document.getElementById('contract_claim_response_days').value = '10';
-  document.getElementById('contract_jurisdiction').value = '';
   document.getElementById('contract_file').value = '';
   document.getElementById('contract_form_error').textContent = '';
 }
@@ -333,7 +514,7 @@ document.getElementById('add_contract_btn').addEventListener('click', async () =
   document.getElementById('contract_form_error').textContent = '';
   try {
     await loadContractClients();
-    document.getElementById('contract_number').focus();
+    document.getElementById('contract_client_id').focus();
   } catch (error) {
     document.getElementById('contract_form_error').textContent = error.message;
   }
@@ -341,80 +522,32 @@ document.getElementById('add_contract_btn').addEventListener('click', async () =
 
 document.getElementById('cancel_contract_btn').addEventListener('click', resetContractForm);
 
-document.getElementById('contract_penalty_type').addEventListener('change', (event) => {
-  const rate = document.getElementById('contract_penalty_rate');
-  const disabled = event.target.value === 'NONE';
-  rate.disabled = disabled;
-  if (disabled) rate.value = '0';
-});
-
 document.getElementById('save_contract_btn').addEventListener('click', async () => {
   const errorElement = document.getElementById('contract_form_error');
   const saveButton = document.getElementById('save_contract_btn');
-  const number = document.getElementById('contract_number').value.trim();
   const clientId = document.getElementById('contract_client_id').value;
-  const paymentDaysRaw = document.getElementById('contract_payment_days').value;
-  const responseDaysRaw = document.getElementById('contract_claim_response_days').value;
-  const penaltyRateRaw = document.getElementById('contract_penalty_rate').value;
-  const validFrom = document.getElementById('contract_valid_from').value;
-  const validTo = document.getElementById('contract_valid_to').value;
+  const contractFile = document.getElementById('contract_file').files[0];
 
-  if (!number || !clientId || paymentDaysRaw === '' || responseDaysRaw === '') {
-    errorElement.textContent = 'Заполните обязательные поля: номер, клиент, срок оплаты и срок ответа.';
+  if (!clientId || !contractFile) {
+    errorElement.textContent = 'Выберите клиента и обязательный файл договора.';
     return;
   }
-  if (validFrom && validTo && validFrom > validTo) {
-    errorElement.textContent = 'Дата окончания договора не может быть раньше даты начала.';
-    return;
-  }
-
-  const paymentDays = Number(paymentDaysRaw);
-  const claimResponseDays = Number(responseDaysRaw);
-  const penaltyRate = Number(penaltyRateRaw || 0);
-  if (![paymentDays, claimResponseDays, penaltyRate].every(Number.isFinite)
-      || paymentDays < 0 || claimResponseDays < 0 || penaltyRate < 0) {
-    errorElement.textContent = 'Сроки и ставка неустойки должны быть неотрицательными числами.';
-    return;
-  }
-
-  const payload = {
-    number,
-    clientId,
-    status: document.getElementById('contract_status').value,
-    paymentDays,
-    paymentStartEvent: document.getElementById('contract_payment_start_event').value,
-    penaltyType: document.getElementById('contract_penalty_type').value,
-    penaltyRate,
-    claimResponseDays,
-  };
-  setOptional(payload, 'signedAt', document.getElementById('contract_signed_at').value);
-  setOptional(payload, 'validFrom', validFrom);
-  setOptional(payload, 'validTo', validTo);
-  setOptional(payload, 'jurisdiction', document.getElementById('contract_jurisdiction').value.trim());
 
   saveButton.disabled = true;
-  saveButton.textContent = 'Создание...';
+  saveButton.textContent = 'Загрузка договора...';
   errorElement.textContent = '';
   try {
-    const contractFile = document.getElementById('contract_file').files[0];
-    if (contractFile) {
-      saveButton.textContent = 'Загрузка договора...';
-      const uploaded = await uploadContractDocument(
-        contractFile,
-        number,
-        document.getElementById('contract_signed_at').value
-      );
-      payload.documentId = uploaded.id;
-      saveButton.textContent = 'Создание...';
-    }
-    await createContract(payload);
+    const uploaded = await uploadContractDocument(contractFile);
+    saveButton.textContent = 'Запуск распознавания...';
+    await createContract({ clientId, documentId: uploaded.id });
     resetContractForm();
     await loadContracts();
+    showToast('Договор загружен. Идёт распознавание условий.', 'info');
   } catch (error) {
-    errorElement.textContent = error.message || 'Не удалось создать договор';
+    errorElement.textContent = error.message || 'Не удалось загрузить договор';
   } finally {
     saveButton.disabled = false;
-    saveButton.textContent = 'Создать договор';
+    saveButton.textContent = 'Загрузить и распознать';
   }
 });
 

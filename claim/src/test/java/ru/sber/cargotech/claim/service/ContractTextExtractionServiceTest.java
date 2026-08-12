@@ -47,6 +47,43 @@ class ContractTextExtractionServiceTest {
             "1.1. Перевозчик обязуется доставить груз по заявке заказчика."
         ).candidates();
 
-        assertThat(values).isEmpty();
+        assertThat(values)
+            .filteredOn(value -> value.field() != ContractExtractionField.EXACT_CLAUSE)
+            .allSatisfy(value -> {
+                assertThat(value.value()).isNull();
+                assertThat(value.source()).isNull();
+                assertThat(value.confidence()).isNull();
+                assertThat(value.clauseNumber()).isNull();
+            });
+        assertThat(values).noneMatch(value -> value.field() == ContractExtractionField.EXACT_CLAUSE);
+    }
+
+    @Test
+    void extractsContractNumberAndTextualSignedDateFromHeader() {
+        List<ContractExtractionCandidateRequest> values = service.extract(
+            "ДОГОВОР № ДЭ-2026/001 от 12 августа 2026 г."
+        ).candidates();
+
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.CONTRACT_NUMBER);
+            assertThat(value.value()).isEqualTo("ДЭ-2026/001");
+            assertThat(value.source()).contains("ДОГОВОР");
+        });
+        assertThat(values).anySatisfy(value -> {
+            assertThat(value.field()).isEqualTo(ContractExtractionField.SIGNED_AT);
+            assertThat(value.value()).isEqualTo("2026-08-12");
+        });
+    }
+
+    @Test
+    void doesNotInventInvalidContractDateOrNumber() {
+        List<ContractExtractionCandidateRequest> values = service.extract(
+            "Проект соглашения от 32.13.2026 без номера договора."
+        ).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.CONTRACT_NUMBER
+                || value.field() == ContractExtractionField.SIGNED_AT)
+            .allSatisfy(value -> assertThat(value.value()).isNull());
     }
 }

@@ -4,10 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.context.ApplicationEventPublisher;
 import ru.sber.cargotech.claim.dto.ContractRequest;
+import ru.sber.cargotech.claim.dto.ContractIntakeRequest;
 import ru.sber.cargotech.claim.dto.ContractResponse;
 import ru.sber.cargotech.claim.dto.ContractExtractionResponse;
 import ru.sber.cargotech.claim.dto.SubmitContractExtractionRequest;
@@ -29,6 +31,7 @@ import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
 import java.util.List;
@@ -65,26 +68,25 @@ public class ContractService {
     }
 
     @Transactional
-    public ContractResponse create(CurrentClaimUser user, ContractRequest request) {
+    public ContractResponse create(CurrentClaimUser user, ContractIntakeRequest request) {
         UUID expeditorId = user.organizationId();
-        log.debug("Создание договора: organizationId={}, userId={}, number={}, clientId={}, expeditorId={}, paymentDays={}, penaltyType={}, penaltyRate={}", user.organizationId(), user.userId(), request.number(), request.clientId(), expeditorId, request.paymentDays(), request.penaltyType(), request.penaltyRate());
+        log.debug(
+            "Загрузка договора на распознавание: organizationId={}, userId={}, clientId={}, documentId={}",
+            user.organizationId(), user.userId(), request.clientId(), request.documentId()
+        );
 
-        if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNull(
-            user.organizationId(), request.number()
-        )) {
-            throw ClaimException.conflict("Договор с таким номером уже существует");
-        }
         validateParties(user.organizationId(), request.clientId(), expeditorId);
         ClaimContract contract = new ClaimContract();
         contract.setOrganizationId(user.organizationId());
+        contract.setClientId(request.clientId());
+        contract.setExpeditorId(expeditorId);
+        contract.setDocumentId(request.documentId());
+        contract.setStatus(ContractStatus.DRAFT);
         contract.setCreatedBy(user.userId());
         contract.setUpdatedBy(user.userId());
-        apply(contract, request, user.userId(), expeditorId);
         ClaimContract saved = contractRepository.save(contract);
         outboxWriter.write("CONTRACT", saved.getId(), "CONTRACT_CREATED", user.organizationId(), user.userId(), Map.of("contractId", saved.getId()));
-        if (saved.getDocumentId() != null) {
-            requestExtraction(saved, user);
-        }
+        requestExtraction(saved, user);
         return toResponse(user.organizationId(), saved);
     }
 
@@ -96,6 +98,12 @@ public class ContractService {
         UUID previousDocumentId = contract.getDocumentId();
         UUID expeditorId = user.organizationId();
         validateParties(user.organizationId(), request.clientId(), expeditorId);
+        String requestedNumber = request.number().trim();
+        if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNullAndIdNot(
+            user.organizationId(), requestedNumber, contract.getId()
+        )) {
+            throw ClaimException.conflict("Договор с таким номером уже существует");
+        }
         apply(contract, request, user.userId(), expeditorId);
         ClaimContract saved = contractRepository.save(contract);
         outboxWriter.write("CONTRACT", saved.getId(), "CONTRACT_UPDATED", user.organizationId(), user.userId(), Map.of("contractId", saved.getId()));
@@ -178,11 +186,21 @@ public class ContractService {
         }
         List<ContractExtractedValue> candidates = extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contractId);
         applyConfirmedCandidates(contract, candidates, user.userId());
+        if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNullAndIdNot(
+            user.organizationId(), contract.getNumber(), contract.getId()
+        )) {
+            throw ClaimException.conflict("Договор с таким номером уже существует");
+        }
+        contract.setStatus(ContractStatus.ACTIVE);
         contract.setExtractionStatus(ContractExtractionStatus.CONFIRMED);
         contract.setExtractionConfirmedAt(OffsetDateTime.now());
         contract.setExtractionConfirmedBy(user.userId());
         contract.setUpdatedBy(user.userId());
-        contractRepository.save(contract);
+        try {
+            contractRepository.saveAndFlush(contract);
+        } catch (DataIntegrityViolationException exception) {
+            throw ClaimException.conflict("Договор с таким номером уже существует");
+        }
         outboxWriter.write(
             "CONTRACT", contractId, "CONTRACT_EXTRACTION_CONFIRMED",
             user.organizationId(), user.userId(), Map.of("contractId", contractId)
@@ -196,7 +214,7 @@ public class ContractService {
         UUID userId,
         UUID expeditorId
     ) {
-        contract.setNumber(request.number());
+        contract.setNumber(request.number().trim());
         contract.setClientId(request.clientId());
         contract.setExpeditorId(expeditorId);
         contract.setSignedAt(request.signedAt());
@@ -281,11 +299,12 @@ public class ContractService {
             value.setContractId(contract.getId());
             value.setField(candidate.field());
             value.setValue(blankToNull(candidate.value()));
-            value.setSource(candidate.source().trim());
+            value.setSource(blankToNull(candidate.source()));
             value.setSourcePage(candidate.sourcePage());
             value.setConfidence(candidate.confidence());
             value.setClauseNumber(blankToNull(candidate.clauseNumber()));
             value.setClauseType(candidate.clauseType());
+            value.setManuallyEdited(candidate.manuallyEdited());
             value.setCreatedBy(userId);
             return value;
         }).toList();
@@ -324,6 +343,11 @@ public class ContractService {
                 throw ClaimException.validation("Поле разбора договора не должно повторяться: " + candidate.field());
             }
         }
+        Set<ContractExtractionField> requiredReviewFields = EnumSet.allOf(ContractExtractionField.class);
+        requiredReviewFields.remove(ContractExtractionField.EXACT_CLAUSE);
+        if (!scalarFields.equals(requiredReviewFields)) {
+            throw ClaimException.validation("Экран проверки должен содержать все поля договора");
+        }
     }
 
     private void applyConfirmedCandidates(
@@ -333,6 +357,8 @@ public class ContractService {
     ) {
         // The uploaded document becomes the only source of extracted values.
         // Missing fields are deliberately null instead of being guessed.
+        contract.setNumber(null);
+        contract.setSignedAt(null);
         contract.setPaymentDays(null);
         contract.setPaymentStartEvent(null);
         contract.setPenaltyType(null);
@@ -350,6 +376,8 @@ public class ContractService {
             if (value == null) continue;
             try {
                 switch (candidate.getField()) {
+                    case CONTRACT_NUMBER -> contract.setNumber(contractNumber(value));
+                    case SIGNED_AT -> contract.setSignedAt(contractSignedAt(value));
                     case PAYMENT_DAYS -> contract.setPaymentDays(nonNegativeInteger(value));
                     case PAYMENT_START_EVENT -> contract.setPaymentStartEvent(PaymentStartEvent.valueOf(value));
                     case PENALTY_TYPE -> contract.setPenaltyType(PenaltyType.valueOf(value));
@@ -361,6 +389,9 @@ public class ContractService {
             } catch (IllegalArgumentException exception) {
                 throw ClaimException.validation("Неверный формат извлечённого поля " + candidate.getField() + ": " + value);
             }
+        }
+        if (contract.getNumber() == null) {
+            throw ClaimException.validation("Укажите номер договора перед подтверждением");
         }
     }
 
@@ -389,11 +420,26 @@ public class ContractService {
         return parsed;
     }
 
+    private String contractNumber(String value) {
+        String normalized = value.trim();
+        if (normalized.isEmpty() || normalized.length() > 128) throw new IllegalArgumentException();
+        return normalized;
+    }
+
+    private LocalDate contractSignedAt(String value) {
+        try {
+            return LocalDate.parse(value);
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException(exception);
+        }
+    }
+
     private ContractExtractionResponse toExtractionResponse(ClaimContract contract) {
         var candidates = extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contract.getId()).stream()
             .map(value -> new ContractExtractionResponse.Candidate(
                 value.getField(), value.getValue(), value.getSource(), value.getSourcePage(),
-                value.getConfidence(), value.getClauseNumber(), value.getClauseType()
+                value.getConfidence(), value.getClauseNumber(), value.getClauseType(),
+                value.isManuallyEdited()
             ))
             .toList();
         return new ContractExtractionResponse(

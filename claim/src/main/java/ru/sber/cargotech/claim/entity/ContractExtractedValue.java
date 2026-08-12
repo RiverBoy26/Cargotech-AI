@@ -34,13 +34,13 @@ public class ContractExtractedValue {
     @Column(name = "extracted_value")
     private String value;
 
-    @Column(name = "source_text", nullable = false)
+    @Column(name = "source_text")
     private String source;
 
     @Column(name = "source_page")
     private Integer sourcePage;
 
-    @Column(nullable = false, precision = 5, scale = 4)
+    @Column(precision = 5, scale = 4)
     private BigDecimal confidence;
 
     @Column(name = "clause_number", length = 64)
@@ -55,6 +55,9 @@ public class ContractExtractedValue {
 
     @Column(name = "created_by")
     private UUID createdBy;
+
+    @Column(name = "manually_edited", nullable = false)
+    private boolean manuallyEdited;
 
     @PrePersist
     void prePersist() {

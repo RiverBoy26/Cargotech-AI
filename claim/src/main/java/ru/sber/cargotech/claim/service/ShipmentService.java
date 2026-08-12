@@ -12,6 +12,7 @@ import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.ShipmentStatus;
+import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.repository.ClaimShipmentRepository;
@@ -114,6 +115,9 @@ public class ShipmentService {
         partyService.getEntity(organizationId, request.clientId());
         partyService.getEntity(organizationId, expeditorId);
         ClaimContract contract = contractService.getEntity(organizationId, request.contractId());
+        if (contract.getStatus() != ContractStatus.ACTIVE || contract.getNumber() == null) {
+            throw ClaimException.validation("Рейс можно привязать только к подтверждённому действующему договору");
+        }
         if (!contract.getClientId().equals(request.clientId()) || !contract.getExpeditorId().equals(expeditorId)) {
             throw ClaimException.validation("Клиент и экспедитор рейса должны совпадать с договором");
         }

@@ -31,7 +31,7 @@ public class ClaimContract {
     @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(nullable = false, length = 128)
+    @Column(length = 128)
     private String number;
 
     @Column(name = "client_id", nullable = false)

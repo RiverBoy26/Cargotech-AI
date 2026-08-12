@@ -12,4 +12,9 @@ public interface ClaimContractRepository extends JpaRepository<ClaimContract, UU
     Optional<ClaimContract> findByIdAndOrganizationIdAndDeletedAtIsNull(UUID id, UUID organizationId);
     Page<ClaimContract> findByOrganizationIdAndDeletedAtIsNull(UUID organizationId, Pageable pageable);
     boolean existsByOrganizationIdAndNumberAndDeletedAtIsNull(UUID organizationId, String number);
+    boolean existsByOrganizationIdAndNumberAndDeletedAtIsNullAndIdNot(
+        UUID organizationId,
+        String number,
+        UUID id
+    );
 }

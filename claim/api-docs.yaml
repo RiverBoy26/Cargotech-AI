@@ -105,7 +105,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ContractRequest"
+              $ref: "#/components/schemas/ContractIntakeRequest"
         required: true
       responses:
         "201":
@@ -1092,6 +1092,18 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ContractIntakeRequest:
+      type: object
+      properties:
+        clientId:
+          type: string
+          format: uuid
+        documentId:
+          type: string
+          format: uuid
+      required:
+      - clientId
+      - documentId
     ContractRequest:
       type: object
       properties:

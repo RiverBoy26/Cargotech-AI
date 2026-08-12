@@ -24,6 +24,7 @@ public record ContractExtractionResponse(
         Integer sourcePage,
         BigDecimal confidence,
         String clauseNumber,
-        ClauseType clauseType
+        ClauseType clauseType,
+        boolean manuallyEdited
     ) {}
 }
