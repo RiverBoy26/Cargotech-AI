@@ -495,6 +495,19 @@ header {
   color: #59636f;
 }
 
+#contract_file::file-selector-button {
+  font-family: inherit;
+  font-size: 14px;
+  background: #F26522;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  padding: 12px 18px;
+  cursor: pointer;
+  margin-right: 20px;
+}
+
+#contract_file::file-selector-button:hover { background: #D9531A; }
+
 @media (max-width: 900px) {
   .admin_entity_table {
     overflow-x: auto;
@@ -515,3 +528,5 @@ header {
     flex-wrap: wrap;
   }
 }
+
+

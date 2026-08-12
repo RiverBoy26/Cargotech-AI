@@ -564,6 +564,10 @@ async function createShipment(payload) {
   return apiRequest('/shipments', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+  async function deleteClaim(claimId) {
+  return apiRequest(`/claims/${claimId}`, { method: 'DELETE' });
+}
+
 // --- Payments ---
 
 async function getPayments(params = {}) {
@@ -622,6 +626,10 @@ async function markClaimPaidByPayment(claimId, paymentId, comment = '') {
     method: 'POST',
     body: JSON.stringify({ paymentId, comment }),
   });
+}
+
+async function deletePayment(paymentId) {
+  return apiRequest(`/payments/${paymentId}`, { method: 'DELETE' });
 }
 
 // --- Document templates and generated files ---

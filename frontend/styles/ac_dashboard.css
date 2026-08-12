@@ -192,7 +192,7 @@ header {
 
 .overdues_table_head {
   display: grid;
-  grid-template-columns: 1fr 1fr 0.75fr 0.8fr 0.8fr 0.8fr 0.7fr 1fr 1.2fr;
+  grid-template-columns: 0.6fr 0.6fr 0.6fr 0.6fr 0.6fr 0.6fr 0.6fr 1fr 2fr;
   background: #FCEADF;
 }
 
@@ -207,7 +207,7 @@ header {
 
 .overdue_row {
   display: grid;
-  grid-template-columns: 1fr 1fr 0.75fr 0.8fr 0.8fr 0.8fr 0.7fr 1fr 1.2fr;
+  grid-template-columns: 0.6fr 0.6fr 0.6fr 0.6fr 0.6fr 0.6fr 0.6fr 1fr 2fr;
   align-items: center;
   border-bottom: 1px solid #E6E9ED;
   font-size: 14px;
@@ -221,6 +221,7 @@ header {
 .overdue_row_clickable:hover { background: #f7f8fa; }
 
 .overdue_row_client,
+.overdue_row_inn,
 .overdue_row_carrier,
 .overdue_row_trip,
 .overdue_row_amount,
@@ -242,7 +243,7 @@ header {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 170px;
+  width: 90px;
   font-size: 13px;
   padding: 6px 12px;
   border-radius: 20px;
@@ -465,8 +466,9 @@ header {
     minmax(120px, 0.85fr)
     minmax(115px, 0.8fr)
     minmax(115px, 0.8fr)
-    minmax(145px, 0.9fr);
-  min-width: 1120px;
+    minmax(145px, 0.9fr)
+    minmax(110px, 0.7fr);
+  min-width: 1230px;
 }
 
 .payments_table_head {
@@ -634,6 +636,29 @@ header {
   border-bottom: 1px solid #E6E9ED;
   font-size: 13px;
 }
+
+.action_btn_delete {
+  background: #ffe0e0;
+  color: #c0392b;
+  border: 1px solid #DDE1E6;
+}
+
+.action_btn_delete:hover {
+  background: #ffc9c9;
+}
+
+#payment_import_file::file-selector-button {
+  font-family: inherit;
+  font-size: 12px;
+  background: #F26522;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  margin-right: 20px;
+}
+
+#payment_import_file::file-selector-button:hover { background: #D9531A; }
 
 @media (max-width: 1000px) {
   .payment_form_grid {

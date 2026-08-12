@@ -42,14 +42,16 @@ function renderActionButton(claim) {
     return `<button class="action_btn action_btn_confirm" data-claim-action="create" data-shipment-id="${escapeAccountant(claim.shipmentId)}"
       >Подтвердить неуплату</button>`;
   }
+  const deleteButton = `<button class="action_btn action_btn_delete" data-claim-action="delete" data-id="${escapeAccountant(claim.id)}"
+    >Удалить</button>`;
   if (claim.status === 'DRAFT' && !claim.nonPaymentConfirmed) {
     return `<button class="action_btn action_btn_confirm" data-claim-action="confirm" data-id="${escapeAccountant(claim.id)}"
-      >Подтвердить неуплату</button>`;
+      >Подтвердить неуплату</button>${deleteButton}`;
   }
   if (claim.status === 'DRAFT' && claim.nonPaymentConfirmed) {
     return `
       <span class="action_btn_done">Передано юристу</span>
-      <button class="action_btn" data-claim-action="withdraw" data-id="${escapeAccountant(claim.id)}">Отозвать</button>`;
+      <button class="action_btn" data-claim-action="withdraw" data-id="${escapeAccountant(claim.id)}">Отозвать</button>${deleteButton}`;
   }
   if (!['PAID', 'CANCELLED', 'CANCELLED_PAID', 'CLOSED_IN_COURT'].includes(claim.status)) {
     const withdrawButton = ['PENDING_LEGAL_REVIEW', 'LEGAL_APPROVED'].includes(claim.status)
@@ -58,9 +60,9 @@ function renderActionButton(claim) {
     return `
       <button class="action_btn" data-claim-action="preflight" data-id="${escapeAccountant(claim.id)}">Проверить</button>
       <button class="action_btn action_btn_paid" data-claim-action="mark-paid" data-id="${escapeAccountant(claim.id)}">Оплата поступила</button>
-      ${withdrawButton}`;
+      ${withdrawButton}${deleteButton}`;
   }
-  return '<span class="action_btn_done">—</span>';
+  return `<span class="action_btn_done">—</span>${deleteButton}`;
 }
 
 function renderOverdueRow(claim) {
@@ -70,7 +72,7 @@ function renderOverdueRow(claim) {
   return `
     <div class="overdue_row${claim.claimId ? ' overdue_row_clickable' : ''}" ${claim.claimId ? `data-claim-id="${escapeAccountant(claim.claimId)}"` : ''}>
       <div class="overdue_row_client">${escapeAccountant(claim.debtorName)}</div>
-      <div class="overdue_row_carrier">${escapeAccountant(claim.creditorName)}</div>
+      <div class="overdue_row_inn">${escapeAccountant(claim.debtorInn)}</div>
       <div class="overdue_row_trip">${escapeAccountant(claim.shipmentNumber)}</div>
       <div class="overdue_row_amount">${formatMoney(claim.shipmentAmount)}</div>
       <div class="overdue_row_amount">${formatMoney(claim.paidAmount)}</div>
@@ -86,6 +88,7 @@ function filteredClaims() {
   if (!search) return accountantClaims;
   return accountantClaims.filter((claim) => [
     claim.debtorName,
+    claim.debtorInn,
     claim.creditorName,
     claim.shipmentNumber,
     claim.claimNumber,
@@ -198,6 +201,10 @@ function bindOverdueActions() {
             'Претензия отозвана бухгалтером до отправки'
           );
           showToast('Претензия отозвана и сохранена в истории', 'success');
+        } else if (action === 'delete') {
+          if (!window.confirm('Удалить претензию без возможности восстановления?')) return;
+          await deleteClaim(id);
+          showToast('Претензия удалена', 'success');
         }
         await loadOverdues();
       } catch (error) {
@@ -214,14 +221,16 @@ async function loadOverdues() {
   list.textContent = 'Загрузка...';
   try {
     const overdues = await getOverdueShipments();
+    console.log('overdue item shape:', overdues?.[0]);
     accountantClaims = (overdues || []).map((item) => ({
       ...item,
       id: item.claimId,
       status: item.claimStatus,
       debtorName: item.clientName,
+      debtorInn: item.inn,
       creditorName: item.expeditorName,
       principalDebt: item.remainingDebt,
-    }));
+    })).sort((a, b) => new Date(b.paymentDeadline) - new Date(a.paymentDeadline));
     renderOverdues();
   } catch (error) {
     list.textContent = `Ошибка: ${error.message}`;
@@ -273,6 +282,9 @@ function renderPaymentRow(payment) {
       <div>${formatMoney(payment.matchedAmount)}</div>
       <div>${formatMoney(payment.availableAmount)}</div>
       <div><span class="payment_status ${status.className}">${escapeAccountant(status.label)}</span></div>
+      <div>
+        <button class="action_btn action_btn_delete" data-payment-delete="${escapeAccountant(payment.id)}">Удалить</button>
+      </div>
     </div>`;
 }
 
@@ -282,11 +294,30 @@ function renderPayments() {
   list.innerHTML = payments.length
     ? payments.map(renderPaymentRow).join('')
     : '<div class="empty_row">Платежи не найдены</div>';
+
   document.querySelectorAll('[data-payment-id]').forEach((row) => {
     const open = () => openPaymentDetails(row.dataset.paymentId);
     row.addEventListener('click', open);
     row.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') open();
+    });
+  });
+
+  document.querySelectorAll('[data-payment-delete]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const paymentId = button.dataset.paymentDelete;
+      if (!window.confirm('Удалить платёж без возможности восстановления?')) return;
+      button.disabled = true;
+      try {
+        await deletePayment(paymentId);
+        showToast('Платёж удалён', 'success');
+        await loadPayments();
+      } catch (error) {
+        showToast(error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
     });
   });
 }
