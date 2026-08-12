@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import ru.sber.cargotech.claim.dto.ContractRequest;
 import ru.sber.cargotech.claim.dto.ContractResponse;
+import ru.sber.cargotech.claim.dto.ContractExtractionResponse;
+import ru.sber.cargotech.claim.dto.SubmitContractExtractionRequest;
 import ru.sber.cargotech.claim.dto.PageResponse;
 import ru.sber.cargotech.claim.security.CurrentClaimUserProvider;
 import ru.sber.cargotech.claim.service.ContractService;
@@ -44,6 +46,27 @@ public class ContractController {
     public ContractResponse get(@PathVariable UUID contractId) {
         log.info("Вызов endpoint: get");
         return contractService.get(currentUserProvider.getRequiredUser(), contractId);
+    }
+
+    @GetMapping("/{contractId}/extraction")
+    @PreAuthorize("hasAuthority('CONTRACT_READ')")
+    public ContractExtractionResponse getExtraction(@PathVariable UUID contractId) {
+        return contractService.getExtraction(currentUserProvider.getRequiredUser(), contractId);
+    }
+
+    @PostMapping("/{contractId}/extraction/results")
+    @PreAuthorize("hasAuthority('CONTRACT_UPDATE')")
+    public ContractExtractionResponse submitExtraction(
+        @PathVariable UUID contractId,
+        @Valid @RequestBody SubmitContractExtractionRequest request
+    ) {
+        return contractService.submitExtraction(currentUserProvider.getRequiredUser(), contractId, request);
+    }
+
+    @PostMapping("/{contractId}/extraction/confirm")
+    @PreAuthorize("hasAuthority('CONTRACT_UPDATE')")
+    public ContractExtractionResponse confirmExtraction(@PathVariable UUID contractId) {
+        return contractService.confirmExtraction(currentUserProvider.getRequiredUser(), contractId);
     }
 
     @PostMapping

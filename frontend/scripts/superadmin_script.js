@@ -33,6 +33,9 @@ function mapUserRow(user) {
 }
 
 function renderActionButton(user) {
+  if (String(user.id) === String(getStoredUser()?.userId)) {
+    return '<span class="action_btn_done">Текущая учётная запись</span>';
+  }
   if (user.active) {
     return `<button class="action_btn action_btn_block" data-action="block" data-id="${user.id}">Заблокировать</button>`;
   }
@@ -112,7 +115,7 @@ function bindUserActions() {
         if (action === 'unblock') await unblockUser(id);
         await loadAllUsers();
       } catch (err) {
-        alert(err.message);
+        showToast(err.message, 'error');
       }
     });
   });
@@ -158,7 +161,7 @@ function renderOrganization(organization) {
       <div>${escapeSuperAdmin(organization.email)}</div>
       <div class="organization_actions">
         <span class="status-pill ${organization.status === 'ACTIVE' ? 'status-pill-success paid' : 'status-pill-danger escalation'}">
-          ${escapeSuperAdmin(organization.status)}
+          ${escapeSuperAdmin(organization.status === 'ACTIVE' ? 'Активен' : organization.status === 'BLOCKED' ? 'Заблокирован' : organization.status)}
         </span>
         <button class="action_btn organization_sync" data-id="${organization.id}">
           Синхронизировать
@@ -184,9 +187,9 @@ function bindOrganizationActions() {
       button.disabled = true;
       try {
         await synchronizeOrganization(button.dataset.id);
-        alert('Проекция экспедитора обновлена в claim-service');
+        showToast('Данные экспедитора обновлены', 'success');
       } catch (error) {
-        alert(error.message);
+        showToast(error.message, 'error');
       } finally {
         button.disabled = false;
       }
@@ -316,7 +319,7 @@ document.getElementById('save_user_btn').addEventListener('click', async () => {
   const organizationId = document.getElementById('field_expeditor').value;
 
   if (!firstName || !lastName || !email || !password || !role || !organizationId) {
-    alert('Заполните все поля');
+    showToast('Заполните все поля', 'error');
     return;
   }
 
@@ -342,7 +345,7 @@ document.getElementById('save_user_btn').addEventListener('click', async () => {
 
     await loadAllUsers();
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -386,7 +389,7 @@ document.getElementById('save_organization_btn').addEventListener('click', async
     status: 'ACTIVE',
   };
   if (!payload.name || !payload.inn) {
-    alert('Название и ИНН обязательны');
+    showToast('Название и ИНН обязательны', 'error');
     return;
   }
   try {
@@ -396,7 +399,7 @@ document.getElementById('save_organization_btn').addEventListener('click', async
     await loadOrganizations();
     await loadAllUsers();
   } catch (error) {
-    alert(error.message);
+    showToast(error.message, 'error');
   }
 });
 

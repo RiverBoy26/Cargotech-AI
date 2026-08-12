@@ -35,6 +35,7 @@ class ClaimCalculationServiceTest {
     @Mock private ShipmentService shipmentService;
     @Mock private ContractService contractService;
     @Mock private ClaimOutboxWriter outboxWriter;
+    @Mock private Article395RateProvider article395RateProvider;
 
     @Test
     void calculatesDebtFromShipmentAmountAndMatchedPayments() {
@@ -100,7 +101,8 @@ class ClaimCalculationServiceTest {
             paymentClient,
             shipmentService,
             contractService,
-            outboxWriter
+            outboxWriter,
+            article395RateProvider
         );
 
         var result = service.recalculate(user, claimId);

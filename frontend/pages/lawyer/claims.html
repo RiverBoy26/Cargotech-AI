@@ -25,6 +25,8 @@
                 <input
                 class="search-box__input"
                 id="claim_search"
+                name="claim_search"
+                autocomplete="off"
                 type="search"
                 placeholder="Поиск по перевозчику, клиенту, рейсу...">
             </div>
@@ -48,7 +50,7 @@
             <div class="add_claim_form_fields">
 
                 <div class="form_field">
-                    <label class="form_label" for="claim_shipment_id">ID рейса (shipmentId) *</label>
+                    <label class="form_label" for="claim_shipment_id">Рейс *</label>
                     <select class="form_input form_select" id="claim_shipment_id" required>
                         <option value="">— выберите рейс —</option>
                     </select>
@@ -64,19 +66,19 @@
 
                 <div class="form_field">
                     <label class="form_label" for="claim_number">Номер претензии</label>
-                    <input class="form_input" id="claim_number" type="text"
+                    <input class="form_input" id="claim_number" name="claim_number" autocomplete="off" type="text"
                         placeholder="CT-2026-001 (необязательно)">
                 </div>
 
                 <div class="form_field">
                     <label class="form_label" for="claim_principal_debt">Сумма долга (₽)</label>
-                    <input class="form_input" id="claim_principal_debt" type="number"
+                    <input class="form_input" id="claim_principal_debt" name="claim_principal_debt" autocomplete="off" type="number" readonly
                         placeholder="150000" min="0" step="0.01">
                 </div>
 
                 <div class="form_field form_field_wide">
                     <label class="form_label" for="claim_reason">Основание претензии *</label>
-                    <input class="form_input" id="claim_reason" type="text" required
+                    <input class="form_input" id="claim_reason" name="claim_reason" autocomplete="off" type="text" required
                         placeholder="Не оплачены транспортно-экспедиционные услуги по рейсу AA-1111">
                 </div>
 

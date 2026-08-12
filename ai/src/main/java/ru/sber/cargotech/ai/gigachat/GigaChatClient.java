@@ -46,6 +46,7 @@ public class GigaChatClient {
         Instant startedAt = llmLogService.now();
 
         try {
+            llmLogService.ensureWithinLimits(caseId);
             String accessToken = authService.getAccessToken();
 
             GigaChatChatRequest request = new GigaChatChatRequest(

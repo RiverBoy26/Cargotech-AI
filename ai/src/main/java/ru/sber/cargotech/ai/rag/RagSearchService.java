@@ -125,6 +125,7 @@ public class RagSearchService {
                 context.legalContext(),
                 context.templateContext(),
                 context.similarExamples(),
+                context.retrievedFragments(),
                 context.warnings()
         );
     }
@@ -394,6 +395,24 @@ public class RagSearchService {
 
         List<String> warnings = new ArrayList<>();
 
+        List<RetrievedFragment> retrievedFragments = concatHits(
+                contractHits,
+                legalHits,
+                templateHits,
+                exampleHits
+        ).stream()
+                .filter(Objects::nonNull)
+                .filter(hit -> hit.chunk() != null)
+                .map(hit -> new RetrievedFragment(
+                        firstNotBlank(hit.chunk().sourceId(), hit.chunk().contractId()),
+                        firstNotBlank(hit.chunk().chunkId(), hit.pointId()),
+                        hit.score(),
+                        hit.chunk().text()
+                ))
+                .filter(fragment -> fragment.chunkId() != null)
+                .distinct()
+                .toList();
+
         if (contractContext.isEmpty()) {
             warnings.add("contract_context is empty");
         }
@@ -411,8 +430,27 @@ public class RagSearchService {
                 legalContext,
                 templateContext,
                 similarExamples,
+                retrievedFragments,
                 warnings
         );
+    }
+
+    @SafeVarargs
+    private static List<RagSearchHit> concatHits(List<RagSearchHit>... groups) {
+        List<RagSearchHit> result = new ArrayList<>();
+        for (List<RagSearchHit> group : groups) {
+            if (group != null) {
+                result.addAll(group);
+            }
+        }
+        return result;
+    }
+
+    private static String firstNotBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second == null || second.isBlank() ? null : second;
     }
 
     @SuppressWarnings("unchecked")
@@ -525,7 +563,16 @@ public class RagSearchService {
             List<GenerateClaimRequest.LegalContextItem> legalContext,
             GenerateClaimRequest.TemplateContext templateContext,
             List<GenerateClaimRequest.SimilarExample> similarExamples,
+            List<RetrievedFragment> retrievedFragments,
             List<String> warnings
+    ) {
+    }
+
+    public record RetrievedFragment(
+            String documentId,
+            String chunkId,
+            Double score,
+            String text
     ) {
     }
 
@@ -534,6 +581,7 @@ public class RagSearchService {
             List<GenerateClaimRequest.LegalContextItem> legalContext,
             GenerateClaimRequest.TemplateContext templateContext,
             List<GenerateClaimRequest.SimilarExample> similarExamples,
+            List<RetrievedFragment> retrievedFragments,
             List<String> warnings
     ) {
     }

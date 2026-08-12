@@ -15,4 +15,5 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, UUID> {
     boolean existsByOrganizationIdAndShipmentIdAndStatusNotIn(UUID organizationId, UUID shipmentId, Collection<ClaimStatus> statuses);
     Optional<ClaimEntity> findFirstByOrganizationIdAndShipmentIdAndStatusNotIn(UUID organizationId, UUID shipmentId, Collection<ClaimStatus> statuses);
     List<ClaimEntity> findAllByOrganizationId(UUID organizationId);
+    List<ClaimEntity> findAllByStatusNotIn(Collection<ClaimStatus> statuses);
 }

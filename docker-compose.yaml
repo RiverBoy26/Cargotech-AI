@@ -15,6 +15,9 @@ x-app-database-environment: &app-database-environment
   PAYMENT_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
   PAYMENT_DB_USERNAME: ${POSTGRES_USER:-cargotech}
   PAYMENT_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  AI_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  AI_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  AI_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
   DOCUMENT_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
   DOCUMENT_DB_USERNAME: ${POSTGRES_USER:-cargotech}
   DOCUMENT_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
@@ -36,6 +39,7 @@ services:
       - ./db/claim.sql:/docker-entrypoint-initdb.d/20-claim.sql:ro
       - ./db/payment.sql:/docker-entrypoint-initdb.d/30-payment.sql:ro
       - ./db/document.sql:/docker-entrypoint-initdb.d/40-document.sql:ro
+      - ./db/ai.sql:/docker-entrypoint-initdb.d/50-ai.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cargotech} -d ${POSTGRES_DB:-cargotech}"]
       interval: 5s
@@ -191,6 +195,7 @@ services:
     build:
       context: ./ai
     environment:
+      <<: *app-database-environment
       QDRANT_URL: http://qdrant:6333
       GIGACHAT_CLIENT_ID: ${GIGACHAT_CLIENT_ID:-}
       GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-}
@@ -199,6 +204,8 @@ services:
     ports:
       - "${AI_PORT:-8084}:8084"
     depends_on:
+      database:
+        condition: service_healthy
       qdrant:
         condition: service_started
       qdrant-init:
@@ -213,6 +220,8 @@ services:
       SERVER_PORT: 8083
       PAYMENT_SERVICE_URL: http://payment:8082
       AI_SERVICE_URL: http://ai:8084
+      DOCUMENT_SERVICE_URL: http://document:8085
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-cargotech-local-internal-key}
     ports:
       - "${CLAIM_PORT:-8083}:8083"
     depends_on:
@@ -238,6 +247,7 @@ services:
       MAILTRAP_SMTP_PORT: ${MAILTRAP_SMTP_PORT:-2525}
       MAILTRAP_SMTP_USERNAME: ${MAILTRAP_SMTP_USERNAME:-}
       MAILTRAP_SMTP_PASSWORD: ${MAILTRAP_SMTP_PASSWORD:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-cargotech-local-internal-key}
     ports:
       - "${DOCUMENT_PORT:-8085}:8085"
     volumes:

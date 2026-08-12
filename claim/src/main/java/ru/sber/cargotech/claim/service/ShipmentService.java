@@ -94,6 +94,8 @@ public class ShipmentService {
         shipment.setLoadingDate(request.loadingDate());
         shipment.setUnloadingDate(request.unloadingDate());
         shipment.setActSignedAt(request.actSignedAt());
+        shipment.setTtnSignedAt(request.ttnSignedAt());
+        shipment.setInvoiceDate(request.invoiceDate());
         shipment.setServiceAmount(request.serviceAmount());
         shipment.setCurrency(request.currency() == null || request.currency().isBlank() ? "RUB" : request.currency());
         shipment.setStatus(request.status() == null ? ShipmentStatus.CREATED : request.status());
@@ -136,6 +138,8 @@ public class ShipmentService {
             shipment.getLoadingDate(),
             shipment.getUnloadingDate(),
             shipment.getActSignedAt(),
+            shipment.getTtnSignedAt(),
+            shipment.getInvoiceDate(),
             shipment.getServiceAmount(),
             shipment.getCurrency(),
             shipment.getStatus(),

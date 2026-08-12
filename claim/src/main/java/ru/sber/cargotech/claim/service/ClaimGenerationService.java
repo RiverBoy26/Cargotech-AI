@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.client.AiClient;
@@ -12,6 +13,8 @@ import ru.sber.cargotech.claim.dto.GenerateClaimResponse;
 import ru.sber.cargotech.claim.entity.*;
 import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.enums.ClaimVersionSource;
+import ru.sber.cargotech.claim.enums.ClauseType;
+import ru.sber.cargotech.claim.enums.DocumentValidationStatus;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.mapper.ClaimAiRequestMapper;
 import ru.sber.cargotech.claim.repository.*;
@@ -36,7 +39,14 @@ public class ClaimGenerationService {
     private final AiClient aiClient;
     private final ClaimVersionService versionService;
     private final ClaimCalculationService calculationService;
+    private ClaimContractClauseRepository contractClauseRepository;
 
+    @Autowired(required = false)
+    void setContractClauseRepository(ClaimContractClauseRepository contractClauseRepository) {
+        this.contractClauseRepository = contractClauseRepository;
+    }
+
+    @Transactional
     public GenerateClaimResponse generate(CurrentClaimUser user, UUID claimId) {
         // A document must always be based on today's payment and overdue state.
         calculationService.recalculate(user, claimId);
@@ -47,18 +57,50 @@ public class ClaimGenerationService {
         log.info("Запуск AI-генерации: claimId={}, organizationId={}, userId={}",
                 claimId, user.organizationId(), user.userId());
 
-        AiGenerateClaimResponse aiResponse = aiClient.generate(requestMapper.map(
+        List<ClaimContractClause> contractClauses = contractClauseRepository == null
+                ? List.of()
+                : contractClauseRepository.findAllByContractIdAndActiveTrueOrderByClauseNumberAsc(
+                        context.contract().getId()
+                );
+        boolean paymentClauseMissing = contractClauses.stream()
+                .noneMatch(clause -> clause.getClauseType() == ClauseType.PAYMENT_TERMS
+                        && !isBlank(clause.getText()));
+
+        var aiRequest = requestMapper.map(
                 context.claim(),
                 context.creditor(),
                 context.debtor(),
                 context.contract(),
                 context.shipment(),
                 context.calculation(),
-                user
-        ));
+                user,
+                contractClauses
+        );
+        AiGenerateClaimResponse aiResponse = aiClient.generate(aiRequest);
 
         validateAiResponse(aiResponse);
         AiGenerateClaimResponse.GeneratedClaim generated = aiResponse.generatedClaim();
+        List<String> warnings = new ArrayList<>(collectWarnings(aiResponse));
+        if (paymentClauseMissing) {
+            warnings.add("Не найден пункт договора, определяющий срок оплаты. Требуется ручная проверка");
+        }
+        boolean guardrailBlocked = aiResponse.guardrailResult() != null
+            && "BLOCK".equalsIgnoreCase(aiResponse.guardrailResult().decision());
+        boolean guardrailReview = aiResponse.guardrailResult() != null
+            && "REVIEW".equalsIgnoreCase(aiResponse.guardrailResult().decision());
+        boolean validationFailed = guardrailBlocked
+            || (aiResponse.guardrailResult() != null
+                && aiResponse.guardrailResult().errors() != null
+                && !aiResponse.guardrailResult().errors().isEmpty());
+        boolean manualReviewRequired = Boolean.TRUE.equals(generated.manualReviewRequired())
+            || guardrailReview
+            || validationFailed
+            || paymentClauseMissing;
+        DocumentValidationStatus validationStatus = validationFailed
+            ? DocumentValidationStatus.FAILED
+            : DocumentValidationStatus.PASSED;
+        String validationErrors = warnings.isEmpty() ? null : String.join("\n", warnings);
+        String usedSources = buildUsedSources(aiRequest, aiResponse);
 
         ClaimVersionResponse version = versionService.create(
                 user,
@@ -67,18 +109,35 @@ public class ClaimGenerationService {
                         ClaimVersionSource.AI,
                         null,
                         generated.claimText(),
-                        Boolean.TRUE.equals(generated.manualReviewRequired())
+                        manualReviewRequired
                                 ? "Черновик сформирован AI. Требуется ручная проверка."
                                 : "Черновик автоматически сформирован AI.",
                         false
                 )
         );
 
+        ClaimEntity claim = context.claim();
+        claim.setDocumentValidationStatus(validationStatus);
+        claim.setDocumentValidationErrors(validationErrors);
+        claim.setManualReviewRequired(manualReviewRequired);
+        claim.setManualReviewReason(manualReviewRequired
+            ? (validationErrors == null ? "Требуется проверка юристом" : validationErrors)
+            : null);
+        claim.setUsedSources(usedSources);
+        claim.setValidationOverriddenAt(null);
+        claim.setValidationOverriddenBy(null);
+        claim.setValidationOverrideReason(null);
+        claim.setUpdatedBy(user.userId());
+        claimRepository.save(claim);
+
         return new GenerateClaimResponse(
                 version,
                 generated.summaryForLawyer(),
-                Boolean.TRUE.equals(generated.manualReviewRequired()),
-                collectWarnings(aiResponse)
+                manualReviewRequired,
+                List.copyOf(warnings),
+                validationStatus,
+                validationErrors,
+                usedSources
         );
     }
 
@@ -155,16 +214,57 @@ public class ClaimGenerationService {
     }
 
     private void validateAiResponse(AiGenerateClaimResponse response) {
-        if (!Boolean.TRUE.equals(response.success())) {
-            throw ClaimException.conflict("AI-модуль не смог сформировать претензию");
+        if (response == null || response.generatedClaim() == null
+                || isBlank(response.generatedClaim().claimText())) {
+            throw ClaimException.conflict(
+                    response != null && !Boolean.TRUE.equals(response.success())
+                            ? "AI-модуль не смог сформировать проверяемый черновик претензии"
+                            : "AI-модуль вернул пустой текст претензии"
+            );
         }
-        if (response.generatedClaim() == null || isBlank(response.generatedClaim().claimText())) {
-            throw ClaimException.conflict("AI-модуль вернул пустой текст претензии");
+    }
+
+    private String buildUsedSources(
+            ru.sber.cargotech.claim.client.dto.AiGenerateClaimRequest request,
+            AiGenerateClaimResponse response
+    ) {
+        List<String> sources = new ArrayList<>();
+        if (response.retrievedFragments() != null) {
+            response.retrievedFragments().forEach(fragment -> sources.add(
+                "DOCUMENT " + safe(fragment.documentId())
+                    + " | CHUNK " + safe(fragment.chunkId())
+                    + " | SCORE " + (fragment.score() == null ? "" : fragment.score())
+                    + " | TEXT " + oneLine(fragment.text())
+            ));
         }
-        if (response.guardrailResult() != null
-                && "BLOCK".equalsIgnoreCase(response.guardrailResult().decision())) {
-            throw ClaimException.conflict("Сформированный текст не прошёл проверку AI-модуля");
+        if (!sources.isEmpty()) {
+            return joinSources(sources);
         }
+        if (request.contractContext() != null) {
+            request.contractContext().forEach(chunk -> sources.add(
+                "CONTRACT " + safe(chunk.chunkId()) + " " + safe(chunk.clauseNumber())
+            ));
+        }
+        if (request.legalContext() != null) {
+            request.legalContext().forEach(item -> sources.add(
+                "LAW " + safe(item.chunkId()) + " " + safe(item.lawCode()) + " " + safe(item.article())
+            ));
+        }
+        return joinSources(sources);
+    }
+
+    private String joinSources(List<String> sources) {
+        return sources.stream().map(String::trim).filter(value -> !value.isBlank()).distinct()
+            .reduce((left, right) -> left + "\n" + right)
+            .orElse(null);
+    }
+
+    private String oneLine(String value) {
+        return safe(value).replaceAll("\\s+", " ").trim();
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 
     private List<String> collectWarnings(AiGenerateClaimResponse response) {

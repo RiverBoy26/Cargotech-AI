@@ -85,6 +85,47 @@ function mapStatus(status) {
   return STATUS_MAP[status] || { text: status || '—', className: 'status-pill-info draft' };
 }
 
+function showToast(message, type = 'error') {
+  let region = document.getElementById('app_toast_region');
+  if (!region) {
+    region = document.createElement('div');
+    region.id = 'app_toast_region';
+    region.setAttribute('aria-live', 'polite');
+    Object.assign(region.style, {
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      zIndex: '10000',
+      display: 'grid',
+      gap: '10px',
+      width: 'min(420px, calc(100vw - 40px))',
+    });
+    document.body.appendChild(region);
+  }
+
+  const toast = document.createElement('div');
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  toast.textContent = String(message || 'Операция завершена');
+  const palette = type === 'success'
+    ? { background: '#e8f7ef', border: '#198754', color: '#0f5132' }
+    : type === 'info'
+      ? { background: '#eef4ff', border: '#2463eb', color: '#173b82' }
+      : { background: '#fff0f0', border: '#c62828', color: '#7a1717' };
+  Object.assign(toast.style, {
+    padding: '14px 16px',
+    border: `1px solid ${palette.border}`,
+    borderLeftWidth: '5px',
+    borderRadius: '8px',
+    background: palette.background,
+    color: palette.color,
+    boxShadow: '0 10px 30px rgba(0, 0, 0, .14)',
+    whiteSpace: 'pre-line',
+    fontFamily: 'inherit',
+  });
+  region.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 5000);
+}
+
 function getQueryParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
@@ -277,6 +318,10 @@ async function getUser(userId) {
   return apiRequest(`/users/${userId}`);
 }
 
+async function getOrganizationLawyer() {
+  return apiRequest('/users/organization/lawyer');
+}
+
 async function createUser(payload) {
   return apiRequest('/users', {
     method: 'POST',
@@ -372,6 +417,23 @@ async function claimAction(claimId, action, reason) {
   });
 }
 
+async function requestNonPaymentConfirmation(claimId) {
+  return apiRequest(`/claims/${claimId}/request-non-payment-confirmation`, {
+    method: 'POST',
+  });
+}
+
+async function getClaimSendChecklist(claimId) {
+  return apiRequest(`/claims/${claimId}/send-checklist`);
+}
+
+async function overrideClaimValidation(claimId, reason) {
+  return apiRequest(`/claims/${claimId}/validation-override`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
 async function getClaimStatusHistory(claimId) {
   return apiRequest(`/claims/${claimId}/status-history`);
 }
@@ -415,6 +477,10 @@ async function getClaimVersions(claimId) {
   return apiRequest(`/claims/${claimId}/versions`);
 }
 
+async function getClaimVersionDiff(claimId, versionId) {
+  return apiRequest(`/claims/${claimId}/versions/${versionId}/diff`);
+}
+
 async function createClaimVersion(claimId, payload) {
   return apiRequest(`/claims/${claimId}/versions`, {
     method: 'POST',
@@ -454,6 +520,24 @@ async function getContract(contractId) {
 
 async function createContract(payload) {
   return apiRequest('/contracts', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+async function uploadContractDocument(file, documentNumber, documentDate) {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('documentType', 'CONTRACT');
+  if (documentNumber) body.append('documentNumber', documentNumber);
+  if (documentDate) body.append('documentDate', documentDate);
+  body.append('description', 'Файл договора для автоматического разбора условий');
+  return apiRequest('/documents/upload', { method: 'POST', body });
+}
+
+async function getContractExtraction(contractId) {
+  return apiRequest(`/contracts/${contractId}/extraction`);
+}
+
+async function confirmContractExtraction(contractId) {
+  return apiRequest(`/contracts/${contractId}/extraction/confirm`, { method: 'POST' });
 }
 
 async function getShipments(params = {}) {

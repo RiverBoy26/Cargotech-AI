@@ -48,6 +48,7 @@ public class DocumentSecurityConfiguration {
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
+                    "/internal/api/v1/documents/**",
                     "/actuator/health",
                     "/actuator/health/**",
                     "/swagger-ui.html",

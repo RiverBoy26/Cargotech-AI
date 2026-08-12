@@ -47,12 +47,19 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
         validate(bootstrap);
 
         AuthOrganization organization = findOrCreateOrganization(bootstrap);
+        organization.setStatus(OrganizationStatus.ACTIVE);
+        AuthOrganization persistedOrganization =
+                organizationRepository.saveAndFlush(organization);
 
         AuthUser user = userRepository
                 .findByEmailIgnoreCase(normalizeEmail(bootstrap.email()))
-                .orElseGet(() -> createUser(bootstrap, organization));
+                .orElseGet(() -> createUser(
+                    bootstrap,
+                    persistedOrganization
+                ));
 
-        userRepository.flush();
+        synchronizeUser(user, bootstrap, persistedOrganization);
+        user = userRepository.saveAndFlush(user);
 
         AuthRole superAdmin = roleRepository.findByCode("SUPER_ADMIN")
                 .orElseThrow(() -> AuthException.validation(
@@ -95,7 +102,7 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
             organization.setInn(blankToNull(bootstrap.organizationInn()));
             organization.setStatus(OrganizationStatus.ACTIVE);
 
-            return organizationRepository.saveAndFlush(organization);
+            return organization;
         });
     }
 
@@ -112,7 +119,30 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
         user.setPasswordHash(passwordEncoder.encode(bootstrap.password()));
         user.setActive(true);
 
-        return userRepository.saveAndFlush(user);
+        return user;
+    }
+
+    private void synchronizeUser(
+            AuthUser user,
+            AuthProperties.Bootstrap bootstrap,
+            AuthOrganization organization
+    ) {
+        user.setOrganizationId(organization.getId());
+        user.setFirstName(bootstrap.firstName().trim());
+        user.setLastName(bootstrap.lastName().trim());
+        user.setMiddleName(blankToNull(bootstrap.middleName()));
+        user.setEmail(normalizeEmail(bootstrap.email()));
+
+        if (user.getPasswordHash() == null
+            || !passwordEncoder.matches(
+                bootstrap.password(),
+                user.getPasswordHash()
+            )) {
+            user.setPasswordHash(passwordEncoder.encode(bootstrap.password()));
+        }
+
+        user.setActive(true);
+        user.setBlockedAt(null);
     }
 
     private void validate(AuthProperties.Bootstrap bootstrap) {

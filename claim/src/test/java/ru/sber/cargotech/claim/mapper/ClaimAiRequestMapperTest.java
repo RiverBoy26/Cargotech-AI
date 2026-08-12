@@ -92,8 +92,11 @@ class ClaimAiRequestMapperTest {
                         "Структурированный срок ответа на претензию"
                 );
         assertThat(result.templateContext().templateStructure())
-                .contains("Исходящий номер и дата претензии", "Подпись представителя кредитора")
-                .doesNotContain("Перечень приложений");
+                .contains(
+                        "Исходящий номер и дата претензии",
+                        "Перечень приложений",
+                        "Подпись представителя кредитора с основанием полномочий"
+                );
     }
 
     private ClaimParty party(String name, String inn, String address) {

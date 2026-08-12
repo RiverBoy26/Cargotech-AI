@@ -18,9 +18,12 @@ import ru.sber.cargotech.claim.repository.ClaimVersionRepository;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -161,7 +164,68 @@ public class ClaimVersionService {
         List<String> removed = baseLines.stream()
             .filter(line -> !currentLines.contains(line))
             .toList();
-        return new VersionDiffResponse(base.getId(), version.getId(), added, removed);
+        List<String> currentOrdered = Arrays.asList(version.getContent().split("\\R"));
+        List<String> baseOrdered = Arrays.asList(base.getContent().split("\\R"));
+        List<String> changed = new ArrayList<>();
+        int sharedLength = Math.min(currentOrdered.size(), baseOrdered.size());
+        for (int index = 0; index < sharedLength; index++) {
+            String previous = baseOrdered.get(index);
+            String current = currentOrdered.get(index);
+            if (!previous.equals(current)
+                    && !currentLines.contains(previous)
+                    && !baseLines.contains(current)) {
+                changed.add(previous + " → " + current);
+            }
+        }
+        return new VersionDiffResponse(
+            base.getId(),
+            version.getId(),
+            added,
+            removed,
+            changed,
+            categorizeChanges(added, removed, changed)
+        );
+    }
+
+    private Map<String, List<String>> categorizeChanges(
+            List<String> added,
+            List<String> removed,
+            List<String> changed
+    ) {
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        result.put("LEGAL_REASONING", new ArrayList<>());
+        result.put("FACTUAL_DATA", new ArrayList<>());
+        result.put("STYLE", new ArrayList<>());
+        result.put("AMOUNT", new ArrayList<>());
+        result.put("DATES", new ArrayList<>());
+        result.put("CONTRACT_REFERENCE", new ArrayList<>());
+        result.put("OTHER", new ArrayList<>());
+        added.forEach(line -> addCategory(result, "+ " + line));
+        removed.forEach(line -> addCategory(result, "− " + line));
+        changed.forEach(line -> addCategory(result, "↔ " + line));
+        result.replaceAll((name, lines) -> List.copyOf(lines));
+        return Map.copyOf(result);
+    }
+
+    private void addCategory(Map<String, List<String>> categories, String change) {
+        String normalized = change.toLowerCase(Locale.ROOT);
+        String category;
+        if (normalized.matches(".*(?:\\d[\\d \\u00a0]*[,.]\\d{2}|руб|коп|сумм|долг|неустойк|пен).*$")) {
+            category = "AMOUNT";
+        } else if (normalized.matches(".*(?:\\d{2}[.]\\d{2}[.]\\d{4}|дата|срок|дн|год).*$")) {
+            category = "DATES";
+        } else if (normalized.matches(".*(?:п[.]? ?\\d|пункт|договор|контракт).*$")) {
+            category = "CONTRACT_REFERENCE";
+        } else if (normalized.matches(".*(?:гк рф|стат(?:ья|ьи|ей)|закон|прав|обязательств|требован|суд|юрисдикц|подсудност).*$")) {
+            category = "LEGAL_REASONING";
+        } else if (normalized.matches(".*(?:инн|кпп|огрн|бик|сч[её]т|банк|адрес|получател|отправител|подписант|рейс|маршрут|наименован|номер).*$")) {
+            category = "FACTUAL_DATA";
+        } else if (normalized.matches(".*(?:уважаем|просим|настоящ|изложен|таким образом|вместе с тем|пунктуац|стил).*$")) {
+            category = "STYLE";
+        } else {
+            category = "OTHER";
+        }
+        categories.get(category).add(change);
     }
 
     private ClaimVersion resolveBaseVersion(ClaimVersion version) {

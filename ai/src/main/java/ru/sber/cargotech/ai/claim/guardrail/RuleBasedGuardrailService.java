@@ -192,6 +192,21 @@ public class RuleBasedGuardrailService {
         }
 
         if (claimType == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
+            if (calculation.originalObligationAmount() == null
+                    || calculation.originalObligationAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                errors.add("backend_calculation.original_obligation_amount must be positive for PAYMENT_DELAY");
+            }
+
+            if (calculation.paidAmount() == null || calculation.paidAmount().compareTo(BigDecimal.ZERO) < 0) {
+                errors.add("backend_calculation.paid_amount must be zero or positive for PAYMENT_DELAY");
+            }
+
+            if (calculation.originalObligationAmount() != null
+                    && calculation.principalDebt() != null
+                    && calculation.originalObligationAmount().compareTo(calculation.principalDebt()) < 0) {
+                errors.add("backend_calculation.original_obligation_amount must not be less than principal_debt");
+            }
+
             if (calculation.principalDebt() == null || calculation.principalDebt().compareTo(BigDecimal.ZERO) <= 0) {
                 errors.add("backend_calculation.principal_debt must be positive for PAYMENT_DELAY");
             }

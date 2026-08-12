@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import ru.sber.cargotech.claim.client.dto.AiGenerateClaimRequest;
 import ru.sber.cargotech.claim.entity.ClaimCalculation;
 import ru.sber.cargotech.claim.entity.ClaimContract;
+import ru.sber.cargotech.claim.entity.ClaimContractClause;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
@@ -12,7 +13,9 @@ import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 @Component
 public class ClaimAiRequestMapper {
@@ -26,6 +29,19 @@ public class ClaimAiRequestMapper {
             ClaimCalculation calculation,
             CurrentClaimUser currentUser
     ) {
+        return map(claim, creditor, debtor, contract, shipment, calculation, currentUser, List.of());
+    }
+
+    public AiGenerateClaimRequest map(
+            ClaimEntity claim,
+            ClaimParty creditor,
+            ClaimParty debtor,
+            ClaimContract contract,
+            ClaimShipment shipment,
+            ClaimCalculation calculation,
+            CurrentClaimUser currentUser,
+            List<ClaimContractClause> clauses
+    ) {
         AiGenerateClaimRequest.ClaimType claimType = mapClaimType(claim);
 
         return new AiGenerateClaimRequest(
@@ -33,12 +49,15 @@ public class ClaimAiRequestMapper {
                         claim.getId().toString(),
                         claim.getClaimNumber(),
                         claimType,
-                        mapParty(creditor),
-                        mapParty(debtor),
+                        mapParty(creditor, claim.getBankDetails()),
+                        mapParty(debtor, null),
                         new AiGenerateClaimRequest.ContractFacts(
                                 contract.getNumber(),
                                 asString(contract.getSignedAt()),
-                                contract.getClaimResponseDays()
+                                claim.getResponseDeadlineDays() == null
+                                        ? contract.getClaimResponseDays()
+                                        : claim.getResponseDeadlineDays(),
+                                contract.getDocumentId() == null ? null : contract.getDocumentId().toString()
                         ),
                         new AiGenerateClaimRequest.ShipmentFacts(
                                 shipment.getOrderNumber(),
@@ -60,7 +79,7 @@ public class ClaimAiRequestMapper {
                                 claim.isNonPaymentConfirmed()
                         ),
                         asString(LocalDate.now()),
-                        mapSignatory(currentUser)
+                        mapSignatory(claim, currentUser)
                 ),
                 new AiGenerateClaimRequest.BackendCalculation(
                         calculation.getRemainingDebt(),
@@ -72,10 +91,14 @@ public class ClaimAiRequestMapper {
                         calculation.getPenaltyAmount(),
                         calculation.getTotalAmount(),
                         shipment.getCurrency(),
-                        calculation.getFormula()
+                        calculation.getFormula(),
+                        asString(calculation.getOverdueStartDate()),
+                        asString(LocalDate.now()),
+                        calculation.getPrincipalDebt(),
+                        calculation.getPaidAmount()
                 ),
-                buildStructuredContractContext(contract),
-                defaultLegalContext(),
+                buildContractContext(contract, clauses),
+                defaultLegalContext(calculation),
                 new AiGenerateClaimRequest.TemplateContext(
                         "claim-default-v2",
                         "Шаблон претензии CargoTech",
@@ -87,7 +110,8 @@ public class ClaimAiRequestMapper {
                                 "Расчёт задолженности и неустойки",
                                 "Правовое обоснование",
                                 "Требования кредитора и срок ответа",
-                                "Подпись представителя кредитора"
+                                "Перечень приложений",
+                                "Подпись представителя кредитора с основанием полномочий"
                         )
                 ),
                 List.of(),
@@ -105,22 +129,28 @@ public class ClaimAiRequestMapper {
         };
     }
 
-    private AiGenerateClaimRequest.Party mapParty(ClaimParty party) {
+    private AiGenerateClaimRequest.Party mapParty(ClaimParty party, String bankDetails) {
         return new AiGenerateClaimRequest.Party(
                 party.getName(),
                 party.getInn(),
-                party.getLegalAddress()
+                party.getLegalAddress(),
+                bankDetails
         );
     }
 
-    private AiGenerateClaimRequest.SignatoryFacts mapSignatory(CurrentClaimUser currentUser) {
-        if (currentUser == null || currentUser.fullName().isBlank()) {
+    private AiGenerateClaimRequest.SignatoryFacts mapSignatory(ClaimEntity claim, CurrentClaimUser currentUser) {
+        String name = isBlank(claim.getSignerFullName())
+                ? (currentUser == null ? null : currentUser.fullName())
+                : claim.getSignerFullName();
+        if (isBlank(name)) {
             return null;
         }
-        String position = currentUser.hasRole("LAWYER")
-                ? "Юрист"
-                : "Представитель кредитора";
-        return new AiGenerateClaimRequest.SignatoryFacts(currentUser.fullName(), position);
+        String position = isBlank(claim.getSignerPosition())
+                ? (currentUser != null && currentUser.hasRole("LAWYER")
+                        ? "Юрист"
+                        : "Представитель кредитора")
+                : claim.getSignerPosition();
+        return new AiGenerateClaimRequest.SignatoryFacts(name, position, claim.getSignerAuthority());
     }
 
     private AiGenerateClaimRequest.PenaltyType mapPenaltyType(ClaimCalculation calculation) {
@@ -149,11 +179,38 @@ public class ClaimAiRequestMapper {
         return AiGenerateClaimRequest.PaymentStatus.UNPAID;
     }
 
-    private List<AiGenerateClaimRequest.ContractContextChunk> buildStructuredContractContext(ClaimContract contract) {
+    private List<AiGenerateClaimRequest.ContractContextChunk> buildContractContext(
+            ClaimContract contract,
+            List<ClaimContractClause> clauses
+    ) {
         List<AiGenerateClaimRequest.ContractContextChunk> context = new ArrayList<>();
+        Set<ru.sber.cargotech.claim.enums.ClauseType> exactTypes = EnumSet.noneOf(
+                ru.sber.cargotech.claim.enums.ClauseType.class
+        );
+        if (clauses != null) {
+            clauses.stream()
+                    .filter(ClaimContractClause::isActive)
+                    .filter(clause -> !isBlank(clause.getText()))
+                    .forEach(clause -> {
+                        exactTypes.add(clause.getClauseType());
+                        String section = isBlank(clause.getSectionName())
+                                ? "Пункт договора"
+                                : clause.getSectionName();
+                        if (clause.getSourcePage() != null) {
+                            section += " (страница " + clause.getSourcePage() + ")";
+                        }
+                        context.add(new AiGenerateClaimRequest.ContractContextChunk(
+                                "contract-clause-" + clause.getId(),
+                                clause.getClauseNumber(),
+                                section,
+                                clause.getText()
+                        ));
+                    });
+        }
         String prefix = "contract-card-" + contract.getId();
 
-        if (contract.getPaymentDays() != null && contract.getPaymentDays() >= 0) {
+        if (!exactTypes.contains(ru.sber.cargotech.claim.enums.ClauseType.PAYMENT_TERMS)
+                && contract.getPaymentDays() != null && contract.getPaymentDays() >= 0) {
             context.add(new AiGenerateClaimRequest.ContractContextChunk(
                     prefix + "-payment-term",
                     null,
@@ -165,7 +222,8 @@ public class ClaimAiRequestMapper {
             ));
         }
 
-        if (contract.getPenaltyType() != null) {
+        if (!exactTypes.contains(ru.sber.cargotech.claim.enums.ClauseType.PENALTY)
+                && contract.getPenaltyType() != null) {
             String rate = contract.getPenaltyRate() == null
                     ? "ставка в карточке не указана"
                     : "ставка " + contract.getPenaltyRate().stripTrailingZeros().toPlainString() + "%";
@@ -179,7 +237,8 @@ public class ClaimAiRequestMapper {
             ));
         }
 
-        if (contract.getClaimResponseDays() != null && contract.getClaimResponseDays() > 0) {
+        if (!exactTypes.contains(ru.sber.cargotech.claim.enums.ClauseType.CLAIM_PROCEDURE)
+                && contract.getClaimResponseDays() != null && contract.getClaimResponseDays() > 0) {
             context.add(new AiGenerateClaimRequest.ContractContextChunk(
                     prefix + "-pretrial-response",
                     null,
@@ -212,8 +271,8 @@ public class ClaimAiRequestMapper {
         };
     }
 
-    private List<AiGenerateClaimRequest.LegalContextItem> defaultLegalContext() {
-        return List.of(
+    private List<AiGenerateClaimRequest.LegalContextItem> defaultLegalContext(ClaimCalculation calculation) {
+        List<AiGenerateClaimRequest.LegalContextItem> items = new ArrayList<>(List.of(
                 new AiGenerateClaimRequest.LegalContextItem(
                         "fallback-payment-gk-309",
                         "ГК РФ",
@@ -221,8 +280,18 @@ public class ClaimAiRequestMapper {
                         "Общее основание требования надлежащего исполнения обязательства.",
                         "Обязательства должны исполняться надлежащим образом в соответствии с условиями обязательства и требованиями закона.",
                         "ГК РФ, ст. 309",
-                        "2026-08-07",
+                        "2026-08-12",
                         "Допускается для действующего договорного денежного обязательства."
+                ),
+                new AiGenerateClaimRequest.LegalContextItem(
+                        "fallback-payment-gk-310",
+                        "ГК РФ",
+                        "310",
+                        "Запрет одностороннего отказа от исполнения обязательства.",
+                        "Односторонний отказ от исполнения обязательства и одностороннее изменение его условий не допускаются, кроме предусмотренных законом или договором случаев.",
+                        "ГК РФ, ст. 310",
+                        "2026-08-12",
+                        "Применяется, если должник уклоняется от согласованной оплаты без предусмотренного основания."
                 ),
                 new AiGenerateClaimRequest.LegalContextItem(
                         "fallback-payment-gk-314-1",
@@ -231,10 +300,33 @@ public class ClaimAiRequestMapper {
                         "Исполнение обязательства в определённый договором день или период.",
                         "Если обязательство позволяет определить день или период исполнения, оно подлежит исполнению в этот день или в пределах такого периода.",
                         "ГК РФ, п. 1 ст. 314",
-                        "2026-08-07",
+                        "2026-08-12",
                         "Применяется при подтверждённом условии договора о сроке оплаты."
+                ),
+                new AiGenerateClaimRequest.LegalContextItem(
+                        "fallback-expedition-gk-801",
+                        "ГК РФ",
+                        "801",
+                        "Правовая основа договора транспортной экспедиции.",
+                        "По договору транспортной экспедиции экспедитор за вознаграждение и за счёт клиента выполняет или организует услуги, связанные с перевозкой груза.",
+                        "ГК РФ, ст. 801",
+                        "2026-08-12",
+                        "Используется только когда представленные договор и перевозка относятся к транспортной экспедиции."
                 )
-        );
+        ));
+        if (calculation.getPenaltyType() == ru.sber.cargotech.claim.enums.PenaltyType.ARTICLE_395) {
+            items.add(new AiGenerateClaimRequest.LegalContextItem(
+                    "fallback-interest-gk-395",
+                    "ГК РФ",
+                    "395",
+                    "Основание начисления процентов при отсутствии договорной неустойки.",
+                    "За неправомерное удержание денежных средств начисляются проценты; размер определяется ключевой ставкой Банка России, действовавшей в соответствующие периоды.",
+                    "ГК РФ, ст. 395",
+                    "2026-08-12",
+                    "Применяется при просрочке денежного обязательства, когда договорная неустойка не установлена."
+            ));
+        }
+        return List.copyOf(items);
     }
 
     private String buildRoute(ClaimShipment shipment) {
@@ -249,5 +341,9 @@ public class ClaimAiRequestMapper {
 
     private String asString(LocalDate date) {
         return date == null ? null : date.toString();
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

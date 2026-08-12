@@ -56,7 +56,8 @@ public class ClaimGenerationPipelineService {
         List<String> ragWarnings = new ArrayList<>();
         boolean ragUsed = ragEnabled(request);
 
-        GenerateClaimRequest enrichedRequest = buildEnrichedRequest(request, ragUsed, ragWarnings);
+        EnrichmentResult enrichment = buildEnrichedRequest(request, ragUsed, ragWarnings);
+        GenerateClaimRequest enrichedRequest = enrichment.request();
         List<GigaChatMessage> messages = buildPrompt(enrichedRequest);
 
         GigaChatClient.ChatCallResult callResult = gigaChatClient.sendChatWithTrace(
@@ -83,10 +84,10 @@ public class ClaimGenerationPipelineService {
 
         if (guardrailResult.decision() == GuardrailDecision.BLOCK) {
             log.warn(
-                    "Claim generation blocked; starting repair: caseId={}, requestId={}, errors={}",
+                    "Claim generation blocked; starting repair: caseId={}, requestId={}, errorCount={}",
                     enrichedRequest.caseFacts().claimId(),
                     requestId,
-                    guardrailResult.errors()
+                    guardrailResult.errors() == null ? 0 : guardrailResult.errors().size()
             );
             List<GigaChatMessage> repairMessages = buildRepairMessages(
                     messages,
@@ -134,6 +135,7 @@ public class ClaimGenerationPipelineService {
                 totalUsage,
                 generatedClaim,
                 guardrailResult,
+                enrichment.retrievedFragments(),
                 Instant.now()
         );
     }
@@ -157,23 +159,23 @@ public class ClaimGenerationPipelineService {
 
         if (result.decision() == GuardrailDecision.BLOCK) {
             log.warn(
-                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errors={}, warnings={}",
+                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errorCount={}, warningCount={}",
                     stage,
                     caseId,
                     requestId,
                     result.decision(),
-                    result.errors(),
-                    result.warnings()
+                    result.errors() == null ? 0 : result.errors().size(),
+                    result.warnings() == null ? 0 : result.warnings().size()
             );
         } else {
             log.info(
-                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errors={}, warnings={}",
+                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errorCount={}, warningCount={}",
                     stage,
                     caseId,
                     requestId,
                     result.decision(),
-                    result.errors(),
-                    result.warnings()
+                    result.errors() == null ? 0 : result.errors().size(),
+                    result.warnings() == null ? 0 : result.warnings().size()
             );
         }
     }
@@ -207,14 +209,14 @@ public class ClaimGenerationPipelineService {
                 3. Дословно перенеси все обязательные номера, даты, маршрут, адрес, временное окно и суммы.
                 4. Для PAYMENT_DELAY обязательно укажи claim_number и claim_date, номер и дату договора, а также дату срока оплаты, если они есть во входе.
                 5. Для PAYMENT_DELAY при claim_response_days > 0 укажи точный срок ответа в календарных днях с даты получения претензии.
-                6. Для PAYMENT_DELAY при заполненном signatory заверши текст точными position и name.
+                6. Для PAYMENT_DELAY при заполненном signatory заверши текст точными position, name и authority, если оно передано.
                 7. Если act_date есть, а act_number отсутствует, пиши «акт от <дата>» без символа № и пустого номера.
                 8. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
                 9. Не используй термин «непредставление транспортного средства».
                 10. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
                 11. Если legal_context не пуст, выбери минимум одну применимую норму, дословно вставь её citation в claim_text и добавь ту же норму в used_law_articles.
                 12. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
-                13. Для PAYMENT_DELAY не добавляй отсутствующие во входе банковские реквизиты; в раздел «Приложения» и attachments включи только подтверждённые входом документы и обязательный расчёт задолженности.
+                13. Для PAYMENT_DELAY используй банковские реквизиты только из creditor.bank_details; в раздел «Приложения» и attachments включи только документы с подтверждённым идентификатором и обязательный расчёт задолженности.
                 14. В claim_text не должно быть ISO-дат YYYY-MM-DD: преобразуй их в русскую письменную форму «07 августа 2026 года», не меняя саму календарную дату.
                 15. В claim_text не должно быть технических enum/кодов UNPAID, PAID, PARTIALLY_PAID, UNKNOWN, RUB, CONTRACT_PENALTY, NONE. Вырази их смысл обычным русским языком.
                 16. Денежные суммы в claim_text форматируй для документа: разделяй тысячи пробелами и не используй десятичную точку перед словом «рублей»; например «100 000 рублей 00 копеек». backend_calculation_used не изменяй.
@@ -241,7 +243,7 @@ public class ClaimGenerationPipelineService {
         return (first == null ? 0 : first) + (second == null ? 0 : second);
     }
 
-    private GenerateClaimRequest buildEnrichedRequest(
+    private EnrichmentResult buildEnrichedRequest(
             GenerateClaimPipelineRequest request,
             boolean ragUsed,
             List<String> ragWarnings
@@ -249,14 +251,14 @@ public class ClaimGenerationPipelineService {
         GenerateClaimRequest base = request.toGenerateClaimRequest();
 
         if (!ragUsed) {
-            return base;
+            return new EnrichmentResult(base, List.of());
         }
 
         GenerateClaimPipelineRequest.RagOptions ragOptions = request.ragOptions();
 
         if (ragOptions == null || isBlank(ragOptions.contractId())) {
             ragWarnings.add("rag_options.contract_id is empty; provided context fields are used");
-            return base;
+            return new EnrichmentResult(base, List.of());
         }
 
         RagSearchService.ClaimRagContext ragContext;
@@ -269,14 +271,14 @@ public class ClaimGenerationPipelineService {
         } catch (RuntimeException exception) {
             if (hasProvidedContractContext(request)) {
                 ragWarnings.add("RAG retrieval failed; trusted provided context was used");
-                return base;
+                return new EnrichmentResult(base, List.of());
             }
             throw new IllegalStateException("RAG retrieval failed and no provided contract_context is available", exception);
         }
 
         ragWarnings.addAll(ragContext.warnings());
 
-        return new GenerateClaimRequest(
+        GenerateClaimRequest enriched = new GenerateClaimRequest(
                 request.caseFacts(),
                 request.backendCalculation(),
                 mergeContractContext(request.contractContext(), ragContext.contractContext()),
@@ -284,6 +286,7 @@ public class ClaimGenerationPipelineService {
                 ragContext.templateContext() == null ? request.templateContext() : ragContext.templateContext(),
                 mergeSimilarExamples(request.similarExamples(), ragContext.similarExamples())
         );
+        return new EnrichmentResult(enriched, List.copyOf(ragContext.retrievedFragments()));
     }
 
     private boolean hasProvidedContractContext(GenerateClaimPipelineRequest request) {
@@ -408,5 +411,11 @@ public class ClaimGenerationPipelineService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private record EnrichmentResult(
+            GenerateClaimRequest request,
+            List<RagSearchService.RetrievedFragment> retrievedFragments
+    ) {
     }
 }

@@ -7,6 +7,8 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.TreeMap;
 
 final class PenaltyScheduleCalculator {
@@ -23,6 +25,26 @@ final class PenaltyScheduleCalculator {
             PenaltyType penaltyType,
             BigDecimal penaltyRate,
             List<Allocation> allocations
+    ) {
+        return calculate(
+                principalDebt,
+                overdueStartDate,
+                calculationDate,
+                penaltyType,
+                penaltyRate,
+                allocations,
+                List.of()
+        );
+    }
+
+    static BigDecimal calculate(
+            BigDecimal principalDebt,
+            LocalDate overdueStartDate,
+            LocalDate calculationDate,
+            PenaltyType penaltyType,
+            BigDecimal penaltyRate,
+            List<Allocation> allocations,
+            List<RatePeriod> ratePeriods
     ) {
         if (principalDebt == null
                 || principalDebt.signum() <= 0
@@ -48,6 +70,17 @@ final class PenaltyScheduleCalculator {
                             allocation.amount(),
                             BigDecimal::add
                     ));
+        }
+
+        if (penaltyType == PenaltyType.ARTICLE_395 && ratePeriods != null && !ratePeriods.isEmpty()) {
+            return calculateArticle395ByRatePeriods(
+                    principalDebt,
+                    overdueStartDate,
+                    calculationDate,
+                    penaltyRate,
+                    paymentsByDate,
+                    ratePeriods
+            );
         }
 
         BigDecimal outstandingDebt = principalDebt;
@@ -89,6 +122,73 @@ final class PenaltyScheduleCalculator {
         return money(accruedPenalty);
     }
 
+    private static BigDecimal calculateArticle395ByRatePeriods(
+            BigDecimal principalDebt,
+            LocalDate overdueStartDate,
+            LocalDate calculationDate,
+            BigDecimal fallbackRate,
+            TreeMap<LocalDate, BigDecimal> paymentsByDate,
+            List<RatePeriod> ratePeriods
+    ) {
+        BigDecimal outstandingDebt = principalDebt;
+        for (var payment : paymentsByDate.headMap(overdueStartDate, true).values()) {
+            outstandingDebt = outstandingDebt.subtract(payment).max(BigDecimal.ZERO);
+        }
+
+        SortedSet<LocalDate> boundaries = new TreeSet<>();
+        boundaries.add(overdueStartDate);
+        boundaries.add(calculationDate);
+        paymentsByDate.keySet().stream()
+                .filter(date -> date.isAfter(overdueStartDate) && date.isBefore(calculationDate))
+                .forEach(boundaries::add);
+        ratePeriods.forEach(period -> {
+            if (period.from() != null && period.from().isAfter(overdueStartDate)
+                    && period.from().isBefore(calculationDate)) {
+                boundaries.add(period.from());
+            }
+            if (period.to() != null) {
+                LocalDate after = period.to().plusDays(1);
+                if (after.isAfter(overdueStartDate) && after.isBefore(calculationDate)) {
+                    boundaries.add(after);
+                }
+            }
+        });
+
+        List<LocalDate> ordered = new java.util.ArrayList<>(boundaries);
+        BigDecimal accrued = BigDecimal.ZERO;
+        for (int index = 0; index + 1 < ordered.size(); index++) {
+            LocalDate from = ordered.get(index);
+            LocalDate to = ordered.get(index + 1);
+            if (from.isAfter(overdueStartDate)) {
+                outstandingDebt = outstandingDebt
+                        .subtract(paymentsByDate.getOrDefault(from, BigDecimal.ZERO))
+                        .max(BigDecimal.ZERO);
+            }
+            long days = ChronoUnit.DAYS.between(from, to);
+            accrued = accrued.add(calculatePeriod(
+                    outstandingDebt,
+                    days,
+                    PenaltyType.ARTICLE_395,
+                    rateAt(from, ratePeriods, fallbackRate)
+            ));
+        }
+        return money(accrued);
+    }
+
+    private static BigDecimal rateAt(
+            LocalDate date,
+            List<RatePeriod> periods,
+            BigDecimal fallbackRate
+    ) {
+        return periods.stream()
+                .filter(period -> period.from() != null && !date.isBefore(period.from()))
+                .filter(period -> period.to() == null || !date.isAfter(period.to()))
+                .map(RatePeriod::rate)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(fallbackRate);
+    }
+
     private static BigDecimal calculatePeriod(
             BigDecimal debt,
             long days,
@@ -124,5 +224,8 @@ final class PenaltyScheduleCalculator {
     }
 
     record Allocation(LocalDate paymentDate, BigDecimal amount) {
+    }
+
+    record RatePeriod(LocalDate from, LocalDate to, BigDecimal rate) {
     }
 }

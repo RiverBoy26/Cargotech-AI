@@ -11,7 +11,8 @@ public record AiGenerateClaimResponse(
         String status,
         @JsonProperty("rag_warnings") List<String> ragWarnings,
         @JsonProperty("generated_claim") GeneratedClaim generatedClaim,
-        @JsonProperty("guardrail_result") GuardrailResult guardrailResult
+        @JsonProperty("guardrail_result") GuardrailResult guardrailResult,
+        @JsonProperty("retrieved_fragments") List<RetrievedFragment> retrievedFragments
 ) {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GeneratedClaim(
@@ -23,4 +24,12 @@ public record AiGenerateClaimResponse(
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GuardrailResult(String decision, List<String> errors, List<String> warnings) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RetrievedFragment(
+            @JsonProperty("document_id") String documentId,
+            @JsonProperty("chunk_id") String chunkId,
+            Double score,
+            String text
+    ) {}
 }

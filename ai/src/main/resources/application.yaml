@@ -9,6 +9,10 @@ server:
 spring:
   application:
     name: cargotech-ai
+  datasource:
+    url: ${AI_DB_URL:jdbc:postgresql://localhost:5432/cargotech}
+    username: ${AI_DB_USERNAME:cargotech}
+    password: ${AI_DB_PASSWORD:cargotech}
   docker:
     compose:
       enabled: false
@@ -41,3 +45,8 @@ rag:
 ai:
   diagnostics:
     endpoints-enabled: ${AI_DIAGNOSTICS_ENDPOINTS_ENABLED:false}
+  limits:
+    max-calls-per-claim: ${AI_MAX_CALLS_PER_CLAIM:8}
+    max-cost-per-claim-rub: ${AI_MAX_COST_PER_CLAIM_RUB:50}
+    input-token-cost-rub-per-1000: ${AI_INPUT_TOKEN_COST_RUB_PER_1000:0.20}
+    output-token-cost-rub-per-1000: ${AI_OUTPUT_TOKEN_COST_RUB_PER_1000:0.20}

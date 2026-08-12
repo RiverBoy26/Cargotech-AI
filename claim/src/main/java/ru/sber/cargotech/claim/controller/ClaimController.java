@@ -133,6 +133,37 @@ public class ClaimController {
         );
     }
 
+    @PostMapping("/{claimId}/request-non-payment-confirmation")
+    @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
+    public ClaimDetailsResponse requestNonPaymentConfirmation(@PathVariable UUID claimId) {
+        log.info("Запрос подтверждения отсутствия оплаты: claimId={}", claimId);
+        return claimService.requestNonPaymentConfirmation(
+            currentUserProvider.getRequiredUser(),
+            claimId
+        );
+    }
+
+    @GetMapping("/{claimId}/send-checklist")
+    @PreAuthorize("hasAuthority('CLAIM_READ')")
+    public SendChecklistResponse sendChecklist(@PathVariable UUID claimId) {
+        log.info("Проверка готовности претензии к отправке: claimId={}", claimId);
+        return claimService.sendChecklist(currentUserProvider.getRequiredUser(), claimId);
+    }
+
+    @PostMapping("/{claimId}/validation-override")
+    @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
+    public ClaimDetailsResponse overrideValidation(
+        @PathVariable UUID claimId,
+        @Valid @RequestBody ValidationOverrideRequest request
+    ) {
+        log.info("Ручное подтверждение проверки претензии: claimId={}", claimId);
+        return claimService.overrideValidation(
+            currentUserProvider.getRequiredUser(),
+            claimId,
+            request
+        );
+    }
+
     @PostMapping("/{claimId}/approve")
     @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
     public ClaimDetailsResponse approve(
@@ -175,6 +206,20 @@ public class ClaimController {
     ) {
         log.info("Вызов endpoint: cancel");
         return claimService.cancel(currentUserProvider.getRequiredUser(), claimId, request);
+    }
+
+    @PostMapping("/{claimId}/withdraw")
+    @PreAuthorize("hasAuthority('OVERDUE_CONFIRM_NON_PAYMENT')")
+    public ClaimDetailsResponse withdraw(
+        @PathVariable UUID claimId,
+        @RequestBody(required = false) StatusChangeRequest request
+    ) {
+        log.info("Отзыв претензии бухгалтером до отправки: claimId={}", claimId);
+        return claimService.withdraw(
+            currentUserProvider.getRequiredUser(),
+            claimId,
+            request
+        );
     }
 
     @PostMapping("/{claimId}/mark-paid")

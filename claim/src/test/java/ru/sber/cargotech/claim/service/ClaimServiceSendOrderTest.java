@@ -13,6 +13,7 @@ import ru.sber.cargotech.claim.dto.StatusChangeRequest;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimStatusHistory;
 import ru.sber.cargotech.claim.enums.ClaimStatus;
+import ru.sber.cargotech.claim.enums.DocumentValidationStatus;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.repository.ClaimQueryRepository;
@@ -56,6 +57,14 @@ class ClaimServiceSendOrderTest {
         claim.setId(claimId);
         claim.setOrganizationId(organizationId);
         claim.setStatus(ClaimStatus.LEGAL_APPROVED);
+        claim.setPrincipalDebt(new java.math.BigDecimal("100.00"));
+        claim.setPenaltyAmount(java.math.BigDecimal.ZERO);
+        claim.setCreditorId(UUID.randomUUID());
+        claim.setDebtorId(UUID.randomUUID());
+        claim.setContractId(UUID.randomUUID());
+        claim.setNonPaymentConfirmed(true);
+        claim.setFinalVersionId(UUID.randomUUID());
+        claim.setDocumentValidationStatus(DocumentValidationStatus.PASSED);
 
         ClaimCalculationResponse calculation = org.mockito.Mockito.mock(
                 ClaimCalculationResponse.class
@@ -145,6 +154,6 @@ class ClaimServiceSendOrderTest {
                 ArgumentCaptor.forClass(ClaimStatusHistory.class);
         verify(historyRepository).save(historyCaptor.capture());
         assertThat(historyCaptor.getValue().getReason())
-                .isEqualTo("SYSTEM: полная оплата подтверждена модулем payment");
+                .isEqualTo("Задолженность полностью погашена");
     }
 }

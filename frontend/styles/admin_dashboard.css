@@ -461,6 +461,40 @@ header {
   text-align: center;
 }
 
+.contract_review_btn {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.contract_extraction_panel {
+  padding: 20px;
+  border-top: 1px solid #e6e9ed;
+  background: #fffaf6;
+  text-align: left;
+}
+
+.contract_extraction_title {
+  margin-bottom: 14px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.contract_extraction_item {
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid #e6e9ed;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.contract_extraction_item blockquote {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid #e7a477;
+  color: #59636f;
+}
+
 @media (max-width: 900px) {
   .admin_entity_table {
     overflow-x: auto;

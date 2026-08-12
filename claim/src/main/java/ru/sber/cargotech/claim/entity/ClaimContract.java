@@ -11,6 +11,7 @@ import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 import ru.sber.cargotech.claim.enums.ContractStatus;
+import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 
@@ -73,6 +74,16 @@ public class ClaimContract {
 
     @Column(name = "document_id")
     private UUID documentId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "extraction_status", nullable = false, length = 32)
+    private ContractExtractionStatus extractionStatus = ContractExtractionStatus.NOT_STARTED;
+
+    @Column(name = "extraction_confirmed_at")
+    private OffsetDateTime extractionConfirmedAt;
+
+    @Column(name = "extraction_confirmed_by")
+    private UUID extractionConfirmedBy;
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;

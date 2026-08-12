@@ -2,6 +2,8 @@ package ru.sber.cargotech.document.service;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.sber.cargotech.document.client.ClaimCalculationClient;
 import ru.sber.cargotech.document.dto.GenerateClaimDocumentRequest;
 import ru.sber.cargotech.document.dto.GenerateDocumentResponse;
 import ru.sber.cargotech.document.dto.StoreGeneratedFileCommand;
@@ -34,6 +36,7 @@ public class ClaimDocumentGenerationService {
     private final DocumentService documentService;
     private final DocumentLinkRepository linkRepository;
     private final DocumentGenerationLogRepository generationLogRepository;
+    private final ClaimCalculationClient calculationClient;
 
     public ClaimDocumentGenerationService(
         ClaimTemplateService templateService,
@@ -41,7 +44,8 @@ public class ClaimDocumentGenerationService {
         ClaimPdfRenderer pdfRenderer,
         DocumentService documentService,
         DocumentLinkRepository linkRepository,
-        DocumentGenerationLogRepository generationLogRepository
+        DocumentGenerationLogRepository generationLogRepository,
+        ClaimCalculationClient calculationClient
     ) {
         this.templateService = templateService;
         this.docxRenderer = docxRenderer;
@@ -49,9 +53,11 @@ public class ClaimDocumentGenerationService {
         this.documentService = documentService;
         this.linkRepository = linkRepository;
         this.generationLogRepository = generationLogRepository;
+        this.calculationClient = calculationClient;
     }
 
     @PreAuthorize("hasAuthority('DOCUMENT_GENERATE')")
+    @Transactional
     public GenerateDocumentResponse generateClaimDocument(
         GenerateClaimDocumentRequest request,
         CurrentDocumentUser user
@@ -98,6 +104,8 @@ public class ClaimDocumentGenerationService {
             );
 
             linkDocumentToClaim(document, request.claimId(), user.userId());
+            storeCalculationAppendix(request, user, "pdf");
+            storeCalculationAppendix(request, user, "xlsx");
             log.setDocument(document);
             log.setStatus(GenerationStatus.COMPLETED);
             generationLogRepository.save(log);
@@ -119,6 +127,35 @@ public class ClaimDocumentGenerationService {
             generationLogRepository.save(log);
             throw exception;
         }
+    }
+
+    private void storeCalculationAppendix(
+        GenerateClaimDocumentRequest request,
+        CurrentDocumentUser user,
+        String format
+    ) {
+        ClaimCalculationClient.CalculationAttachment attachment =
+            calculationClient.download(request.claimId(), format);
+        Document appendix = documentService.storeGenerated(
+            new StoreGeneratedFileCommand(
+                user.organizationId(),
+                user.userId(),
+                attachment.content(),
+                attachment.filename(),
+                attachment.contentType(),
+                DocumentType.CALCULATION_APPENDIX,
+                request.documentNumber(),
+                request.documentDate(),
+                "Расчёт суммы претензии (" + format.toUpperCase() + ")"
+            )
+        );
+        DocumentLink link = new DocumentLink();
+        link.setDocument(appendix);
+        link.setEntityType(DocumentEntityType.CLAIM);
+        link.setEntityId(request.claimId());
+        link.setLinkType("CALCULATION_" + format.toUpperCase());
+        link.setCreatedBy(user.userId());
+        linkRepository.save(link);
     }
 
     private DocumentSource resolveSource(

@@ -17,7 +17,9 @@ public final class OverdueDateCalculator {
             ? PaymentStartEvent.UNLOADING_DATE
             : contract.getPaymentStartEvent()) {
             case ACT_SIGNED -> shipment.getActSignedAt();
-            case UNLOADING_DATE, TTN_SIGNED, INVOICE_DATE -> shipment.getUnloadingDate();
+            case UNLOADING_DATE -> shipment.getUnloadingDate();
+            case TTN_SIGNED -> shipment.getTtnSignedAt();
+            case INVOICE_DATE -> shipment.getInvoiceDate();
         };
         if (baseDate == null) {
             baseDate = shipment.getActSignedAt() != null

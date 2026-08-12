@@ -47,12 +47,18 @@ function renderActionButton(claim) {
       >Подтвердить неуплату</button>`;
   }
   if (claim.status === 'DRAFT' && claim.nonPaymentConfirmed) {
-    return '<span class="action_btn_done">Передано юристу</span>';
+    return `
+      <span class="action_btn_done">Передано юристу</span>
+      <button class="action_btn" data-claim-action="withdraw" data-id="${escapeAccountant(claim.id)}">Отозвать</button>`;
   }
   if (!['PAID', 'CANCELLED', 'CANCELLED_PAID', 'CLOSED_IN_COURT'].includes(claim.status)) {
+    const withdrawButton = ['PENDING_LEGAL_REVIEW', 'LEGAL_APPROVED'].includes(claim.status)
+      ? `<button class="action_btn" data-claim-action="withdraw" data-id="${escapeAccountant(claim.id)}">Отозвать</button>`
+      : '';
     return `
       <button class="action_btn" data-claim-action="preflight" data-id="${escapeAccountant(claim.id)}">Проверить</button>
-      <button class="action_btn action_btn_paid" data-claim-action="mark-paid" data-id="${escapeAccountant(claim.id)}">Отметить оплату</button>`;
+      <button class="action_btn action_btn_paid" data-claim-action="mark-paid" data-id="${escapeAccountant(claim.id)}">Оплата поступила</button>
+      ${withdrawButton}`;
   }
   return '<span class="action_btn_done">—</span>';
 }
@@ -169,19 +175,27 @@ function bindOverdueActions() {
           await claimAction(id, 'confirm-non-payment', 'Неуплата подтверждена бухгалтером');
         } else if (action === 'preflight') {
           const result = await preflightClaimPayment(id, 'Ручная проверка бухгалтером');
-          alert(
+          showToast(
             `Статус: ${result.paymentStatus}\n`
             + `Оплачено: ${formatMoney(result.paidAmount)}\n`
-            + `Остаток: ${formatMoney(result.remainingAmount)}`
+            + `Остаток: ${formatMoney(result.remainingAmount)}`,
+            'info'
           );
         } else if (action === 'mark-paid') {
           const paymentId = await choosePaymentForClaim(id);
           if (!paymentId) return;
           await markClaimPaidByPayment(id, paymentId, 'Полная оплата подтверждена бухгалтером');
+        } else if (action === 'withdraw') {
+          await claimAction(
+            id,
+            'withdraw',
+            'Претензия отозвана бухгалтером до отправки'
+          );
+          showToast('Претензия отозвана и сохранена в истории', 'success');
         }
         await loadOverdues();
       } catch (error) {
-        alert(error.message);
+        showToast(error.message, 'error');
       } finally {
         button.disabled = false;
       }

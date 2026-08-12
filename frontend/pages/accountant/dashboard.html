@@ -36,6 +36,8 @@
                     <input
                         class="search-box__input"
                         id="overdue_search"
+                        name="overdue_search"
+                        autocomplete="off"
                         type="search"
                         placeholder="Поиск по клиенту, экспедитору или рейсу...">
                 </div>
@@ -85,7 +87,7 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_import_file">Файл XLSX *</label>
-                        <input class="form_input form_file" id="payment_import_file" type="file" required
+                        <input class="form_input form_file" id="payment_import_file" name="payment_import_file" autocomplete="off" type="file" required
                                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
                     </div>
                 </div>
@@ -104,19 +106,19 @@
                 <div class="payment_form_grid">
                     <div class="form_field">
                         <label class="form_label" for="payment_number">Номер платежа</label>
-                        <input class="form_input" id="payment_number" maxlength="128" placeholder="ПП-101">
+                        <input class="form_input" id="payment_number" name="payment_number" autocomplete="off" maxlength="128" placeholder="ПП-101">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_external_id">Внешний ID</label>
-                        <input class="form_input" id="payment_external_id" maxlength="255" placeholder="MANUAL-2026-001">
+                        <input class="form_input" id="payment_external_id" name="payment_external_id" autocomplete="off" maxlength="255" placeholder="MANUAL-2026-001">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_date">Дата платежа *</label>
-                        <input class="form_input" id="payment_date" type="date" required>
+                        <input class="form_input" id="payment_date" name="payment_date" autocomplete="off" type="date" required>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_amount">Сумма *</label>
-                        <input class="form_input" id="payment_amount" type="number" required min="0.01" step="0.01" placeholder="150000,00">
+                        <input class="form_input" id="payment_amount" name="payment_amount" autocomplete="off" type="number" required min="0.01" step="0.01" placeholder="150000,00">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_currency">Валюта *</label>
@@ -128,15 +130,15 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_payer_inn">ИНН плательщика</label>
-                        <input class="form_input" id="payment_payer_inn" maxlength="12">
+                        <input class="form_input" id="payment_payer_inn" name="payment_payer_inn" autocomplete="off" maxlength="12">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_payer_name">Плательщик</label>
-                        <input class="form_input" id="payment_payer_name" maxlength="500" placeholder="ООО Клиент">
+                        <input class="form_input" id="payment_payer_name" name="payment_payer_name" autocomplete="off" maxlength="500" placeholder="ООО Клиент">
                     </div>
                     <div class="form_field form_field_wide">
                         <label class="form_label" for="payment_purpose">Назначение платежа</label>
-                        <textarea class="form_input form_textarea" id="payment_purpose"
+                        <textarea class="form_input form_textarea" id="payment_purpose" name="payment_purpose" autocomplete="off"
                                   placeholder="Оплата по претензии CT-2026-001"></textarea>
                     </div>
                 </div>
@@ -152,7 +154,7 @@
             <div class="payments_toolbar">
                 <div class="search_box">
                     <span class="search-box__icon"><img src="../../assets/Search.svg" alt=""></span>
-                    <input class="search-box__input" id="payment_search" type="search"
+                    <input class="search-box__input" id="payment_search" name="payment_search" autocomplete="off" type="search"
                            placeholder="Поиск по номеру, плательщику, ИНН или назначению...">
                 </div>
                 <div class="toolbar_actions">

@@ -96,7 +96,7 @@ public class ClaimFactConsistencyValidator {
 
         validateClaimIdentity(facts, text, errors);
         validateSignatory(facts.signatory(), text, errors);
-        validateExcludedSections(text, errors);
+        validateExcludedSections(facts, text, errors);
         validatePresentationQuality(text, errors);
         validateParty("creditor", facts.creditor(), text, errors);
         validateParty("debtor", facts.debtor(), text, errors);
@@ -141,10 +141,16 @@ public class ClaimFactConsistencyValidator {
         }
         requireTextValue(text, signatory.position(), "signatory.position", errors);
         requireTextValue(text, signatory.name(), "signatory.name", errors);
+        requireTextValue(text, signatory.authority(), "signatory.authority", errors);
     }
 
-    private void validateExcludedSections(String text, List<String> errors) {
-        if (BANK_DETAILS_PATTERN.matcher(text).find()) {
+    private void validateExcludedSections(
+            GenerateClaimRequest.CaseFacts facts,
+            String text,
+            List<String> errors
+    ) {
+        String allowedBankDetails = facts.creditor() == null ? null : facts.creditor().bankDetails();
+        if (!hasText(allowedBankDetails) && BANK_DETAILS_PATTERN.matcher(text).find()) {
             errors.add("claim_text must not contain bank details");
         }
     }
@@ -178,6 +184,7 @@ public class ClaimFactConsistencyValidator {
 
         requireTextValue(text, party.name(), role + ".name", errors);
         requireTextValue(text, party.inn(), role + ".inn", errors);
+        requireTextValue(text, party.bankDetails(), role + ".bank_details", errors);
     }
 
     private void validateUnknownInns(
@@ -290,9 +297,18 @@ public class ClaimFactConsistencyValidator {
 
         Set<BigDecimal> allowed = new HashSet<>();
         addAmount(allowed, calculation.principalDebt());
+        addAmount(allowed, calculation.originalObligationAmount());
+        addAmount(allowed, calculation.paidAmount());
         addAmount(allowed, calculation.penaltyAmount());
         addAmount(allowed, calculation.totalAmount());
 
+        if (calculation.originalObligationAmount() != null
+                && calculation.originalObligationAmount().compareTo(BigDecimal.ZERO) > 0) {
+            requireAmount(text, calculation.originalObligationAmount(), "original_obligation_amount", errors);
+        }
+        if (calculation.paidAmount() != null && calculation.paidAmount().compareTo(BigDecimal.ZERO) > 0) {
+            requireAmount(text, calculation.paidAmount(), "paid_amount", errors);
+        }
         if (calculation.principalDebt() != null && calculation.principalDebt().compareTo(BigDecimal.ZERO) > 0) {
             requireAmount(text, calculation.principalDebt(), "principal_debt", errors);
         }
@@ -302,6 +318,8 @@ public class ClaimFactConsistencyValidator {
         if (calculation.totalAmount() != null && calculation.totalAmount().compareTo(BigDecimal.ZERO) > 0) {
             requireAmount(text, calculation.totalAmount(), "total_amount", errors);
         }
+        requireDate(text, calculation.overdueStartDate(), "overdue_start_date", errors);
+        requireDate(text, calculation.overdueEndDate(), "overdue_end_date", errors);
 
         Matcher matcher = RUB_AMOUNT_PATTERN.matcher(text);
         while (matcher.find()) {
@@ -322,16 +340,11 @@ public class ClaimFactConsistencyValidator {
         GenerateClaimRequest.CaseFacts facts = request.caseFacts();
         GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
 
-        if (facts.contract() != null) allowed.add(GenerateClaimResponse.DocumentType.CONTRACT);
-        if (request.backendCalculation() != null) allowed.add(GenerateClaimResponse.DocumentType.CALCULATION);
-        if (facts.payment() != null && Boolean.TRUE.equals(facts.payment().paymentConfirmedByAccountant())) {
-            allowed.add(GenerateClaimResponse.DocumentType.PAYMENT_EXTRACT);
+        if (facts.contract() != null && hasText(facts.contract().documentId())) {
+            allowed.add(GenerateClaimResponse.DocumentType.CONTRACT);
         }
+        if (request.backendCalculation() != null) allowed.add(GenerateClaimResponse.DocumentType.CALCULATION);
         if (shipment != null) {
-            if (hasText(shipment.actNumber()) || hasText(shipment.actDate())) allowed.add(GenerateClaimResponse.DocumentType.ACT);
-            if (hasText(shipment.ttnNumber())) allowed.add(GenerateClaimResponse.DocumentType.TTN);
-            if (hasText(shipment.invoiceNumber())) allowed.add(GenerateClaimResponse.DocumentType.INVOICE);
-            if (hasText(shipment.orderNumber())) allowed.add(GenerateClaimResponse.DocumentType.TRANSPORT_ORDER);
             if (Boolean.TRUE.equals(shipment.failureConfirmedByDispatcher())) {
                 allowed.add(GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT);
             }

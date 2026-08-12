@@ -34,6 +34,7 @@ public class ClaimCalculationService {
     private final ShipmentService shipmentService;
     private final ContractService contractService;
     private final ClaimOutboxWriter outboxWriter;
+    private final Article395RateProvider article395RateProvider;
 
     @Transactional(readOnly = true)
     public ClaimCalculationResponse getLatest(CurrentClaimUser user, UUID claimId) {
@@ -75,10 +76,12 @@ public class ClaimCalculationService {
         LocalDate overdueStartDate = OverdueDateCalculator.overdueStartDate(shipment, contract);
         int overdueDays = OverdueDateCalculator.overdueDays(overdueStartDate, calculationDate);
         PenaltyType penaltyType = contract.getPenaltyType() == null
-            ? PenaltyType.NONE
+            ? PenaltyType.ARTICLE_395
             : contract.getPenaltyType();
         BigDecimal penaltyRate = contract.getPenaltyRate() == null
-            ? BigDecimal.ZERO
+            ? (penaltyType == PenaltyType.ARTICLE_395
+                ? new BigDecimal("18.00")
+                : BigDecimal.ZERO)
             : contract.getPenaltyRate();
         List<PenaltyScheduleCalculator.Allocation> paymentAllocations =
             paymentState.allocations() == null
@@ -95,7 +98,10 @@ public class ClaimCalculationService {
             calculationDate,
             penaltyType,
             penaltyRate,
-            paymentAllocations
+            paymentAllocations,
+            penaltyType == PenaltyType.ARTICLE_395
+                ? article395RateProvider.periods(overdueStartDate, calculationDate)
+                : List.of()
         );
         ClaimPaymentAllocationCalculator.AllocationResult paymentAllocation =
                 ClaimPaymentAllocationCalculator.allocate(

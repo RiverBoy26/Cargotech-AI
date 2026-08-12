@@ -5,6 +5,24 @@ const ROLE_CLASS = {
   SUPER_ADMIN: 'role-pill-admin',
 };
 
+const CONTRACT_STATUS_LABEL = {
+  DRAFT: 'Черновик', ACTIVE: 'Действует', EXPIRED: 'Истёк',
+  TERMINATED: 'Расторгнут', ARCHIVED: 'Архивный',
+};
+const EXTRACTION_STATUS_LABEL = {
+  NOT_STARTED: 'Файл не загружен', PENDING: 'Разбор выполняется',
+  REVIEW_REQUIRED: 'Нужно проверить', CONFIRMED: 'Разбор подтверждён', FAILED: 'Ошибка разбора',
+};
+const EXTRACTION_FIELD_LABEL = {
+  PAYMENT_DAYS: 'Срок оплаты', PAYMENT_START_EVENT: 'Начало срока оплаты',
+  PENALTY_TYPE: 'Вид неустойки', PENALTY_RATE: 'Ставка',
+  CLAIM_RESPONSE_DAYS: 'Срок ответа', JURISDICTION: 'Подсудность', EXACT_CLAUSE: 'Точный пункт договора',
+};
+const PARTY_TYPE_LABEL = { CLIENT: 'Клиент', EXPEDITOR: 'Экспедитор', OTHER: 'Другое' };
+const SHIPMENT_STATUS_LABEL = {
+  PLANNED: 'Запланирован', IN_PROGRESS: 'В пути', COMPLETED: 'Завершён', CANCELLED: 'Отменён',
+};
+
 function escapeAdmin(value) {
   return String(value ?? '—')
     .replaceAll('&', '&amp;')
@@ -28,6 +46,9 @@ function mapUserRow(user) {
 }
 
 function renderActionButton(user) {
+  if (String(user.id) === String(getStoredUser()?.userId)) {
+    return '<span class="action_btn_done">Текущая учётная запись</span>';
+  }
   if (user.active) {
     return `<button class="action_btn action_btn_block" data-action="block" data-id="${user.id}">Заблокировать</button>`;
   }
@@ -63,7 +84,7 @@ function bindUserActions() {
         if (action === 'unblock') await unblockUser(id);
         await loadUsers();
       } catch (err) {
-        alert(err.message);
+        showToast(err.message, 'error');
       }
     });
   });
@@ -97,7 +118,7 @@ async function loadParties() {
     list.innerHTML = (page.content || []).map((party) => `
       <div class="admin_entity_row">
         <div>${escapeAdmin(party.name)}</div>
-        <div>${escapeAdmin(party.type)}</div>
+        <div>${escapeAdmin(PARTY_TYPE_LABEL[party.type] || party.type)}</div>
         <div>${escapeAdmin(party.inn)}</div>
         <div>${escapeAdmin(party.email)}</div>
         <div>
@@ -115,7 +136,7 @@ async function loadContracts() {
   try {
     const page = await getContracts();
     list.innerHTML = (page.content || []).map((contract) => `
-      <div class="admin_entity_row">
+      <div class="admin_entity_row" data-contract-row="${escapeAdmin(contract.id)}">
         <div>${escapeAdmin(contract.number)}</div>
         <div>${escapeAdmin(contract.clientName)}</div>
         <div>${escapeAdmin(contract.expeditorName)}</div>
@@ -126,11 +147,61 @@ async function loadContracts() {
               : ['EXPIRED', 'TERMINATED', 'ARCHIVED'].includes(contract.status)
                 ? 'status-pill-blocked'
                 : 'status-pill-neutral'
-          }">${escapeAdmin(contract.status)}</span>
+          }">${escapeAdmin(CONTRACT_STATUS_LABEL[contract.status] || contract.status)}</span>
         </div>
-        <div>${contract.paymentDays ?? 0} дней</div>
-      </div>`).join('') || '<div class="admin_entity_empty">Договоров пока нет</div>';
+        <div>
+          <div>${contract.paymentDays == null ? 'Не указан' : `${contract.paymentDays} дней`}</div>
+          <small>${escapeAdmin(EXTRACTION_STATUS_LABEL[contract.extractionStatus] || contract.extractionStatus)}</small>
+          ${contract.extractionStatus === 'REVIEW_REQUIRED'
+            ? `<button class="secondary_btn contract_review_btn" type="button" data-contract-id="${escapeAdmin(contract.id)}">Проверить</button>`
+            : ''}
+        </div>
+      </div>
+      <div class="contract_extraction_panel" id="contract_extraction_${escapeAdmin(contract.id)}" hidden></div>`).join('') || '<div class="admin_entity_empty">Договоров пока нет</div>';
+    bindContractExtractionActions();
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
+}
+
+function bindContractExtractionActions() {
+  document.querySelectorAll('.contract_review_btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const contractId = button.dataset.contractId;
+      const panel = document.getElementById(`contract_extraction_${contractId}`);
+      panel.hidden = false;
+      panel.textContent = 'Загрузка найденных условий...';
+      try {
+        const extraction = await getContractExtraction(contractId);
+        const candidates = extraction.candidates || [];
+        panel.innerHTML = `
+          <div class="contract_extraction_title">Проверка условий договора</div>
+          ${candidates.length ? candidates.map((candidate) => `
+            <article class="contract_extraction_item">
+              <strong>${escapeAdmin(EXTRACTION_FIELD_LABEL[candidate.field] || candidate.field)}</strong>
+              <div>${escapeAdmin(candidate.value || 'Не найдено')}</div>
+              <small>Уверенность: ${Math.round(Number(candidate.confidence || 0) * 100)}%</small>
+              <blockquote>${escapeAdmin(candidate.source)}${candidate.sourcePage ? ` · стр. ${candidate.sourcePage}` : ''}</blockquote>
+            </article>`).join('') : '<p>В документе не найдено ни одного условия. Поля останутся пустыми.</p>'}
+          <div class="add_user_form_actions">
+            <button class="secondary_btn contract_review_close" type="button">Закрыть</button>
+            <button class="primary_btn contract_review_confirm" type="button">Подтвердить найденные значения</button>
+          </div>`;
+        panel.querySelector('.contract_review_close').addEventListener('click', () => { panel.hidden = true; });
+        panel.querySelector('.contract_review_confirm').addEventListener('click', async (event) => {
+          event.currentTarget.disabled = true;
+          try {
+            await confirmContractExtraction(contractId);
+            showToast('Условия договора подтверждены', 'success');
+            await loadContracts();
+          } catch (error) {
+            showToast(error.message, 'error');
+            event.currentTarget.disabled = false;
+          }
+        });
+      } catch (error) {
+        panel.textContent = `Ошибка: ${error.message}`;
+      }
+    });
+  });
 }
 
 async function loadShipments() {
@@ -151,7 +222,7 @@ async function loadShipments() {
               : shipment.status === 'CANCELLED'
                 ? 'status-pill-blocked'
                 : 'status-pill-neutral'
-          }">${escapeAdmin(shipment.status)}</span>
+          }">${escapeAdmin(SHIPMENT_STATUS_LABEL[shipment.status] || shipment.status)}</span>
         </div>
       </div>`).join('') || '<div class="admin_entity_empty">Рейсов пока нет</div>';
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
@@ -253,6 +324,7 @@ function resetContractForm() {
   document.getElementById('contract_penalty_rate').disabled = true;
   document.getElementById('contract_claim_response_days').value = '10';
   document.getElementById('contract_jurisdiction').value = '';
+  document.getElementById('contract_file').value = '';
   document.getElementById('contract_form_error').textContent = '';
 }
 
@@ -324,6 +396,17 @@ document.getElementById('save_contract_btn').addEventListener('click', async () 
   saveButton.textContent = 'Создание...';
   errorElement.textContent = '';
   try {
+    const contractFile = document.getElementById('contract_file').files[0];
+    if (contractFile) {
+      saveButton.textContent = 'Загрузка договора...';
+      const uploaded = await uploadContractDocument(
+        contractFile,
+        number,
+        document.getElementById('contract_signed_at').value
+      );
+      payload.documentId = uploaded.id;
+      saveButton.textContent = 'Создание...';
+    }
     await createContract(payload);
     resetContractForm();
     await loadContracts();
@@ -490,7 +573,7 @@ document.getElementById('save_user_btn').addEventListener('click', async () => {
   const user = getStoredUser();
 
   if (!firstName || !lastName || !email || !password || !role) {
-    alert('Заполните все поля');
+    showToast('Заполните все поля', 'error');
     return;
   }
 
@@ -515,7 +598,7 @@ document.getElementById('save_user_btn').addEventListener('click', async () => {
 
     await loadUsers();
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 

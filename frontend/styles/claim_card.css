@@ -234,6 +234,73 @@ header {
   margin-bottom: 18px;
 }
 
+.validation_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.validation_badge {
+  padding: 6px 10px;
+  border: 1px solid #f6c9a6;
+  border-radius: 999px;
+  background: #fceadf;
+  color: #7b3517;
+  font-size: 12px;
+}
+
+.validation_message {
+  margin: 4px 0 12px;
+  color: #5f6875;
+  white-space: pre-wrap;
+}
+
+.checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.check_passed { color: #217a47; }
+.check_failed { color: #b23a2f; }
+
+.sources_view {
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #dde1e6;
+  border-radius: 8px;
+  background: #fff;
+  font: 12px/1.45 'Anonymous Pro', monospace;
+  white-space: pre-wrap;
+}
+
+.version_diff {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.version_diff section {
+  min-height: 42px;
+  padding: 10px;
+  border: 1px solid #dde1e6;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.version_diff ul { margin: 8px 0 0; padding-left: 18px; }
+.diff_added { background: #eaf7ef; color: #216b42; }
+.diff_removed { background: #fff0ee; color: #96392f; }
+.diff_changed { background: #fff8df; color: #795a00; }
+.diff_category { background: #f5f3ff; color: #433879; }
+
 .workflow_panel_locked .workflow_input:disabled,
 .workflow_panel_locked .workflow_textarea[readonly] {
   color: #77808c;
@@ -471,4 +538,48 @@ header {
 .action_dialog_confirm {
   background: #f26522;
   color: #fff;
+}
+
+.claim_edit_dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.claim_edit_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.claim_edit_grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.claim_edit_grid .workflow_input,
+.claim_edit_grid .workflow_textarea {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  font-weight: 400;
+}
+
+.claim_edit_grid .action_dialog_textarea { min-height: 72px; }
+.claim_edit_grid .claim_edit_wide { grid-column: 1 / -1; }
+.claim_edit_grid input[readonly] { background: #eceff2; color: #5f6875; }
+
+@media (max-width: 760px) {
+  main { padding: 16px; }
+  .claim_card_body { padding: 20px; }
+  .claim_card_info_grid,
+  .action_buttons_grid,
+  .checklist,
+  .version_diff,
+  .claim_edit_grid { grid-template-columns: 1fr; }
+  .claim_edit_grid .claim_edit_wide { grid-column: auto; }
 }

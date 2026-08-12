@@ -39,6 +39,12 @@ services:
     connect-timeout: 5s
     read-timeout: 60s
 
+  document:
+    base-url: ${DOCUMENT_SERVICE_URL:http://localhost:8085}
+    internal-api-key: ${INTERNAL_API_KEY:cargotech-local-internal-key}
+    connect-timeout: 5s
+    read-timeout: 30s
+
 management:
   endpoints:
     web:

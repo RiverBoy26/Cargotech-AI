@@ -3,7 +3,6 @@ package ru.sber.cargotech.document.service;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -98,7 +97,7 @@ public class DocumentEmailService {
                 attachment.resource(),
                 attachment.contentType()
             );
-            addClaimCalculations(helper, document);
+            addClaimCalculations(helper, document, user);
 
             mailSender.send(message);
 
@@ -116,7 +115,11 @@ public class DocumentEmailService {
         }
     }
 
-    private void addClaimCalculations(MimeMessageHelper helper, Document document) throws Exception {
+    private void addClaimCalculations(
+        MimeMessageHelper helper,
+        Document document,
+        CurrentDocumentUser user
+    ) throws Exception {
         UUID claimId = linkRepository.findAllByDocument_Id(document.getId()).stream()
             .filter(link -> link.getEntityType() == DocumentEntityType.CLAIM)
             .map(DocumentLink::getEntityId)
@@ -125,11 +128,25 @@ public class DocumentEmailService {
         if (claimId == null) {
             return;
         }
-        for (String format : List.of("pdf", "xlsx")) {
-            var calculation = claimCalculationClient.download(claimId, format);
+
+        List<DocumentLink> calculationLinks = linkRepository
+            .findAllByEntityTypeAndEntityIdOrderByCreatedAtDesc(DocumentEntityType.CLAIM, claimId);
+        for (String linkType : List.of("CALCULATION_PDF", "CALCULATION_XLSX")) {
+            Document calculationDocument = calculationLinks.stream()
+                .filter(link -> linkType.equals(link.getLinkType()))
+                .map(DocumentLink::getDocument)
+                .filter(candidate -> candidate.getStatus() == ru.sber.cargotech.document.enums.DocumentStatus.ACTIVE)
+                .findFirst()
+                .orElseThrow(() -> DocumentException.unprocessable(
+                    "Перед отправкой сформируйте сохранённое приложение " + linkType
+                ));
+            DocumentService.DocumentDownload calculation = documentService.download(
+                calculationDocument.getId(),
+                user
+            );
             helper.addAttachment(
                 calculation.filename(),
-                new ByteArrayResource(calculation.content()),
+                calculation.resource(),
                 calculation.contentType()
             );
         }

@@ -145,7 +145,7 @@ document.getElementById('save_claim_btn').addEventListener('click', async () => 
 
   // Обязательные поля
   if (!shipmentId || !claimType || !reason) {
-    claimFormError.textContent = 'Заполните обязательные поля: ID рейса, тип претензии, основание';
+    claimFormError.textContent = 'Заполните обязательные поля: рейс, тип претензии, основание';
     return;
   }
 
@@ -157,10 +157,7 @@ document.getElementById('save_claim_btn').addEventListener('click', async () => 
   };
 
   const claimNumber    = document.getElementById('claim_number').value.trim();
-  const principalDebt  = document.getElementById('claim_principal_debt').value;
-
   if (claimNumber)   payload.claimNumber   = claimNumber;
-  if (principalDebt) payload.principalDebt = parseFloat(principalDebt);
 
   const saveBtn = document.getElementById('save_claim_btn');
   saveBtn.disabled = true;

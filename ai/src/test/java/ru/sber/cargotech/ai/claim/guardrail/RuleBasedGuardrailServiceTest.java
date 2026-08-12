@@ -54,7 +54,7 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
-    void passesWhenTtnAndInvoiceArePresentOnlyInAttachments() {
+    void passesWhenOptionalDocumentReferencesArePresentOnlyInClaimText() {
         String text = """
                 От: ООО Экспедитор, ИНН 7800000000.
                 Кому: ООО Клиент, ИНН 7700000000.
@@ -68,7 +68,8 @@ class RuleBasedGuardrailServiceTest {
 
         GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
 
-        assertThat(result.decision()).isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
         assertThat(result.errors()).isEmpty();
     }
 
@@ -100,7 +101,7 @@ class RuleBasedGuardrailServiceTest {
         GuardrailResult result = service.check(paymentRequest(true), response);
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
-        assertThat(result.errors()).anyMatch(error -> error.contains("shipment.ttn_number"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("unsupported attachment: TTN"));
     }
 
     @Test
@@ -147,7 +148,8 @@ class RuleBasedGuardrailServiceTest {
         );
 
         GuardrailResult result = service.check(request, validPaymentResponse(validText()));
-        assertThat(result.decision()).isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
     }
 
     @Test
@@ -732,10 +734,6 @@ class RuleBasedGuardrailServiceTest {
                         "RUB"
                 ),
                 List.of(
-                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.CONTRACT, "Договор 45/2026", true),
-                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.ACT, "Акт 157", true),
-                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.TTN, "ТТН-157", true),
-                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.INVOICE, "INV-157", true),
                         new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.CALCULATION, "Расчёт", true)
                 ),
                 List.of(),

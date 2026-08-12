@@ -3,6 +3,7 @@ let currentVersions = [];
 let currentDocuments = [];
 let selectedDocumentId = null;
 let currentClaimContext = {};
+let currentSendChecklist = null;
 let templatePreviewRequestId = 0;
 
 const LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX = 'cargotech.claim.lastOpenedVersion.';
@@ -45,6 +46,67 @@ function requestClaimActionText({ title, label, value = '', required = false }) 
     dialog.showModal();
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
+  });
+}
+
+function requestClaimEdit() {
+  const dialog = document.getElementById('claim_edit_dialog');
+  const form = document.getElementById('claim_edit_dialog_form');
+  const cancelButton = document.getElementById('claim_edit_dialog_cancel');
+  const error = document.getElementById('claim_edit_dialog_error');
+  const finalVersion = currentVersions.find((item) => item.id === currentClaim?.finalVersionId);
+  const fields = {
+    claimNumber: 'edit_claim_number',
+    reason: 'edit_reason',
+    recipientName: 'edit_recipient_name',
+    recipientEmail: 'edit_recipient_email',
+    recipientAddress: 'edit_recipient_address',
+    bankDetails: 'edit_bank_details',
+    responseDeadlineDays: 'edit_response_deadline_days',
+    signerFullName: 'edit_signer_full_name',
+    signerPosition: 'edit_signer_position',
+    signerAuthority: 'edit_signer_authority',
+  };
+  Object.entries(fields).forEach(([name, id]) => {
+    document.getElementById(id).value = currentClaim?.[name] ?? '';
+  });
+  document.getElementById('edit_principal_debt').value = formatMoney(currentClaim?.principalDebt);
+  document.getElementById('edit_penalty_amount').value = formatMoney(currentClaim?.penaltyAmount);
+  document.getElementById('edit_claim_text').value =
+    finalVersion?.content || document.getElementById('claim_text_editor').value || '';
+  error.textContent = '';
+
+  return new Promise((resolve) => {
+    const finish = (result) => {
+      form.removeEventListener('submit', submit);
+      dialog.removeEventListener('cancel', cancel);
+      cancelButton.removeEventListener('click', cancel);
+      if (dialog.open) dialog.close();
+      resolve(result);
+    };
+    const submit = (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const payload = Object.fromEntries(Object.entries(fields).map(([name, id]) => {
+        const value = document.getElementById(id).value.trim();
+        return [name, name === 'responseDeadlineDays' && value ? Number(value) : (value || null)];
+      }));
+      payload.text = document.getElementById('edit_claim_text').value.trim() || null;
+      if (!payload.claimNumber || !payload.reason) {
+        error.textContent = 'Номер и основание претензии обязательны';
+        return;
+      }
+      finish(payload);
+    };
+    const cancel = (event) => {
+      event?.preventDefault();
+      finish(null);
+    };
+    form.addEventListener('submit', submit);
+    dialog.addEventListener('cancel', cancel);
+    cancelButton.addEventListener('click', cancel);
+    dialog.showModal();
+    document.getElementById('edit_claim_number').focus();
   });
 }
 
@@ -160,10 +222,11 @@ function renderHistoryItem(item) {
     ? `${item.previousStatus || '—'} → ${item.newStatus}`
     : (item.text || 'Комментарий');
   const subtitle = item.reason || item.text || '';
+  const actor = item.changedByLabel || item.authorName || item.changedBy || item.authorId || '—';
   return `
     <div class="history_item">
       <div class="history_item_title">${escapeHtml(title)}</div>
-      <div class="history_item_meta">${escapeHtml(date)}${subtitle ? ` — ${escapeHtml(subtitle)}` : ''}</div>
+      <div class="history_item_meta">${escapeHtml(date)} · ${escapeHtml(actor)}${subtitle ? ` — ${escapeHtml(subtitle)}` : ''}</div>
     </div>`;
 }
 
@@ -202,6 +265,11 @@ function updateAvailableActions() {
   setButtonState('btn_recalculate', editable && hasPermission('CALCULATION_GENERATE'));
   setButtonState('btn_edit', editable && hasPermission('CLAIM_UPDATE'));
   setButtonState(
+    'btn_request_confirmation',
+    status === 'DRAFT' && !currentClaim?.nonPaymentConfirmed && hasPermission('CLAIM_UPDATE'),
+    !currentClaim?.nonPaymentConfirmationRequestedAt
+  );
+  setButtonState(
     'btn_approve',
     (status === 'PENDING_LEGAL_REVIEW'
       || (status === 'DRAFT' && Boolean(currentClaim?.nonPaymentConfirmed)))
@@ -216,11 +284,16 @@ function updateAvailableActions() {
     'btn_court_package',
     ['SENT', 'AWAITING_RESPONSE'].includes(status) && hasPermission('CLAIM_UPDATE')
   );
-  setButtonState(
-    'btn_generate_document',
-    status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_GENERATE'),
-    Boolean(currentClaim?.finalVersionId)
+  const claimDocumentExists = currentDocuments.some((item) =>
+    ['CLAIM_PDF', 'CLAIM_DOCX'].includes(item.documentType)
   );
+  const canGenerateDocument = status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_GENERATE');
+  const initialDocumentButton = document.getElementById('btn_generate_document');
+  const newDocumentButton = document.getElementById('btn_generate_new_document');
+  if (initialDocumentButton) initialDocumentButton.hidden = claimDocumentExists;
+  if (newDocumentButton) newDocumentButton.hidden = !claimDocumentExists;
+  setButtonState('btn_generate_document', canGenerateDocument, Boolean(currentClaim?.finalVersionId));
+  setButtonState('btn_generate_new_document', canGenerateDocument, Boolean(currentClaim?.finalVersionId));
   setButtonState(
     'btn_download_claim',
     approved && hasPermission('DOCUMENT_DOWNLOAD'),
@@ -229,7 +302,12 @@ function updateAvailableActions() {
   setButtonState(
     'btn_send_document',
     status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_SEND'),
-    Boolean(selectedDocumentId)
+    Boolean(selectedDocumentId) && Boolean(currentSendChecklist?.readyToSend)
+  );
+  setButtonState(
+    'btn_validation_override',
+    editable && hasPermission('CLAIM_UPDATE')
+      && ['FAILED', 'PENDING'].includes(currentClaim?.documentValidationStatus)
   );
   setButtonState('btn_save_version', editable && hasPermission('CLAIM_UPDATE'));
   setButtonState('btn_mark_final', editable && hasPermission('CLAIM_UPDATE'));
@@ -249,6 +327,28 @@ function fillClaimCard(claim) {
   setText('info_completion_date', '—');
   setText('info_overdue_date', '—');
   setText('info_lawyer_name', '—');
+  const validationLabels = {
+    PENDING: 'Ожидает проверки',
+    PASSED: 'Проверка пройдена',
+    FAILED: 'Найдены ошибки',
+    OVERRIDDEN: 'Подтверждено юристом',
+  };
+  setText('validation_status', validationLabels[claim.documentValidationStatus] || 'Ожидает проверки');
+  setText(
+    'validation_errors',
+    claim.documentValidationErrors
+      || (claim.manualReviewRequired ? claim.manualReviewReason : 'Ошибок нет')
+  );
+  const sources = document.getElementById('used_sources');
+  if (sources) {
+    try {
+      sources.textContent = claim.usedSources
+        ? JSON.stringify(JSON.parse(claim.usedSources), null, 2)
+        : 'Источники ещё не зафиксированы';
+    } catch (_) {
+      sources.textContent = claim.usedSources || 'Источники ещё не зафиксированы';
+    }
+  }
   const stripe = document.getElementById('claim_card_stripe');
   if (stripe) stripe.className = `claim_card_stripe ${status.className}`;
   updateAvailableActions();
@@ -325,7 +425,71 @@ async function loadVersions(claimId) {
     select.value = selected.id;
     document.getElementById('claim_text_editor').value = selected.content || '';
     rememberOpenedClaimVersion(claimId, selected.id);
+    await renderVersionDiff(claimId, selected.id);
   }
+}
+
+async function renderVersionDiff(claimId, versionId) {
+  const container = document.getElementById('version_diff');
+  if (!versionId) {
+    container.textContent = 'Выберите версию для сравнения.';
+    return;
+  }
+  try {
+    const diff = await getClaimVersionDiff(claimId, versionId);
+    const groups = [
+      ['Добавлено', diff.addedLines, 'diff_added'],
+      ['Удалено', diff.removedLines, 'diff_removed'],
+      ['Изменено', diff.changedLines, 'diff_changed'],
+    ];
+    const categoryLabels = {
+      LEGAL_REASONING: 'Правовое обоснование',
+      FACTUAL_DATA: 'Фактические данные',
+      STYLE: 'Стиль',
+      AMOUNT: 'Суммы',
+      DATES: 'Даты и сроки',
+      CONTRACT_REFERENCE: 'Ссылки на договор',
+      OTHER: 'Прочее',
+    };
+    const categoryHtml = Object.entries(diff.categories || {})
+      .filter(([, lines]) => (lines || []).length)
+      .map(([name, lines]) => `
+        <section class="diff_category"><strong>${escapeHtml(categoryLabels[name] || name)}: ${lines.length}</strong>
+          <ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+        </section>`).join('');
+    container.innerHTML = groups.map(([title, lines, className]) => `
+      <section class="${className}"><strong>${title}: ${(lines || []).length}</strong>
+        ${(lines || []).length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : ''}
+      </section>`).join('') + categoryHtml;
+  } catch (error) {
+    container.textContent = `Сравнение недоступно: ${error.message}`;
+  }
+}
+
+const CHECK_LABELS = {
+  debt: 'Есть непогашенный долг',
+  penaltyCalculation: 'Неустойка рассчитана',
+  partyDetails: 'Реквизиты сторон заполнены',
+  contractReferences: 'Договор и пункты указаны',
+  legalBasis: 'Правовое основание проверено',
+  attachments: 'Есть финальная версия и вложения',
+  paymentConfirmed: 'Бухгалтер подтвердил неуплату',
+  finalVersion: 'Финальная версия назначена',
+  validation: 'Автопроверка пройдена или подтверждена вручную',
+};
+
+async function loadSendChecklist(claimId) {
+  const list = document.getElementById('send_checklist');
+  try {
+    currentSendChecklist = await getClaimSendChecklist(claimId);
+    list.innerHTML = Object.entries(currentSendChecklist.checks || {}).map(([name, passed]) =>
+      `<li class="${passed ? 'check_passed' : 'check_failed'}">${passed ? '✓' : '✕'} ${escapeHtml(CHECK_LABELS[name] || name)}</li>`
+    ).join('');
+  } catch (error) {
+    currentSendChecklist = null;
+    list.innerHTML = `<li class="check_failed">Ошибка проверки: ${escapeHtml(error.message)}</li>`;
+  }
+  updateAvailableActions();
 }
 
 async function loadTemplates(claimId) {
@@ -367,14 +531,31 @@ async function loadDocuments(claimId) {
     selectedDocumentId = null;
     list.textContent = 'Документы ещё не сформированы';
   } else {
-    selectedDocumentId = currentDocuments[0].id;
+    const claimDocuments = currentDocuments.filter((item) =>
+      ['CLAIM_PDF', 'CLAIM_DOCX'].includes(item.documentType)
+    );
+    selectedDocumentId = claimDocuments.find((item) => item.status === 'ACTIVE')?.id
+      || claimDocuments[0]?.id
+      || null;
+    const typeLabels = {
+      CLAIM_PDF: 'Претензия PDF',
+      CLAIM_DOCX: 'Претензия DOCX',
+      CALCULATION_PDF: 'Расчёт задолженности PDF',
+      CALCULATION_XLSX: 'Расчёт задолженности XLSX',
+    };
+    const statusLabels = {
+      ACTIVE: 'действующий',
+      ARCHIVED: 'архивный',
+      DRAFT: 'черновик',
+      GENERATED: 'сформирован',
+    };
     list.innerHTML = currentDocuments.map((document) => `
       <div class="document_item">
-        <label>
+        ${['CLAIM_PDF', 'CLAIM_DOCX'].includes(document.documentType) ? `<label>
           <input type="radio" name="document_to_send" value="${document.id}"
                  ${document.id === selectedDocumentId ? 'checked' : ''}>
-          ${escapeHtml(document.documentNumber || document.documentType)} · ${escapeHtml(document.status)}
-        </label>
+          ${escapeHtml(document.documentNumber || typeLabels[document.documentType])} · ${escapeHtml(statusLabels[document.status] || document.status)}
+        </label>` : `<span>${escapeHtml(typeLabels[document.documentType] || document.documentType)} · ${escapeHtml(statusLabels[document.status] || document.status)}</span>`}
         <button class="action_btn document_download" data-id="${document.id}">Скачать</button>
       </div>`).join('');
     list.querySelectorAll('input[name="document_to_send"]').forEach((radio) => {
@@ -463,6 +644,7 @@ async function reloadClaim(claimId) {
     loadHistory(claimId),
     loadVersions(claimId),
     loadDocuments(claimId),
+    loadSendChecklist(claimId),
   ]);
   return claim;
 }
@@ -498,7 +680,7 @@ async function generateSelectedClaimDocument(claimId) {
 }
 
 function showError(error) {
-  alert(error?.message || String(error));
+  showToast(error?.message || String(error), 'error');
 }
 
 async function initClaimCardPage() {
@@ -508,7 +690,7 @@ async function initClaimCardPage() {
 
   const claimId = getQueryParam('id');
   if (!claimId) {
-    alert('Не указан id претензии');
+    showToast('Не указан id претензии', 'error');
     window.location.href = '/pages/lawyer/claims.html';
     return;
   }
@@ -522,6 +704,7 @@ async function initClaimCardPage() {
     if (version) {
       document.getElementById('claim_text_editor').value = version.content || '';
       rememberOpenedClaimVersion(claimId, version.id);
+      renderVersionDiff(claimId, version.id);
     }
   });
 
@@ -539,7 +722,7 @@ async function initClaimCardPage() {
     try {
       await recalculateClaim(claimId);
       await reloadClaim(claimId);
-      alert('Расчёт обновлён');
+      showToast('Расчёт обновлён', 'success');
     } catch (error) { showError(error); }
   });
 
@@ -566,7 +749,7 @@ async function initClaimCardPage() {
   document.getElementById('btn_template_preview').addEventListener('click', async () => {
     if (isClaimTextLocked()) return;
     if (!document.getElementById('template_select').value) {
-      return alert('Выберите шаблон');
+      return showToast('Выберите шаблон', 'error');
     }
     try {
       await applySelectedClaimTemplate(claimId);
@@ -574,9 +757,9 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_save_version').addEventListener('click', async () => {
-    if (isClaimTextLocked()) return alert('Текст этой претензии уже нельзя изменять');
+    if (isClaimTextLocked()) return showToast('Текст этой претензии уже нельзя изменять', 'error');
     const content = document.getElementById('claim_text_editor').value.trim();
-    if (!content) return alert('Введите текст претензии');
+    if (!content) return showToast('Введите текст претензии', 'error');
     try {
       const createdVersion = await createClaimVersion(claimId, {
         source: 'LAWYER',
@@ -591,9 +774,9 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_mark_final').addEventListener('click', async () => {
-    if (isClaimTextLocked()) return alert('Финальную версию этой претензии уже нельзя изменять');
+    if (isClaimTextLocked()) return showToast('Финальную версию этой претензии уже нельзя изменять', 'error');
     const versionId = document.getElementById('version_select').value;
-    if (!versionId) return alert('Выберите сохранённую версию');
+    if (!versionId) return showToast('Выберите сохранённую версию', 'error');
     try {
       await markClaimVersionFinal(claimId, versionId);
       await reloadClaim(claimId);
@@ -608,16 +791,34 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_edit').addEventListener('click', async () => {
+    const payload = await requestClaimEdit();
+    if (payload == null) return;
+    try {
+      await updateClaim(claimId, payload);
+      await reloadClaim(claimId);
+      showToast('Претензия и новая версия текста сохранены', 'success');
+    } catch (error) { showError(error); }
+  });
+
+  document.getElementById('btn_request_confirmation').addEventListener('click', async () => {
+    try {
+      await requestNonPaymentConfirmation(claimId);
+      await reloadClaim(claimId);
+      showToast('Запрос передан бухгалтеру', 'success');
+    } catch (error) { showError(error); }
+  });
+
+  document.getElementById('btn_validation_override').addEventListener('click', async () => {
     const reason = await requestClaimActionText({
-      title: 'Редактирование претензии',
-      label: 'Основание претензии',
-      value: currentClaim?.reason || '',
+      title: 'Ручное подтверждение',
+      label: 'Что проверено и почему документ можно отправить',
       required: true,
     });
     if (reason == null) return;
     try {
-      await updateClaim(claimId, { reason });
+      await overrideClaimValidation(claimId, reason);
       await reloadClaim(claimId);
+      showToast('Ручная проверка зафиксирована', 'success');
     } catch (error) { showError(error); }
   });
 
@@ -634,11 +835,13 @@ async function initClaimCardPage() {
     } catch (error) { showError(error); }
   });
 
-  document.getElementById('btn_generate_document').addEventListener('click', async () => {
-    try {
-      await generateSelectedClaimDocument(claimId);
-    } catch (error) { showError(error); }
-  });
+  for (const buttonId of ['btn_generate_document', 'btn_generate_new_document']) {
+    document.getElementById(buttonId).addEventListener('click', async () => {
+      try {
+        await generateSelectedClaimDocument(claimId);
+      } catch (error) { showError(error); }
+    });
+  }
 
   for (const format of ['pdf', 'xlsx']) {
     document.getElementById(`btn_download_calculation_${format}`).addEventListener('click', async () => {
@@ -688,9 +891,13 @@ async function initClaimCardPage() {
 
   document.getElementById('btn_send_document').addEventListener('click', async () => {
     const to = document.getElementById('email_to').value.trim();
-    if (!selectedDocumentId || !to) return alert('Выберите документ и укажите email клиента');
+    if (!selectedDocumentId || !to) return showToast('Выберите документ и укажите email клиента', 'error');
     const status = document.getElementById('delivery_status');
     try {
+      const checklist = await getClaimSendChecklist(claimId);
+      if (!checklist.readyToSend) {
+        throw new Error(`Отправка заблокирована: ${(checklist.warnings || []).join('; ')}`);
+      }
       status.textContent = 'Проверка оплаты...';
       const preflight = await preflightClaimPayment(claimId, 'Проверка перед email-отправкой');
       if (!preflight.canSend) throw new Error('Отправка заблокирована: задолженность погашена');
@@ -724,7 +931,7 @@ async function initClaimCardPage() {
   document.getElementById('add_comment_btn').addEventListener('click', async () => {
     const input = document.getElementById('comment_input');
     const text = input.value.trim();
-    if (!text) return alert('Введите комментарий');
+    if (!text) return showToast('Введите комментарий', 'error');
     try {
       await addClaimComment(claimId, text);
       input.value = '';

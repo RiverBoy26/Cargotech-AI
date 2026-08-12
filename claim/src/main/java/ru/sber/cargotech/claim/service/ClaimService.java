@@ -2,12 +2,14 @@ package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.client.PaymentClient;
+import ru.sber.cargotech.claim.client.DocumentTextClient;
 import ru.sber.cargotech.claim.dto.ClaimDetailsResponse;
 import ru.sber.cargotech.claim.dto.ClaimListItemResponse;
 import ru.sber.cargotech.claim.dto.ClaimVersionResponse;
@@ -16,13 +18,17 @@ import ru.sber.cargotech.claim.dto.CreateClaimVersionRequest;
 import ru.sber.cargotech.claim.dto.StatusChangeRequest;
 import ru.sber.cargotech.claim.dto.StatusHistoryResponse;
 import ru.sber.cargotech.claim.dto.PaymentPreflightResponse;
+import ru.sber.cargotech.claim.dto.SendChecklistResponse;
 import ru.sber.cargotech.claim.dto.UpdateClaimRequest;
+import ru.sber.cargotech.claim.dto.ValidationOverrideRequest;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.entity.ClaimStatusHistory;
 import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.enums.ClaimType;
+import ru.sber.cargotech.claim.enums.ClaimVersionSource;
+import ru.sber.cargotech.claim.enums.DocumentValidationStatus;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.repository.ClaimQueryRepository;
@@ -34,6 +40,8 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,6 +50,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class ClaimService {
+    private static final UUID SYSTEM_ACTOR_ID = new UUID(0L, 0L);
     private static final Collection<ClaimStatus> CLOSED_STATUSES = List.of(
         ClaimStatus.PAID,
         ClaimStatus.CANCELLED,
@@ -59,6 +68,12 @@ public class ClaimService {
     private final ClaimCalculationService calculationService;
     private final ClaimVersionService versionService;
     private final ClaimOutboxWriter outboxWriter;
+    private DocumentTextClient documentTextClient;
+
+    @Autowired(required = false)
+    void setDocumentTextClient(DocumentTextClient documentTextClient) {
+        this.documentTextClient = documentTextClient;
+    }
 
     @Value("${claim.number-prefix:CLM}")
     private String numberPrefix;
@@ -115,7 +130,7 @@ public class ClaimService {
             throw ClaimException.validation("Кредитор и должник должны быть разными контрагентами");
         }
         partyService.getEntity(user.organizationId(), creditorId);
-        partyService.getEntity(user.organizationId(), debtorId);
+        var debtor = partyService.getEntity(user.organizationId(), debtorId);
 
         String claimNumber = request.claimNumber() == null || request.claimNumber().isBlank()
             ? generateNumber(user.organizationId())
@@ -134,6 +149,16 @@ public class ClaimService {
         claim.setClaimType(request.claimType() == null ? ClaimType.PAYMENT_DELAY : request.claimType());
         claim.setStatus(ClaimStatus.DRAFT);
         claim.setReason(request.reason());
+        claim.setRecipientName(debtor.getName());
+        claim.setRecipientEmail(debtor.getEmail());
+        claim.setRecipientAddress(
+            debtor.getPostalAddress() == null || debtor.getPostalAddress().isBlank()
+                ? debtor.getLegalAddress()
+                : debtor.getPostalAddress()
+        );
+        claim.setResponseDeadlineDays(contract.getClaimResponseDays());
+        claim.setSignerFullName(user.fullName());
+        claim.setSignerPosition(user.hasRole("LAWYER") ? "Юрист" : null);
         // Monetary values are backend-owned. The API keeps the legacy request
         // fields for compatibility, but they must never override shipment/payment data.
         claim.setPrincipalDebt(shipment.getServiceAmount());
@@ -177,6 +202,38 @@ public class ClaimService {
         if (request.reason() != null) {
             claim.setReason(request.reason());
         }
+        if (request.claimNumber() != null && !request.claimNumber().isBlank()) {
+            String claimNumber = request.claimNumber().trim();
+            if (!claimNumber.equals(claim.getClaimNumber())
+                    && claimRepository.existsByOrganizationIdAndClaimNumber(user.organizationId(), claimNumber)) {
+                throw ClaimException.conflict("Претензия с таким номером уже существует");
+            }
+            claim.setClaimNumber(claimNumber);
+        }
+        if (request.recipientName() != null) {
+            claim.setRecipientName(request.recipientName());
+        }
+        if (request.recipientEmail() != null) {
+            claim.setRecipientEmail(request.recipientEmail());
+        }
+        if (request.recipientAddress() != null) {
+            claim.setRecipientAddress(request.recipientAddress());
+        }
+        if (request.bankDetails() != null) {
+            claim.setBankDetails(request.bankDetails());
+        }
+        if (request.responseDeadlineDays() != null) {
+            claim.setResponseDeadlineDays(request.responseDeadlineDays());
+        }
+        if (request.signerFullName() != null) {
+            claim.setSignerFullName(request.signerFullName());
+        }
+        if (request.signerPosition() != null) {
+            claim.setSignerPosition(request.signerPosition());
+        }
+        if (request.signerAuthority() != null) {
+            claim.setSignerAuthority(request.signerAuthority());
+        }
         if (request.assignedLawyerId() != null) {
             claim.setAssignedLawyerId(request.assignedLawyerId());
         }
@@ -191,7 +248,49 @@ public class ClaimService {
         claim.setUpdatedBy(user.userId());
         claim.normalizeTotals();
         ClaimEntity saved = claimRepository.save(claim);
+        if (request.text() != null && !request.text().isBlank()) {
+            ClaimVersionResponse version = versionService.create(
+                user,
+                saved.getId(),
+                new CreateClaimVersionRequest(
+                    ClaimVersionSource.LAWYER,
+                    saved.getFinalVersionId(),
+                    request.text(),
+                    "Новая редакция юриста",
+                    true
+                )
+            );
+            saved.setFinalVersionId(version.id());
+            saved.setDocumentValidationStatus(DocumentValidationStatus.PENDING);
+            saved.setDocumentValidationErrors(null);
+            clearValidationOverride(saved);
+            claimRepository.save(saved);
+        }
         outboxWriter.write("CLAIM", saved.getId(), "CLAIM_UPDATED", user.organizationId(), user.userId(), Map.of("claimId", saved.getId()));
+        return get(user, saved.getId());
+    }
+
+    @Transactional
+    public ClaimDetailsResponse requestNonPaymentConfirmation(CurrentClaimUser user, UUID claimId) {
+        ClaimEntity claim = getEntity(user.organizationId(), claimId);
+        if (claim.getStatus() != ClaimStatus.DRAFT) {
+            throw ClaimException.conflict("Запросить подтверждение можно только для черновика претензии");
+        }
+        claim.setNonPaymentConfirmed(false);
+        claim.setNonPaymentConfirmedAt(null);
+        claim.setNonPaymentConfirmedBy(null);
+        claim.setNonPaymentConfirmationRequestedAt(OffsetDateTime.now());
+        claim.setNonPaymentConfirmationRequestedBy(user.userId());
+        claim.setUpdatedBy(user.userId());
+        ClaimEntity saved = claimRepository.save(claim);
+        outboxWriter.write(
+            "CLAIM",
+            saved.getId(),
+            "CLAIM_NON_PAYMENT_CONFIRMATION_REQUESTED",
+            user.organizationId(),
+            user.userId(),
+            Map.of("claimId", saved.getId())
+        );
         return get(user, saved.getId());
     }
 
@@ -300,6 +399,8 @@ public class ClaimService {
 
         String reason = request == null ? null : request.reason();
         applyNonPaymentConfirmation(claim, user, true, reason);
+        claim.setNonPaymentConfirmationRequestedAt(null);
+        claim.setNonPaymentConfirmationRequestedBy(null);
         claim.setUpdatedBy(user.userId());
         ClaimEntity saved = claimRepository.save(claim);
 
@@ -334,6 +435,7 @@ public class ClaimService {
         if (claim.getFinalVersionId() == null) {
             throw ClaimException.conflict("Нельзя утвердить претензию без финальной версии текста");
         }
+        ensureValidationAllowsSend(claim);
         claim.setApprovedAt(OffsetDateTime.now());
         claim.setApprovedBy(user.userId());
         claim.setUpdatedBy(user.userId());
@@ -359,10 +461,15 @@ public class ClaimService {
                 "Отправить можно только утверждённую претензию"
             );
         }
-
         var calculation = calculationService.recalculate(user, claimId);
         if (calculation.remainingDebt() == null || calculation.remainingDebt().signum() <= 0) {
             throw ClaimException.conflict("Отправка заблокирована: задолженность погашена");
+        }
+        SendChecklistResponse checklist = buildSendChecklist(claim);
+        if (!checklist.readyToSend()) {
+            throw ClaimException.conflict(
+                "Отправка заблокирована: " + String.join("; ", checklist.warnings())
+            );
         }
 
         PaymentPreflightResponse preflight = paymentClient.preflightCheck(
@@ -389,8 +496,89 @@ public class ClaimService {
                 user,
                 claimId,
                 ClaimStatus.AWAITING_RESPONSE,
-                "SYSTEM: претензия отправлена, ожидается ответ должника"
+                "SYSTEM: претензия отправлена, ожидается ответ должника",
+                SYSTEM_ACTOR_ID
         );
+    }
+
+    @Transactional(readOnly = true)
+    public SendChecklistResponse sendChecklist(CurrentClaimUser user, UUID claimId) {
+        ClaimEntity claim = getEntity(user.organizationId(), claimId);
+        return buildSendChecklist(claim);
+    }
+
+    private SendChecklistResponse buildSendChecklist(ClaimEntity claim) {
+        Map<String, Boolean> checks = new LinkedHashMap<>();
+        checks.put("debt", claim.getPrincipalDebt() != null && claim.getPrincipalDebt().signum() > 0);
+        checks.put("penaltyCalculation", claim.getPenaltyAmount() != null);
+        checks.put("partyDetails", claim.getCreditorId() != null && claim.getDebtorId() != null);
+        checks.put("contractReferences", claim.getContractId() != null);
+        checks.put("legalBasis", !claim.isManualReviewRequired()
+            || (claim.getManualReviewReason() != null && !claim.getManualReviewReason().isBlank()));
+        boolean storedDocumentsReady = storedDocumentsReady(claim);
+        checks.put("attachments", storedDocumentsReady);
+        checks.put("paymentConfirmed", claim.isNonPaymentConfirmed());
+        checks.put("finalVersion", claim.getFinalVersionId() != null);
+        checks.put("validation", claim.getDocumentValidationStatus() == DocumentValidationStatus.PASSED
+            || claim.getDocumentValidationStatus() == DocumentValidationStatus.OVERRIDDEN);
+
+        List<String> warnings = new ArrayList<>();
+        checks.forEach((name, passed) -> {
+            if (!passed) {
+                warnings.add(checklistWarning(name));
+            }
+        });
+        return new SendChecklistResponse(
+            claim.getId(),
+            warnings.isEmpty(),
+            claim.getDocumentValidationStatus(),
+            claim.isManualReviewRequired(),
+            checks,
+            List.copyOf(warnings)
+        );
+    }
+
+    private boolean storedDocumentsReady(ClaimEntity claim) {
+        // Unit-level consumers may instantiate ClaimService directly. Production always
+        // receives the internal document client and checks persisted links, not a UI flag.
+        if (documentTextClient == null) {
+            return claim.getFinalVersionId() != null;
+        }
+        try {
+            DocumentTextClient.ClaimDocumentReadinessResponse readiness =
+                documentTextClient.getClaimReadiness(claim.getId());
+            return readiness.generatedClaimPresent()
+                && readiness.calculationPdfPresent()
+                && readiness.calculationXlsxPresent();
+        } catch (RuntimeException exception) {
+            log.warn("Проверка сохранённых документов недоступна: claimId={}", claim.getId());
+            return false;
+        }
+    }
+
+    @Transactional
+    public ClaimDetailsResponse overrideValidation(
+        CurrentClaimUser user,
+        UUID claimId,
+        ValidationOverrideRequest request
+    ) {
+        ClaimEntity claim = getEntity(user.organizationId(), claimId);
+        ensureEditable(claim);
+        claim.setDocumentValidationStatus(DocumentValidationStatus.OVERRIDDEN);
+        claim.setValidationOverriddenAt(OffsetDateTime.now());
+        claim.setValidationOverriddenBy(user.userId());
+        claim.setValidationOverrideReason(request.reason().trim());
+        claim.setUpdatedBy(user.userId());
+        ClaimEntity saved = claimRepository.save(claim);
+        outboxWriter.write(
+            "CLAIM",
+            saved.getId(),
+            "CLAIM_VALIDATION_OVERRIDDEN",
+            user.organizationId(),
+            user.userId(),
+            Map.of("claimId", saved.getId(), "reason", request.reason().trim())
+        );
+        return get(user, saved.getId());
     }
 
     @Transactional
@@ -426,6 +614,43 @@ public class ClaimService {
     }
 
     @Transactional
+    public ClaimDetailsResponse withdraw(
+        CurrentClaimUser user,
+        UUID claimId,
+        StatusChangeRequest request
+    ) {
+        ClaimEntity claim = getEntity(user.organizationId(), claimId);
+        if (claim.getSentAt() != null
+            || claim.getStatus() == ClaimStatus.SENT
+            || claim.getStatus() == ClaimStatus.AWAITING_RESPONSE
+            || claim.getStatus() == ClaimStatus.ESCALATED_TO_COURT
+            || claim.getStatus() == ClaimStatus.CLOSED_IN_COURT) {
+            throw ClaimException.conflict(
+                "Бухгалтер может отозвать претензию только до отправки должнику"
+            );
+        }
+        if (CLOSED_STATUSES.contains(claim.getStatus())) {
+            throw ClaimException.conflict("Претензия уже закрыта");
+        }
+
+        String reason = request == null || request.reason() == null
+            || request.reason().isBlank()
+            ? "Претензия отозвана бухгалтером до отправки"
+            : request.reason().trim();
+        claim.setCancelledAt(OffsetDateTime.now());
+        claim.setCancellationReasonCode("ACCOUNTANT_WITHDRAWAL");
+        claim.setCancellationReason(reason);
+        claim.setUpdatedBy(user.userId());
+        claimRepository.save(claim);
+        return changeStatus(
+            user,
+            claimId,
+            ClaimStatus.CANCELLED,
+            reason
+        );
+    }
+
+    @Transactional
     public ClaimDetailsResponse markPaid(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
         log.debug("Перевод претензии в PAID: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
 
@@ -442,7 +667,8 @@ public class ClaimService {
         return closeAsPaid(
             user,
             claim,
-            request == null ? "Полная оплата подтверждена" : request.reason()
+            request == null ? "Полная оплата подтверждена" : request.reason(),
+            false
         );
     }
 
@@ -462,14 +688,16 @@ public class ClaimService {
         closeAsPaid(
             user,
             claim,
-            "SYSTEM: полная оплата подтверждена модулем payment"
+            "Задолженность полностью погашена",
+            true
         );
     }
 
     private ClaimDetailsResponse closeAsPaid(
         CurrentClaimUser user,
         ClaimEntity claim,
-        String reason
+        String reason,
+        boolean systemActor
     ) {
         ClaimStatus targetStatus = claim.getSentAt() == null
             ? ClaimStatus.CANCELLED_PAID
@@ -483,7 +711,13 @@ public class ClaimService {
         }
         claim.setUpdatedBy(user.userId());
         claimRepository.save(claim);
-        return changeStatus(user, claim.getId(), targetStatus, reason);
+        return changeStatus(
+            user,
+            claim.getId(),
+            targetStatus,
+            reason,
+            systemActor ? SYSTEM_ACTOR_ID : user.userId()
+        );
     }
 
     @Transactional
@@ -533,21 +767,31 @@ public class ClaimService {
         ClaimStatus newStatus,
         String reason
     ) {
+        return changeStatus(user, claimId, newStatus, reason, user.userId());
+    }
+
+    private ClaimDetailsResponse changeStatus(
+        CurrentClaimUser user,
+        UUID claimId,
+        ClaimStatus newStatus,
+        String reason,
+        UUID actorId
+    ) {
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         validateTransition(claim.getStatus(), newStatus);
         ClaimStatus previous = claim.getStatus();
         log.debug("Изменение статуса претензии: claimId={}, currentStatus={}, targetStatus={}, userId={}", claim.getId(), claim.getStatus(), newStatus, user.userId());
 
         claim.setStatus(newStatus);
-        claim.setUpdatedBy(user.userId());
+        claim.setUpdatedBy(actorId);
         claimRepository.save(claim);
-        recordStatus(claimId, previous, newStatus, reason, user.userId());
+        recordStatus(claimId, previous, newStatus, reason, actorId);
         outboxWriter.write(
             "CLAIM",
             claimId,
             "CLAIM_STATUS_CHANGED",
             user.organizationId(),
-            user.userId(),
+            actorId,
             Map.of(
                 "claimId", claimId,
                 "previousStatus", previous.name(),
@@ -636,8 +880,39 @@ public class ClaimService {
             history.getNewStatus(),
             history.getReason(),
             history.getChangedBy(),
+            SYSTEM_ACTOR_ID.equals(history.getChangedBy()) ? "SYSTEM" : "USER",
             history.getChangedAt()
         );
+    }
+
+    private void ensureValidationAllowsSend(ClaimEntity claim) {
+        if (claim.getDocumentValidationStatus() != DocumentValidationStatus.PASSED
+            && claim.getDocumentValidationStatus() != DocumentValidationStatus.OVERRIDDEN) {
+            throw ClaimException.conflict(
+                "Документ не прошёл проверку: завершите проверку, исправьте ошибки или подтвердите её вручную"
+            );
+        }
+    }
+
+    private void clearValidationOverride(ClaimEntity claim) {
+        claim.setValidationOverriddenAt(null);
+        claim.setValidationOverriddenBy(null);
+        claim.setValidationOverrideReason(null);
+    }
+
+    private String checklistWarning(String check) {
+        return switch (check) {
+            case "debt" -> "не подтверждена непогашенная задолженность";
+            case "penaltyCalculation" -> "не выполнен расчёт пени";
+            case "partyDetails" -> "не заполнены стороны претензии";
+            case "contractReferences" -> "не указан договор";
+            case "legalBasis" -> "требуется ручная проверка правового основания";
+            case "attachments" -> "нет финального документа для приложения";
+            case "paymentConfirmed" -> "бухгалтер не подтвердил отсутствие оплаты";
+            case "finalVersion" -> "не выбрана финальная версия";
+            case "validation" -> "проверка документа завершилась ошибкой";
+            default -> "не выполнена проверка " + check;
+        };
     }
 
     private String generateNumber(UUID organizationId) {

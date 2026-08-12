@@ -42,15 +42,29 @@ public record AiGenerateClaimRequest(
 
     public enum ClaimType { PAYMENT_DELAY, LOADING_FAILURE }
 
-    public record Party(String name, String inn, @JsonProperty("legal_address") String legalAddress) {}
+    public record Party(
+            String name,
+            String inn,
+            @JsonProperty("legal_address") String legalAddress,
+            @JsonProperty("bank_details") String bankDetails
+    ) {
+        public Party(String name, String inn, String legalAddress) {
+            this(name, inn, legalAddress, null);
+        }
+    }
 
     public record ContractFacts(
             @JsonProperty("contract_number") String contractNumber,
             @JsonProperty("contract_date") String contractDate,
-            @JsonProperty("claim_response_days") Integer claimResponseDays
+            @JsonProperty("claim_response_days") Integer claimResponseDays,
+            @JsonProperty("document_id") String documentId
     ) {
         public ContractFacts(String contractNumber, String contractDate) {
-            this(contractNumber, contractDate, null);
+            this(contractNumber, contractDate, null, null);
+        }
+
+        public ContractFacts(String contractNumber, String contractDate, Integer claimResponseDays) {
+            this(contractNumber, contractDate, claimResponseDays, null);
         }
     }
 
@@ -79,8 +93,13 @@ public record AiGenerateClaimRequest(
 
     public record SignatoryFacts(
             String name,
-            String position
-    ) {}
+            String position,
+            String authority
+    ) {
+        public SignatoryFacts(String name, String position) {
+            this(name, position, null);
+        }
+    }
 
     public record BackendCalculation(
             @JsonProperty("principal_debt") BigDecimal principalDebt,
@@ -90,8 +109,44 @@ public record AiGenerateClaimRequest(
             @JsonProperty("penalty_amount") BigDecimal penaltyAmount,
             @JsonProperty("total_amount") BigDecimal totalAmount,
             String currency,
-            @JsonProperty("formula_text") String formulaText
-    ) {}
+            @JsonProperty("formula_text") String formulaText,
+            @JsonProperty("overdue_start_date") String overdueStartDate,
+            @JsonProperty("overdue_end_date") String overdueEndDate,
+            @JsonProperty("original_obligation_amount") BigDecimal originalObligationAmount,
+            @JsonProperty("paid_amount") BigDecimal paidAmount
+    ) {
+        public BackendCalculation(
+                BigDecimal principalDebt,
+                PenaltyType penaltyType,
+                String penaltyRateText,
+                Integer overdueDays,
+                BigDecimal penaltyAmount,
+                BigDecimal totalAmount,
+                String currency,
+                String formulaText,
+                String overdueStartDate,
+                String overdueEndDate
+        ) {
+            this(principalDebt, penaltyType, penaltyRateText, overdueDays, penaltyAmount,
+                    totalAmount, currency, formulaText, overdueStartDate, overdueEndDate,
+                    principalDebt, BigDecimal.ZERO);
+        }
+
+        public BackendCalculation(
+                BigDecimal principalDebt,
+                PenaltyType penaltyType,
+                String penaltyRateText,
+                Integer overdueDays,
+                BigDecimal penaltyAmount,
+                BigDecimal totalAmount,
+                String currency,
+                String formulaText
+        ) {
+            this(principalDebt, penaltyType, penaltyRateText, overdueDays, penaltyAmount,
+                    totalAmount, currency, formulaText, null, null,
+                    principalDebt, BigDecimal.ZERO);
+        }
+    }
 
     public enum PenaltyType { CONTRACT_PENALTY, LEGAL_INTEREST, NONE }
 
