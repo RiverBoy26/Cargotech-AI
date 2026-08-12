@@ -217,6 +217,9 @@ header {
   border-bottom: none;
 }
 
+.overdue_row_clickable { cursor: pointer; }
+.overdue_row_clickable:hover { background: #f7f8fa; }
+
 .overdue_row_client,
 .overdue_row_carrier,
 .overdue_row_trip,

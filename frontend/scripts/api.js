@@ -409,6 +409,13 @@ async function updateClaim(claimId, payload) {
   });
 }
 
+async function updateAccountantClaimDraft(claimId, payload) {
+  return apiRequest(`/claims/${claimId}/accountant-draft`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 async function claimAction(claimId, action, reason) {
   const body = reason ? JSON.stringify({ reason }) : undefined;
   return apiRequest(`/claims/${claimId}/${action}`, {

@@ -24,6 +24,7 @@ import ru.sber.cargotech.claim.dto.StatusHistoryResponse;
 import ru.sber.cargotech.claim.dto.PaymentPreflightResponse;
 import ru.sber.cargotech.claim.dto.SendChecklistResponse;
 import ru.sber.cargotech.claim.dto.UpdateClaimRequest;
+import ru.sber.cargotech.claim.dto.UpdateAccountantDraftRequest;
 import ru.sber.cargotech.claim.dto.ValidationOverrideRequest;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
@@ -278,6 +279,35 @@ public class ClaimService {
         }
         outboxWriter.write("CLAIM", saved.getId(), "CLAIM_UPDATED", user.organizationId(), user.userId(), Map.of("claimId", saved.getId()));
         return get(user, saved.getId());
+    }
+
+    @Transactional
+    public ClaimDetailsResponse updateAccountantDraft(
+        CurrentClaimUser user,
+        UUID claimId,
+        UpdateAccountantDraftRequest request
+    ) {
+        ClaimEntity claim = getEntity(user.organizationId(), claimId);
+        if (claim.getStatus() != ClaimStatus.DRAFT) {
+            throw ClaimException.conflict("Бухгалтер может редактировать только черновик претензии");
+        }
+        if (request.reason() != null && !request.reason().isBlank()) {
+            claim.setReason(request.reason().trim());
+        }
+        claim.setUpdatedBy(user.userId());
+        claimRepository.save(claim);
+        versionService.create(
+            user,
+            claimId,
+            new CreateClaimVersionRequest(
+                ClaimVersionSource.ACCOUNTANT,
+                claim.getFinalVersionId(),
+                request.text().trim(),
+                "Черновик отредактирован бухгалтером",
+                false
+            )
+        );
+        return get(user, claimId);
     }
 
     @Transactional

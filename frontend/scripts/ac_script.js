@@ -68,7 +68,7 @@ function renderOverdueRow(claim) {
     ? mapStatus(claim.status)
     : { text: 'Требует подтверждения', className: 'status_pending' };
   return `
-    <div class="overdue_row">
+    <div class="overdue_row${claim.claimId ? ' overdue_row_clickable' : ''}" ${claim.claimId ? `data-claim-id="${escapeAccountant(claim.claimId)}"` : ''}>
       <div class="overdue_row_client">${escapeAccountant(claim.debtorName)}</div>
       <div class="overdue_row_carrier">${escapeAccountant(claim.creditorName)}</div>
       <div class="overdue_row_trip">${escapeAccountant(claim.shipmentNumber)}</div>
@@ -99,6 +99,12 @@ function renderOverdues() {
     ? claims.map(renderOverdueRow).join('')
     : '<div class="empty_row">Задач для проверки нет</div>';
   bindOverdueActions();
+  document.querySelectorAll('.overdue_row_clickable').forEach((row) => {
+    row.addEventListener('click', (event) => {
+      if (event.target.closest('button, a, input, select')) return;
+      window.location.href = `/pages/accountant/shipment_card.html?claimId=${encodeURIComponent(row.dataset.claimId)}`;
+    });
+  });
 }
 
 async function choosePaymentForClaim(claimId) {

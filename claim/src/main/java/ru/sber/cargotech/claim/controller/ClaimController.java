@@ -82,6 +82,16 @@ public class ClaimController {
         return claimService.update(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
+    @PatchMapping("/{claimId}/accountant-draft")
+    @PreAuthorize("hasAuthority('OVERDUE_UPDATE')")
+    public ClaimDetailsResponse updateAccountantDraft(
+        @PathVariable UUID claimId,
+        @Valid @RequestBody UpdateAccountantDraftRequest request
+    ) {
+        log.info("Обновление черновика претензии бухгалтером: claimId={}", claimId);
+        return claimService.updateAccountantDraft(currentUserProvider.getRequiredUser(), claimId, request);
+    }
+
     @DeleteMapping("/{claimId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('CLAIM_DELETE')")

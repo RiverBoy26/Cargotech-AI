@@ -321,7 +321,7 @@ CREATE TABLE cargotech.claim_versions (
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	CONSTRAINT claim_versions_claim_id_version_number_key UNIQUE (claim_id, version_number),
 	CONSTRAINT claim_versions_pkey PRIMARY KEY (id),
-	CONSTRAINT claim_versions_source_check CHECK (((source)::text = ANY ((ARRAY['AI'::character varying, 'LAWYER'::character varying, 'RESTORED'::character varying])::text[])))
+	CONSTRAINT claim_versions_source_check CHECK (((source)::text = ANY ((ARRAY['AI'::character varying, 'LAWYER'::character varying, 'ACCOUNTANT'::character varying, 'RESTORED'::character varying])::text[])))
 );
 CREATE INDEX idx_claim_versions_claim ON cargotech.claim_versions USING btree (claim_id);
 CREATE UNIQUE INDEX uq_final_claim_version ON cargotech.claim_versions USING btree (claim_id) WHERE (is_final = true);

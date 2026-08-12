@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Карточка рейса</title>
+    <link rel="stylesheet" href="../../styles/ac_dashboard.css">
+    <link rel="stylesheet" href="../../styles/accountant_shipment_card.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <button class="logout_btn" id="logout_btn" type="button">Выйти из аккаунта</button>
+        <div class="topbar_user"><div class="topbar_usename">—</div><div class="topbar_user_role">бухгалтер</div></div>
+    </header>
+    <main>
+        <a class="shipment_back" href="./dashboard.html">← Назад к претензиям и просрочкам</a>
+        <div class="shipment_card_header">
+            <div><h1 class="page_title" id="shipment_card_title">Карточка рейса</h1><p class="shipment_subtitle" id="shipment_card_subtitle">Загрузка...</p></div>
+            <span class="status-pill" id="shipment_claim_status">—</span>
+        </div>
+        <section class="shipment_info_grid">
+            <div class="shipment_info"><span>Клиент</span><strong id="shipment_client">—</strong></div>
+            <div class="shipment_info"><span>Экспедитор</span><strong id="shipment_expeditor">—</strong></div>
+            <div class="shipment_info"><span>Стоимость рейса</span><strong id="shipment_amount">—</strong></div>
+            <div class="shipment_info"><span>Остаток долга</span><strong id="shipment_debt">—</strong></div>
+            <div class="shipment_info"><span>Просрочка</span><strong id="shipment_overdue">—</strong></div>
+            <div class="shipment_info"><span>Номер претензии</span><strong id="shipment_claim_number">—</strong></div>
+        </section>
+        <section class="shipment_draft_card">
+            <h2>Черновик претензии</h2>
+            <label class="shipment_field">Основание претензии<input id="draft_reason" autocomplete="off"></label>
+            <label class="shipment_field">Текст черновика<textarea id="draft_text" autocomplete="off"></textarea></label>
+            <p class="form_message" id="draft_message" role="status"></p>
+            <div class="shipment_actions">
+                <a class="secondary_btn shipment_link_button" href="./dashboard.html">Отмена</a>
+                <button class="primary_btn" id="save_draft_btn" type="button">Сохранить изменения</button>
+            </div>
+        </section>
+    </main>
+    <script src="../../scripts/api.js"></script>
+    <script src="../../scripts/accountant_shipment_card.js"></script>
+</body>
+</html>
