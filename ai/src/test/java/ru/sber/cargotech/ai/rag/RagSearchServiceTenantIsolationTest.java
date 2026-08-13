@@ -31,7 +31,9 @@ class RagSearchServiceTenantIsolationTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> filters = ArgumentCaptor.forClass(Map.class);
-        verify(qdrantClient, times(7)).queryPoints(anyList(), filters.capture(), anyInt(), any());
+        // 4 contract queries + 2 legal queries (auto_use + backward-compatible
+        // fallback when the first legal lookup is empty) + template + example.
+        verify(qdrantClient, times(8)).queryPoints(anyList(), filters.capture(), anyInt(), any());
 
         List<Map<String, Object>> contractFilters = filters.getAllValues().stream()
                 .filter(filter -> RagCollection.CONTRACT_CONTEXT.name().equals(filter.get("rag_collection")))

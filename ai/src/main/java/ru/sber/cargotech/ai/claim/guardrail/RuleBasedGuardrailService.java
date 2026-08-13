@@ -324,9 +324,18 @@ public class RuleBasedGuardrailService {
         }
 
         List<GenerateClaimResponse.UsedContractClause> usedClauses = safeList(response.usedContractClauses());
+        boolean numberedContractContextAvailable = safeList(request.contractContext()).stream()
+                .filter(Objects::nonNull)
+                .anyMatch(chunk -> !isBlank(chunk.clauseNumber()));
 
         if (usedClauses.isEmpty()) {
-            warnings.add("Model did not cite contract clauses");
+            if (request.caseFacts() != null
+                    && request.caseFacts().claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                    && numberedContractContextAvailable) {
+                errors.add("Model must cite at least one numbered contract clause from contract_context");
+            } else {
+                warnings.add("Model did not cite contract clauses");
+            }
             return;
         }
 
@@ -344,8 +353,22 @@ public class RuleBasedGuardrailService {
 
             if (!sameText(allowed.clauseNumber(), used.clauseNumber())) {
                 errors.add("Model contract chunk_id and clause_number do not match: " + used.chunkId());
+                continue;
+            }
+
+            if (!isBlank(used.clauseNumber())
+                    && !containsContractClauseReference(response.claimText(), used.clauseNumber())) {
+                errors.add("claim_text does not cite used contract clause: " + used.clauseNumber());
             }
         }
+    }
+
+    private boolean containsContractClauseReference(String claimText, String clauseNumber) {
+        if (isBlank(claimText) || isBlank(clauseNumber)) {
+            return false;
+        }
+        String marker = "(?:пункт(?:а|у|е|ом)?|п\\.)\\s*" + Pattern.quote(clauseNumber);
+        return Pattern.compile("(?iu)" + marker).matcher(claimText).find();
     }
 
     private void validateUsedLawArticles(
@@ -597,8 +620,16 @@ public class RuleBasedGuardrailService {
                 + (response.summaryForLawyer() == null ? "" : response.summaryForLawyer()))
                 .toLowerCase(Locale.ROOT);
 
+        // A neutral warning about the creditor's right to go to court after non-performance
+        // of the claim is allowed by the product requirements. Concrete procedural actions,
+        // invented courts and aggressive escalation language remain prohibited.
+        String textWithoutAllowedCourtWarning = text.replaceAll(
+                "(?iu)в\\s+случае\\s+неисполнени\\p{L}*[^.]{0,180}?"
+                        + "(?:вправе|имеет\\s+право)[^.]{0,80}?обратиться\\s+в\\s+суд",
+                ""
+        );
+
         List<String> forbiddenPhrases = List.of(
-                "обратиться в суд",
                 "в судебном порядке",
                 "исковое заявление",
                 "подать иск",
@@ -609,7 +640,7 @@ public class RuleBasedGuardrailService {
         );
 
         for (String phrase : forbiddenPhrases) {
-            if (text.contains(phrase)) {
+            if (textWithoutAllowedCourtWarning.contains(phrase)) {
                 errors.add("Model used forbidden court/escalation phrase: " + phrase);
             }
         }

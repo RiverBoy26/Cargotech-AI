@@ -19,6 +19,7 @@ public class ClaimFactConsistencyValidator {
     private static final Pattern INN_PATTERN = Pattern.compile("(?<!\\d)(?:\\d{10}|\\d{12})(?!\\d)");
     private static final Pattern RUB_AMOUNT_PATTERN = Pattern.compile(
             "(?iu)(?<!\\d)(\\d[\\d \\u00A0]{0,18}(?:[,.]\\d{1,2})?)\\s*(?:руб(?:лей|ля|ль|\\.)?|₽)"
+                    + "(?:\\s*(\\d{1,2})\\s*коп(?:еек|ейки|ейка|\\.)?)?"
     );
     private static final Pattern CLOCK_TIME_PATTERN = Pattern.compile(
             "(?<!\\d)([01]?\\d|2[0-3])[:.]([0-5]\\d)(?!\\d)"
@@ -31,6 +32,12 @@ public class ClaimFactConsistencyValidator {
                     + "корреспондентск\\p{L}*\\s+сч[её]т\\p{L}*|"
                     + "расч[её]тн\\p{L}*\\s+сч[её]т\\p{L}*|"
                     + "р\\s*/\\s*с|к\\s*/\\s*с)(?![\\p{L}\\p{N}_])"
+    );
+    private static final Pattern BANK_DETAILS_MENTION_PATTERN = Pattern.compile(
+            "(?iu)банковск\\p{L}*\\s+реквизит\\p{L}*"
+    );
+    private static final Pattern ATTACHMENTS_SECTION_PATTERN = Pattern.compile(
+            "(?imu)^\\s*приложени[ея]\\s*:"
     );
     private static final Pattern ISO_DATE_IN_CLAIM_PATTERN = Pattern.compile(
             "(?<!\\d)\\d{4}-\\d{2}-\\d{2}(?!\\d)"
@@ -149,9 +156,11 @@ public class ClaimFactConsistencyValidator {
             String text,
             List<String> errors
     ) {
-        String allowedBankDetails = facts.creditor() == null ? null : facts.creditor().bankDetails();
-        if (!hasText(allowedBankDetails) && BANK_DETAILS_PATTERN.matcher(text).find()) {
-            errors.add("claim_text must not contain bank details");
+        if (BANK_DETAILS_PATTERN.matcher(text).find() || BANK_DETAILS_MENTION_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not contain or mention bank details in current scope");
+        }
+        if (ATTACHMENTS_SECTION_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not contain an attachments section in current scope");
         }
     }
 
@@ -323,7 +332,7 @@ public class ClaimFactConsistencyValidator {
 
         Matcher matcher = RUB_AMOUNT_PATTERN.matcher(text);
         while (matcher.find()) {
-            BigDecimal found = parseAmount(matcher.group(1));
+            BigDecimal found = parseRubAmount(matcher);
             if (found != null && !containsAmount(allowed, found)) {
                 errors.add("claim_text contains amount not present in backend_calculation: " + found.toPlainString() + " RUB");
             }
@@ -339,6 +348,13 @@ public class ClaimFactConsistencyValidator {
         Set<GenerateClaimResponse.DocumentType> allowed = EnumSet.noneOf(GenerateClaimResponse.DocumentType.class);
         GenerateClaimRequest.CaseFacts facts = request.caseFacts();
         GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
+
+        if (facts.claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                && response.attachments() != null
+                && !response.attachments().isEmpty()) {
+            errors.add("PAYMENT_DELAY attachments must be empty in current scope");
+            return;
+        }
 
         if (facts.contract() != null && hasText(facts.contract().documentId())) {
             allowed.add(GenerateClaimResponse.DocumentType.CONTRACT);
@@ -751,7 +767,7 @@ public class ClaimFactConsistencyValidator {
     private void requireAmount(String text, BigDecimal amount, String field, List<String> errors) {
         Matcher matcher = RUB_AMOUNT_PATTERN.matcher(text);
         while (matcher.find()) {
-            BigDecimal found = parseAmount(matcher.group(1));
+            BigDecimal found = parseRubAmount(matcher);
             if (found != null && sameAmount(found, amount)) {
                 return;
             }
@@ -759,9 +775,19 @@ public class ClaimFactConsistencyValidator {
         errors.add("claim_text does not contain expected " + field + ": " + amount.toPlainString() + " RUB");
     }
 
-    private BigDecimal parseAmount(String raw) {
+    private BigDecimal parseRubAmount(Matcher matcher) {
+        if (matcher == null) {
+            return null;
+        }
         try {
-            return new BigDecimal(raw.replace(" ", "").replace("\u00A0", "").replace(',', '.'));
+            BigDecimal rubles = new BigDecimal(
+                    matcher.group(1).replace(" ", "").replace("\u00A0", "").replace(',', '.')
+            );
+            String kopecksRaw = matcher.groupCount() >= 2 ? matcher.group(2) : null;
+            if (kopecksRaw == null || kopecksRaw.isBlank() || matcher.group(1).contains(".") || matcher.group(1).contains(",")) {
+                return rubles;
+            }
+            return rubles.add(new BigDecimal(kopecksRaw).movePointLeft(2));
         } catch (NumberFormatException ignored) {
             return null;
         }

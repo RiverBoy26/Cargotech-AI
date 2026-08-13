@@ -201,16 +201,32 @@ public class RagSearchService {
         }
 
         List<RagSearchHit> legalHits = search(
-                "ГК РФ надлежащее исполнение обязательств срок оплаты договорная неустойка",
+                "ГК РФ надлежащее исполнение обязательств срок оплаты проценты статья 395 договорная неустойка транспортная экспедиция статья 801",
                 filters(
                         "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
                         "claim_type", "PAYMENT_DELAY",
                         "is_current", true,
                         "auto_use", true
                 ),
-                6,
+                8,
                 searchProperties.getLegalMinScore()
         );
+
+        // Backward compatibility for legal chunks indexed before auto_use metadata
+        // became mandatory. Re-seeding will upgrade the payload, but generation
+        // must not lose legal_context while old data is still present.
+        if (legalHits.isEmpty()) {
+            legalHits = search(
+                    "ГК РФ надлежащее исполнение обязательств срок оплаты проценты статья 395 договорная неустойка транспортная экспедиция статья 801",
+                    filters(
+                            "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
+                            "claim_type", "PAYMENT_DELAY",
+                            "is_current", true
+                    ),
+                    8,
+                    searchProperties.getLegalMinScore()
+            );
+        }
 
         List<RagSearchHit> templateHits = search(
                 "шаблон претензии о просрочке оплаты структура реквизиты договор расчет требование приложения",
@@ -287,6 +303,19 @@ public class RagSearchService {
                 6,
                 searchProperties.getLegalMinScore()
         );
+
+        if (legalHits.isEmpty()) {
+            legalHits = search(
+                    "ГК РФ надлежащее исполнение обязательств договорная неустойка непредоставление транспортного средства",
+                    filters(
+                            "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
+                            "claim_type", "LOADING_FAILURE",
+                            "is_current", true
+                    ),
+                    6,
+                    searchProperties.getLegalMinScore()
+            );
+        }
 
         List<RagSearchHit> templateHits = search(
                 "шаблон претензии о срыве погрузки непредоставлении транспортного средства структура",
