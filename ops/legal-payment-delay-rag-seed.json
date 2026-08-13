@@ -1,0 +1,120 @@
+{
+  "source_batch_id": "legal-payment-delay-v2",
+  "source_system": "CARGOTECH_LEGAL_SEED",
+  "chunks": [
+    {
+      "chunk_id": "chunk_legal_gk_309",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "legal_norms",
+      "source_title": "ГК РФ ст. 309",
+      "text": "Обязательства должны исполняться надлежащим образом в соответствии с условиями обязательства и требованиями закона.",
+      "citation": "ст. 309 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "309",
+        "purpose": "надлежащее исполнение обязательств",
+        "topic": "надлежащее исполнение обязательств",
+        "applicability": "PAYMENT_DELAY",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_310",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "legal_norms",
+      "source_title": "ГК РФ ст. 310",
+      "text": "Односторонний отказ от исполнения обязательства и одностороннее изменение его условий не допускаются, если иное не предусмотрено законом.",
+      "citation": "ст. 310 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "310",
+        "purpose": "запрет одностороннего отказа от исполнения обязательства",
+        "topic": "запрет одностороннего отказа от исполнения обязательства",
+        "applicability": "PAYMENT_DELAY",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_314",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "legal_norms",
+      "source_title": "ГК РФ ст. 314",
+      "text": "Если обязательство предусматривает день исполнения или период исполнения, обязательство подлежит исполнению в соответствующий день или период.",
+      "citation": "ст. 314 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "314",
+        "purpose": "исполнение обязательства в установленный срок",
+        "topic": "исполнение обязательства в установленный срок",
+        "applicability": "PAYMENT_DELAY",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_330",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "legal_norms",
+      "source_title": "ГК РФ ст. 330",
+      "text": "Неустойкой признаётся определённая законом или договором денежная сумма, которую должник обязан уплатить кредитору при неисполнении или ненадлежащем исполнении обязательства.",
+      "citation": "ст. 330 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "330",
+        "purpose": "договорная неустойка",
+        "topic": "договорная неустойка",
+        "applicability": "PAYMENT_DELAY",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_395",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "legal_norms",
+      "source_title": "ГК РФ ст. 395",
+      "text": "При неправомерном удержании денежных средств, уклонении от их возврата или иной просрочке денежного обязательства кредитор вправе требовать проценты в порядке статьи 395 ГК РФ.",
+      "citation": "ст. 395 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "395",
+        "purpose": "проценты за пользование чужими денежными средствами при отсутствии применимой договорной неустойки",
+        "topic": "проценты за пользование чужими денежными средствами при отсутствии применимой договорной неустойки",
+        "applicability": "PAYMENT_DELAY",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_801",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "legal_norms",
+      "source_title": "ГК РФ ст. 801",
+      "text": "Статья 801 ГК РФ определяет договор транспортной экспедиции и обязанность экспедитора выполнять или организовывать связанные с перевозкой услуги за вознаграждение и за счёт клиента.",
+      "citation": "ст. 801 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "801",
+        "purpose": "договор транспортной экспедиции",
+        "topic": "договор транспортной экспедиции",
+        "applicability": "PAYMENT_DELAY",
+        "auto_use": true
+      }
+    }
+  ]
+}

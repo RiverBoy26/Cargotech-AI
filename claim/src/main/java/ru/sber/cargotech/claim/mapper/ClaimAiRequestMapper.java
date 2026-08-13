@@ -9,8 +9,10 @@ import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.TermDayType;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -116,11 +118,20 @@ public class ClaimAiRequestMapper {
                 ),
                 List.of(),
                 new AiGenerateClaimRequest.RagOptions(
-                        true,
+                        contractRagReady(contract),
                         contract.getId().toString(),
-                        contract.getClientId().toString()
+                        contract.getClientId().toString(),
+                        contract.getOrganizationId().toString()
                 )
         );
+    }
+
+    private boolean contractRagReady(ClaimContract contract) {
+        return contract.getStatus() == ru.sber.cargotech.claim.enums.ContractStatus.ACTIVE
+            && contract.getExtractionStatus() == ru.sber.cargotech.claim.enums.ContractExtractionStatus.CONFIRMED
+            && contract.getRagIndexStatus() == ru.sber.cargotech.claim.enums.ContractRagStatus.INDEXED
+            && contract.getDocumentId() != null
+            && contract.getDocumentId().equals(contract.getRagSourceDocumentId());
     }
 
     private AiGenerateClaimRequest.ClaimType mapClaimType(ClaimEntity claim) {
@@ -216,8 +227,9 @@ public class ClaimAiRequestMapper {
                     null,
                     "Структурированные условия оплаты",
                     "Оплата должна быть произведена в течение " + contract.getPaymentDays()
-                            + " календарных дней. Начало отсчёта срока: "
+                            + " " + termDayTypeLabel(contract.getPaymentDayType()) + ". Начало отсчёта срока: "
                             + paymentStartEventLabel(contract.getPaymentStartEvent())
+                            + paymentScheduleLabel(contract)
                             + ". Номер пункта договора в карточке не указан; в тексте следует писать «согласно условиям договора»."
             ));
         }
@@ -227,12 +239,13 @@ public class ClaimAiRequestMapper {
             String rate = contract.getPenaltyRate() == null
                     ? "ставка в карточке не указана"
                     : "ставка " + contract.getPenaltyRate().stripTrailingZeros().toPlainString() + "%";
+            String cap = penaltyCapLabel(contract);
             context.add(new AiGenerateClaimRequest.ContractContextChunk(
                     prefix + "-penalty",
                     null,
                     "Структурированные условия ответственности",
                     "Вид ответственности за просрочку: " + penaltyTypeLabel(contract.getPenaltyType())
-                            + "; " + rate
+                            + "; " + rate + cap
                             + ". Номер пункта договора в карточке не указан; запрещено выдумывать номер пункта."
             ));
         }
@@ -244,11 +257,46 @@ public class ClaimAiRequestMapper {
                     null,
                     "Структурированный срок ответа на претензию",
                     "Срок направления ответа на претензию: " + contract.getClaimResponseDays()
-                            + " календарных дней с даты получения претензии. Номер пункта договора в карточке не указан."
+                            + " " + termDayTypeLabel(contract.getClaimResponseDayType())
+                            + " с даты получения претензии. Номер пункта договора в карточке не указан."
             ));
         }
 
         return List.copyOf(context);
+    }
+
+    private String paymentScheduleLabel(ClaimContract contract) {
+        if (contract.getPaymentScheduleType() == null || contract.getPaymentWeekDays() == null
+                || contract.getPaymentWeekDays().isBlank()) {
+            return "";
+        }
+        if (contract.getPaymentScheduleType() != ru.sber.cargotech.claim.enums.PaymentScheduleType.NEXT_PAYMENT_DAY) {
+            return "";
+        }
+        String days = java.util.Arrays.stream(contract.getPaymentWeekDays().split(","))
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .map(this::weekDayLabel)
+            .collect(java.util.stream.Collectors.joining(", "));
+        return days.isBlank()
+            ? ""
+            : ". Если расчётная дата не является платёжным днём, срок переносится на ближайший следующий платёжный день (" + days + ")";
+    }
+
+    private String weekDayLabel(String value) {
+        try {
+            return switch (DayOfWeek.valueOf(value)) {
+                case MONDAY -> "понедельник";
+                case TUESDAY -> "вторник";
+                case WEDNESDAY -> "среда";
+                case THURSDAY -> "четверг";
+                case FRIDAY -> "пятница";
+                case SATURDAY -> "суббота";
+                case SUNDAY -> "воскресенье";
+            };
+        } catch (IllegalArgumentException exception) {
+            return value;
+        }
     }
 
     private String paymentStartEventLabel(PaymentStartEvent event) {
@@ -260,7 +308,31 @@ public class ClaimAiRequestMapper {
             case UNLOADING_DATE -> "дата выгрузки";
             case TTN_SIGNED -> "дата подписания транспортной накладной";
             case INVOICE_DATE -> "дата выставления счёта";
+            case REGISTRY_INCLUDED -> "дата включения рейса в согласованный реестр";
+            case DOCUMENT_PACKAGE_RECEIVED -> "дата получения полного комплекта документов";
         };
+    }
+
+    private String termDayTypeLabel(TermDayType type) {
+        if (type == null) return "календарных дней";
+        return switch (type) {
+            case CALENDAR_DAYS -> "календарных дней";
+            case WORKING_DAYS -> "рабочих дней";
+            case BANKING_DAYS -> "банковских дней";
+        };
+    }
+
+    private String penaltyCapLabel(ClaimContract contract) {
+        if (contract.getPenaltyCapPercent() == null || contract.getPenaltyCapBase() == null) return "";
+        String base = switch (contract.getPenaltyCapBase()) {
+            case PRINCIPAL_DEBT -> "основного долга";
+            case OUTSTANDING_DEBT -> "непогашенной задолженности";
+            case SHIPMENT_COST -> "стоимости соответствующей перевозки";
+            case INVOICE_AMOUNT -> "суммы соответствующего счёта";
+        };
+        return "; договорное ограничение: не более "
+            + contract.getPenaltyCapPercent().stripTrailingZeros().toPlainString()
+            + "% от " + base;
     }
 
     private String penaltyTypeLabel(ru.sber.cargotech.claim.enums.PenaltyType penaltyType) {

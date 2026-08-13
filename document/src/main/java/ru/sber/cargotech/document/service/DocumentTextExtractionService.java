@@ -12,6 +12,7 @@ import ru.sber.cargotech.document.dto.InternalDocumentTextResponse;
 import ru.sber.cargotech.document.entity.Document;
 import ru.sber.cargotech.document.entity.DocumentText;
 import ru.sber.cargotech.document.exception.DocumentException;
+import ru.sber.cargotech.document.enums.DocumentStatus;
 import ru.sber.cargotech.document.repository.DocumentRepository;
 import ru.sber.cargotech.document.repository.DocumentTextRepository;
 import ru.sber.cargotech.document.storage.LocalDocumentStorageService;
@@ -66,8 +67,9 @@ public class DocumentTextExtractionService {
     }
 
     @Transactional(readOnly = true)
-    public InternalDocumentTextResponse getInternal(UUID documentId) {
-        Document document = documentRepository.findById(documentId)
+    public InternalDocumentTextResponse getInternal(UUID organizationId, UUID documentId) {
+        Document document = documentRepository
+            .findByIdAndOrganizationIdAndStatusNot(documentId, organizationId, DocumentStatus.DELETED)
             .orElseThrow(() -> DocumentException.notFound("Документ не найден"));
         DocumentText text = textRepository.findByDocument_Id(documentId)
             .orElseThrow(() -> DocumentException.unprocessable("Текст документа ещё не извлечён"));

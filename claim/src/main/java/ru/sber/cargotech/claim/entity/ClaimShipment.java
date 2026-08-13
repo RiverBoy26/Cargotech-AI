@@ -61,6 +61,9 @@ public class ClaimShipment {
     @Column(name = "invoice_date")
     private LocalDate invoiceDate;
 
+    @Column(name = "payment_start_event_date")
+    private LocalDate paymentStartEventDate;
+
     @Column(name = "service_amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal serviceAmount;
 

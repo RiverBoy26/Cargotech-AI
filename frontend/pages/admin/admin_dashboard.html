@@ -164,12 +164,8 @@
             </div>
             <section class="add_user_form" id="contract_form" aria-labelledby="contract_form_title">
                 <div class="add_user_form_title" id="contract_form_title">Новый договор</div>
-                <div class="panel_subtitle">Экспедитор определяется автоматически по вашей организации.</div>
+                <div class="panel_subtitle">Выберите клиента и загрузите договор. Экспедитор определяется автоматически, остальные поля система предложит после распознавания.</div>
                 <div class="add_user_form_fields">
-                    <div class="form_field">
-                        <label class="form_label" for="contract_number">Номер договора *</label>
-                        <input class="form_input" id="contract_number" name="contract_number" autocomplete="off" required maxlength="128" placeholder="ДЭ-2026/001">
-                    </div>
                     <div class="form_field">
                         <label class="form_label" for="contract_client_id">Клиент *</label>
                         <select class="form_input form_select" id="contract_client_id" required>
@@ -177,70 +173,15 @@
                         </select>
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="contract_status">Статус *</label>
-                        <select class="form_input form_select" id="contract_status">
-                            <option value="DRAFT">Черновик</option>
-                            <option value="ACTIVE" selected>Действует</option>
-                            <option value="EXPIRED">Истёк</option>
-                            <option value="TERMINATED">Расторгнут</option>
-                            <option value="ARCHIVED">Архивный</option>
-                        </select>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_signed_at">Дата подписания</label>
-                        <input class="form_input" id="contract_signed_at" name="contract_signed_at" autocomplete="off" type="date">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_valid_from">Действует с</label>
-                        <input class="form_input" id="contract_valid_from" name="contract_valid_from" autocomplete="off" type="date">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_valid_to">Действует до</label>
-                        <input class="form_input" id="contract_valid_to" name="contract_valid_to" autocomplete="off" type="date">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_payment_days">Срок оплаты, дней *</label>
-                        <input class="form_input" id="contract_payment_days" name="contract_payment_days" autocomplete="off" type="number" required min="0" step="1" value="0">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_payment_start_event">Отсчёт срока оплаты *</label>
-                        <select class="form_input form_select" id="contract_payment_start_event">
-                            <option value="UNLOADING_DATE" selected>Дата выгрузки</option>
-                            <option value="ACT_SIGNED">Дата подписания акта</option>
-                            <option value="TTN_SIGNED">Дата подписания ТТН</option>
-                            <option value="INVOICE_DATE">Дата счёта</option>
-                        </select>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_penalty_type">Неустойка *</label>
-                        <select class="form_input form_select" id="contract_penalty_type">
-                            <option value="NONE" selected>Не начисляется</option>
-                            <option value="CONTRACT_PENALTY">По договору</option>
-                            <option value="ARTICLE_395">По статье 395 ГК РФ</option>
-                        </select>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_penalty_rate">Ставка неустойки, %</label>
-                        <input class="form_input" id="contract_penalty_rate" name="contract_penalty_rate" autocomplete="off" type="number" min="0" step="0.0001" value="0" disabled>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_claim_response_days">Срок ответа, дней *</label>
-                        <input class="form_input" id="contract_claim_response_days" name="contract_claim_response_days" autocomplete="off" type="number" required min="0" step="1" value="10">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_jurisdiction">Подсудность</label>
-                        <input class="form_input" id="contract_jurisdiction" name="contract_jurisdiction" autocomplete="off" maxlength="255" placeholder="Арбитражный суд Новосибирской области">
-                    </div>
-                    <div class="form_field form_field_wide">
-                        <label class="form_label" for="contract_file">Файл договора</label>
-                        <input class="form_input" id="contract_file" name="contract_file" autocomplete="off" type="file" accept=".pdf,.doc,.docx,.rtf,.txt">
-                        <span class="panel_subtitle">После загрузки система извлечёт условия. До подтверждения ни одно найденное значение не изменит карточку договора.</span>
+                        <label class="form_label" for="contract_file">Файл договора *</label>
+                        <input class="form_input" id="contract_file" name="contract_file" autocomplete="off" type="file" accept=".pdf,.docx,.txt" required>
+                        <span class="panel_subtitle">Поддерживаются PDF с текстовым слоем, DOCX и TXT. До подтверждения найденные значения не используются в расчётах.</span>
                     </div>
                 </div>
                 <div class="add_user_form_actions">
                     <p class="form_error" id="contract_form_error" role="alert"></p>
                     <button class="secondary_btn" id="cancel_contract_btn" type="button">Отмена</button>
-                    <button class="primary_btn" id="save_contract_btn" type="button">Создать договор</button>
+                    <button class="primary_btn" id="save_contract_btn" type="button">Загрузить и распознать</button>
                 </div>
             </section>
             <div class="admin_entity_table">
@@ -306,6 +247,11 @@
                     <div class="form_field">
                         <label class="form_label" for="shipment_act_signed_at">Дата подписания акта</label>
                         <input class="form_input" id="shipment_act_signed_at" name="shipment_act_signed_at" autocomplete="off" type="date">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" id="shipment_payment_anchor_label" for="shipment_payment_start_event_date">Дата договорного события начала срока оплаты</label>
+                        <input class="form_input" id="shipment_payment_start_event_date" name="shipment_payment_start_event_date" autocomplete="off" type="date">
+                        <small class="panel_subtitle" id="shipment_payment_anchor_hint">Заполняется для нестандартного договорного события, если оно не совпадает с актом, выгрузкой, ТТН или счётом.</small>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_service_amount">Стоимость перевозки *</label>

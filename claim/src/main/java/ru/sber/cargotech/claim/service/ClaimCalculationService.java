@@ -20,6 +20,7 @@ import ru.sber.cargotech.claim.security.CurrentClaimUser;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -103,6 +104,13 @@ public class ClaimCalculationService {
                 ? article395RateProvider.periods(overdueStartDate, calculationDate)
                 : List.of()
         );
+        accruedPenaltyAmount = PenaltyCapCalculator.apply(
+            accruedPenaltyAmount,
+            contract.getPenaltyCapPercent(),
+            contract.getPenaltyCapBase(),
+            principalDebt,
+            paidAmount
+        );
         ClaimPaymentAllocationCalculator.AllocationResult paymentAllocation =
                 ClaimPaymentAllocationCalculator.allocate(
                         principalDebt,
@@ -114,6 +122,12 @@ public class ClaimCalculationService {
         BigDecimal penaltyAmount = money(paymentAllocation.remainingPenalty());
         BigDecimal totalAmount = money(remainingDebt.add(penaltyAmount));
         log.debug("Расчёт выполнен: claimId={}, principalDebt={}, paidAmount={}, remainingDebt={}, overdueStartDate={}, overdueDays={}, penaltyType={}, penaltyRate={}, penaltyAmount={}, totalAmount={}", claim.getId(), principalDebt, paidAmount, remainingDebt, overdueStartDate, overdueDays, penaltyType, penaltyRate, penaltyAmount, totalAmount);
+
+        // Serialize version allocation per claim. MAX(version) + 1 is safe only
+        // while the parent claim row is locked in this transaction.
+        ClaimEntity lockedClaim = claimRepository
+            .findByIdAndOrganizationIdForUpdate(claim.getId(), user.organizationId())
+            .orElseThrow(() -> ClaimException.notFound("Претензия не найдена"));
 
         int nextVersion = calculationRepository.findLastCalculationVersion(claim.getId()) + 1;
         ClaimCalculation calculation = new ClaimCalculation();
@@ -133,33 +147,37 @@ public class ClaimCalculationService {
             penaltyType,
             penaltyRate,
             overdueDays,
-            paymentAllocations.size()
+            paymentAllocations.size(),
+            contract.getPenaltyCapPercent(),
+            contract.getPenaltyCapBase()
         ));
-        calculation.setInputSnapshot(Map.of(
-            "shipmentId", shipment.getId().toString(),
-            "contractId", contract.getId().toString(),
-            "serviceAmount", principalDebt,
-            "paidAmount", paidAmount,
-            "accruedPenaltyAmount", accruedPenaltyAmount,
-            "paidPenaltyAmount", paidPenaltyAmount,
-            "paymentAllocations", paymentAllocations.stream()
-                .map(allocation -> Map.of(
-                    "paymentDate", allocation.paymentDate().toString(),
-                    "amount", allocation.amount()
-                ))
-                .toList(),
-            "paymentStartEvent", contract.getPaymentStartEvent() == null ? "" : contract.getPaymentStartEvent().name(),
-            "paymentDays", contract.getPaymentDays() == null ? 0 : contract.getPaymentDays()
-        ));
+        Map<String, Object> inputSnapshot = new LinkedHashMap<>();
+        inputSnapshot.put("shipmentId", shipment.getId().toString());
+        inputSnapshot.put("contractId", contract.getId().toString());
+        inputSnapshot.put("serviceAmount", principalDebt);
+        inputSnapshot.put("paidAmount", paidAmount);
+        inputSnapshot.put("accruedPenaltyAmount", accruedPenaltyAmount);
+        inputSnapshot.put("paidPenaltyAmount", paidPenaltyAmount);
+        inputSnapshot.put("paymentAllocations", paymentAllocations.stream()
+            .map(allocation -> Map.of(
+                "paymentDate", allocation.paymentDate().toString(),
+                "amount", allocation.amount()
+            ))
+            .toList());
+        inputSnapshot.put("paymentStartEvent", contract.getPaymentStartEvent() == null ? "" : contract.getPaymentStartEvent().name());
+        inputSnapshot.put("paymentDays", contract.getPaymentDays() == null ? 0 : contract.getPaymentDays());
+        inputSnapshot.put("penaltyCapPercent", contract.getPenaltyCapPercent() == null ? "" : contract.getPenaltyCapPercent());
+        inputSnapshot.put("penaltyCapBase", contract.getPenaltyCapBase() == null ? "" : contract.getPenaltyCapBase().name());
+        calculation.setInputSnapshot(inputSnapshot);
         calculation.setCreatedBy(user.userId());
         ClaimCalculation saved = calculationRepository.save(calculation);
         log.debug("Расчёт сохранён: claimId={}, calculationId={}, version={}", claim.getId(), saved.getId(), saved.getCalculationVersion());
 
-        claim.setPrincipalDebt(remainingDebt);
-        claim.setPenaltyAmount(penaltyAmount);
-        claim.setUpdatedBy(user.userId());
-        claim.normalizeTotals();
-        claimRepository.save(claim);
+        lockedClaim.setPrincipalDebt(remainingDebt);
+        lockedClaim.setPenaltyAmount(penaltyAmount);
+        lockedClaim.setUpdatedBy(user.userId());
+        lockedClaim.normalizeTotals();
+        claimRepository.save(lockedClaim);
 
         outboxWriter.write(
             "CLAIM",
@@ -189,7 +207,9 @@ public class ClaimCalculationService {
         PenaltyType type,
         BigDecimal rate,
         int days,
-        int paymentCount
+        int paymentCount,
+        BigDecimal penaltyCapPercent,
+        ru.sber.cargotech.claim.enums.PenaltyCapBase penaltyCapBase
     ) {
         if (type == PenaltyType.NONE) {
             return "Неустойка не начисляется";
@@ -200,7 +220,8 @@ public class ClaimCalculationService {
         if (type == PenaltyType.ARTICLE_395) {
             return base + " × " + rate + "% × " + days + " дней / 365";
         }
-        return base + " × " + rate + "% × " + days + " дней";
+        return base + " × " + rate + "% × " + days + " дней"
+            + PenaltyCapCalculator.describe(penaltyCapPercent, penaltyCapBase);
     }
 
     private static BigDecimal money(BigDecimal value) {

@@ -21,6 +21,7 @@ import ru.sber.cargotech.ai.rag.RagSearchService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class ClaimGenerationPipelineService {
@@ -51,6 +52,13 @@ public class ClaimGenerationPipelineService {
     }
 
     public GenerateClaimPipelineResponse generate(GenerateClaimPipelineRequest request) {
+        return generate(request, null);
+    }
+
+    public GenerateClaimPipelineResponse generate(
+            GenerateClaimPipelineRequest request,
+            UUID actorUserId
+    ) {
         validateRequest(request);
 
         List<String> ragWarnings = new ArrayList<>();
@@ -63,6 +71,7 @@ public class ClaimGenerationPipelineService {
         GigaChatClient.ChatCallResult callResult = gigaChatClient.sendChatWithTrace(
                 messages,
                 enrichedRequest.caseFacts().claimId(),
+                actorUserId,
                 operationName(enrichedRequest.caseFacts().claimType())
         );
         GigaChatChatResponse chatResponse = callResult.response();
@@ -71,7 +80,10 @@ public class ClaimGenerationPipelineService {
                 chatResponse,
                 "GigaChat returned empty claim generation response"
         );
-        GenerateClaimResponse generatedClaim = claimResponseParser.parse(rawModelResponse);
+        GenerateClaimResponse generatedClaim = normalizeCitationMetadata(
+                enrichedRequest,
+                claimResponseParser.parse(rawModelResponse)
+        );
         GuardrailResult guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
         logGuardrailResult(
                 "INITIAL",
@@ -97,6 +109,7 @@ public class ClaimGenerationPipelineService {
             GigaChatClient.ChatCallResult repairCall = gigaChatClient.sendChatWithTrace(
                     repairMessages,
                     enrichedRequest.caseFacts().claimId(),
+                    actorUserId,
                     operationName(enrichedRequest.caseFacts().claimType()) + "_REPAIR"
             );
             GigaChatChatResponse repairResponse = repairCall.response();
@@ -104,7 +117,10 @@ public class ClaimGenerationPipelineService {
                     repairResponse,
                     "GigaChat returned empty claim repair response"
             );
-            generatedClaim = claimResponseParser.parse(repairedRaw);
+            generatedClaim = normalizeCitationMetadata(
+                    enrichedRequest,
+                    claimResponseParser.parse(repairedRaw)
+            );
             guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
             logGuardrailResult(
                     "REPAIR",
@@ -159,13 +175,14 @@ public class ClaimGenerationPipelineService {
 
         if (result.decision() == GuardrailDecision.BLOCK) {
             log.warn(
-                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errorCount={}, warningCount={}",
+                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errorCount={}, warningCount={}, errors={}",
                     stage,
                     caseId,
                     requestId,
                     result.decision(),
                     result.errors() == null ? 0 : result.errors().size(),
-                    result.warnings() == null ? 0 : result.warnings().size()
+                    result.warnings() == null ? 0 : result.warnings().size(),
+                    result.errors() == null ? List.of() : result.errors()
             );
         } else {
             log.info(
@@ -214,14 +231,19 @@ public class ClaimGenerationPipelineService {
                 8. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
                 9. Не используй термин «непредставление транспортного средства».
                 10. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
-                11. Если legal_context не пуст, выбери минимум одну применимую норму, дословно вставь её citation в claim_text и добавь ту же норму в used_law_articles.
+                11. Если legal_context не пуст, выбери минимум одну применимую норму из него, процитируй ту же статью и закон в claim_text и добавь её в used_law_articles. Естественный порядок слов допустим.
                 12. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
-                13. Для PAYMENT_DELAY используй банковские реквизиты только из creditor.bank_details; в раздел «Приложения» и attachments включи только документы с подтверждённым идентификатором и обязательный расчёт задолженности.
-                14. В claim_text не должно быть ISO-дат YYYY-MM-DD: преобразуй их в русскую письменную форму «07 августа 2026 года», не меняя саму календарную дату.
-                15. В claim_text не должно быть технических enum/кодов UNPAID, PAID, PARTIALLY_PAID, UNKNOWN, RUB, CONTRACT_PENALTY, NONE. Вырази их смысл обычным русским языком.
-                16. Денежные суммы в claim_text форматируй для документа: разделяй тысячи пробелами и не используй десятичную точку перед словом «рублей»; например «100 000 рублей 00 копеек». backend_calculation_used не изменяй.
-                17. Правовую citation вставляй в естественную фразу «В соответствии со <citation> ...».
-                18. Верни только валидный JSON без markdown и текста вне JSON.
+                13. Для PAYMENT_DELAY attachments должен быть строго []; не добавляй раздел «Приложения», банковские реквизиты и фразы об их отсутствии.
+                14. Если contract_context содержит нумерованные пункты, относящиеся к использованным условиям, процитируй их в claim_text и укажи те же chunk_id/clause_number в used_contract_clauses.
+                15. shipment.order_number — только номер. Не добавляй к нему «от <дата>»: отдельной даты заказа/заявки во входе нет.
+                16. payment_confirmed_by_accountant подтверждает только статус оплаты. Не приписывай бухгалтеру подтверждение выставления/получения документов или наступления срока платежа.
+                17. Если backend_calculation.penalty_type = LEGAL_INTEREST, называй начисление процентами по ст. 395 ГК РФ / процентами за пользование чужими денежными средствами. Не называй его неустойкой, штрафом или пеней.
+                18. contract.claim_response_days — срок письменного ответа, а не новый срок оплаты. Требование погасить задолженность и срок ответа сформулируй раздельно.
+                18.1. Для PAYMENT_DELAY не упоминай суд, арбитражный суд, иск, судебное взыскание или обращение в суд. Допустима только нейтральная фраза о дальнейших действиях по защите интересов без судебной эскалации.
+                19. В claim_text не должно быть ISO-дат YYYY-MM-DD: преобразуй их в русскую письменную форму «07 августа 2026 года», не меняя саму календарную дату.
+                20. В claim_text не должно быть технических enum/кодов UNPAID, PAID, PARTIALLY_PAID, UNKNOWN, RUB, CONTRACT_PENALTY, NONE. Вырази их смысл обычным русским языком.
+                21. Денежные суммы в claim_text форматируй для документа: разделяй тысячи пробелами и не используй десятичную точку перед словом «рублей»; например «100 000 рублей 00 копеек». backend_calculation_used не изменяй.
+                22. Верни только валидный JSON без markdown и текста вне JSON.
                 """.formatted(String.join("\n- ", errors == null ? List.of() : errors))
         ));
         return messages;
@@ -266,7 +288,8 @@ public class ClaimGenerationPipelineService {
             ragContext = ragSearchService.retrieveClaimContext(
                     request.caseFacts().claimType(),
                     ragOptions.contractId(),
-                    ragOptions.clientId()
+                    ragOptions.clientId(),
+                    ragOptions.organizationId()
             );
         } catch (RuntimeException exception) {
             if (hasProvidedContractContext(request)) {
@@ -354,13 +377,165 @@ public class ClaimGenerationPipelineService {
         return "PASSED";
     }
 
-    private List<GenerateClaimRequest.ContractContextChunk> mergeContractContext(
+    GenerateClaimResponse normalizeCitationMetadata(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response
+    ) {
+        if (request == null || response == null) {
+            return response;
+        }
+
+        boolean changed = false;
+        List<GenerateClaimResponse.UsedContractClause> normalizedContract = new ArrayList<>();
+        for (GenerateClaimResponse.UsedContractClause used :
+                response.usedContractClauses() == null
+                        ? List.<GenerateClaimResponse.UsedContractClause>of()
+                        : response.usedContractClauses()) {
+            if (used == null) {
+                continue;
+            }
+
+            GenerateClaimRequest.ContractContextChunk exactByChunk = null;
+            List<GenerateClaimRequest.ContractContextChunk> sameClause = new ArrayList<>();
+
+            for (GenerateClaimRequest.ContractContextChunk allowed :
+                    request.contractContext() == null
+                            ? List.<GenerateClaimRequest.ContractContextChunk>of()
+                            : request.contractContext()) {
+                if (allowed == null) {
+                    continue;
+                }
+                if (!isBlank(used.chunkId()) && used.chunkId().equals(allowed.chunkId())) {
+                    exactByChunk = allowed;
+                }
+                if (!isBlank(used.clauseNumber())
+                        && normalize(used.clauseNumber()).equals(normalize(allowed.clauseNumber()))) {
+                    sameClause.add(allowed);
+                }
+            }
+
+            GenerateClaimRequest.ContractContextChunk canonical = null;
+
+            // If the model returned a valid chunk id, the backend source wins.
+            if (exactByChunk != null
+                    && (isBlank(used.clauseNumber())
+                    || normalize(used.clauseNumber()).equals(normalize(exactByChunk.clauseNumber())))) {
+                canonical = exactByChunk;
+            } else if (sameClause.size() == 1) {
+                // Most common LLM metadata error: the visible clause number is
+                // correct, but it copied the chunk_id from a neighbouring chunk.
+                // We can repair that deterministically without a second LLM call.
+                canonical = sameClause.get(0);
+            }
+
+            if (canonical != null) {
+                GenerateClaimResponse.UsedContractClause normalized =
+                        new GenerateClaimResponse.UsedContractClause(
+                                canonical.clauseNumber(),
+                                canonical.chunkId(),
+                                used.reason()
+                        );
+                normalizedContract.add(normalized);
+                if (!normalized.equals(used)) {
+                    changed = true;
+                }
+            } else {
+                // Ambiguous/unknown citations remain untouched so the guardrail
+                // can still block genuinely unsafe metadata.
+                normalizedContract.add(used);
+            }
+        }
+
+        List<GenerateClaimResponse.UsedLawArticle> normalizedLaw = new ArrayList<>();
+        for (GenerateClaimResponse.UsedLawArticle used :
+                response.usedLawArticles() == null
+                        ? List.<GenerateClaimResponse.UsedLawArticle>of()
+                        : response.usedLawArticles()) {
+            if (used == null) {
+                continue;
+            }
+
+            GenerateClaimRequest.LegalContextItem exactByChunk = null;
+            List<GenerateClaimRequest.LegalContextItem> sameLaw = new ArrayList<>();
+
+            for (GenerateClaimRequest.LegalContextItem allowed :
+                    request.legalContext() == null
+                            ? List.<GenerateClaimRequest.LegalContextItem>of()
+                            : request.legalContext()) {
+                if (allowed == null) {
+                    continue;
+                }
+                if (!isBlank(used.chunkId()) && used.chunkId().equals(allowed.chunkId())) {
+                    exactByChunk = allowed;
+                }
+                if (normalize(used.lawCode()).equals(normalize(allowed.lawCode()))
+                        && normalize(used.article()).equals(normalize(allowed.article()))) {
+                    sameLaw.add(allowed);
+                }
+            }
+
+            GenerateClaimRequest.LegalContextItem canonical = null;
+            if (exactByChunk != null
+                    && normalize(used.lawCode()).equals(normalize(exactByChunk.lawCode()))
+                    && normalize(used.article()).equals(normalize(exactByChunk.article()))) {
+                canonical = exactByChunk;
+            } else if (sameLaw.size() == 1) {
+                canonical = sameLaw.get(0);
+            }
+
+            if (canonical != null) {
+                GenerateClaimResponse.UsedLawArticle normalized =
+                        new GenerateClaimResponse.UsedLawArticle(
+                                canonical.chunkId(),
+                                canonical.lawCode(),
+                                canonical.article(),
+                                used.reason()
+                        );
+                normalizedLaw.add(normalized);
+                if (!normalized.equals(used)) {
+                    changed = true;
+                }
+            } else {
+                normalizedLaw.add(used);
+            }
+        }
+
+        if (!changed) {
+            return response;
+        }
+
+        return new GenerateClaimResponse(
+                response.claimType(),
+                response.claimText(),
+                response.summaryForLawyer(),
+                List.copyOf(normalizedContract),
+                List.copyOf(normalizedLaw),
+                response.backendCalculationUsed(),
+                response.attachments(),
+                response.warnings(),
+                response.manualReviewRequired()
+        );
+    }
+
+    List<GenerateClaimRequest.ContractContextChunk> mergeContractContext(
             List<GenerateClaimRequest.ContractContextChunk> primary,
             List<GenerateClaimRequest.ContractContextChunk> secondary
     ) {
         java.util.LinkedHashMap<String, GenerateClaimRequest.ContractContextChunk> merged = new java.util.LinkedHashMap<>();
-        for (GenerateClaimRequest.ContractContextChunk item : concat(primary, secondary)) {
+        java.util.Set<String> verifiedClauses = new java.util.HashSet<>();
+        for (GenerateClaimRequest.ContractContextChunk item : primary == null ? List.<GenerateClaimRequest.ContractContextChunk>of() : primary) {
             if (item == null) continue;
+            if (!isBlank(item.clauseNumber())) verifiedClauses.add(normalize(item.clauseNumber()));
+            String key = !isBlank(item.chunkId())
+                    ? "id:" + item.chunkId()
+                    : "clause:" + item.clauseNumber() + ":" + item.text();
+            merged.putIfAbsent(key, item);
+        }
+        for (GenerateClaimRequest.ContractContextChunk item : secondary == null ? List.<GenerateClaimRequest.ContractContextChunk>of() : secondary) {
+            if (item == null) continue;
+            if (!isBlank(item.clauseNumber()) && verifiedClauses.contains(normalize(item.clauseNumber()))) {
+                continue;
+            }
             String key = !isBlank(item.chunkId())
                     ? "id:" + item.chunkId()
                     : "clause:" + item.clauseNumber() + ":" + item.text();

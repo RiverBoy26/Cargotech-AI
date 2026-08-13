@@ -324,9 +324,18 @@ public class RuleBasedGuardrailService {
         }
 
         List<GenerateClaimResponse.UsedContractClause> usedClauses = safeList(response.usedContractClauses());
+        boolean numberedContractContextAvailable = safeList(request.contractContext()).stream()
+                .filter(Objects::nonNull)
+                .anyMatch(chunk -> !isBlank(chunk.clauseNumber()));
 
         if (usedClauses.isEmpty()) {
-            warnings.add("Model did not cite contract clauses");
+            if (request.caseFacts() != null
+                    && request.caseFacts().claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                    && numberedContractContextAvailable) {
+                errors.add("Model must cite at least one numbered contract clause from contract_context");
+            } else {
+                warnings.add("Model did not cite contract clauses");
+            }
             return;
         }
 
@@ -344,8 +353,73 @@ public class RuleBasedGuardrailService {
 
             if (!sameText(allowed.clauseNumber(), used.clauseNumber())) {
                 errors.add("Model contract chunk_id and clause_number do not match: " + used.chunkId());
+                continue;
+            }
+
+            if (!isBlank(used.clauseNumber())
+                    && !containsContractClauseReference(response.claimText(), used.clauseNumber())) {
+                errors.add("claim_text does not cite used contract clause: " + used.clauseNumber());
+            }
+
+            if (!isBlank(used.clauseNumber())
+                    && request.caseFacts() != null
+                    && request.caseFacts().claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                    && request.caseFacts().contract() != null
+                    && !isBlank(request.caseFacts().contract().contractNumber())
+                    && !containsClauseAndContractNumberInSameSentence(
+                            response.claimText(),
+                            used.clauseNumber(),
+                            request.caseFacts().contract().contractNumber()
+                    )) {
+                errors.add("claim_text contract clause citation must include contract number in the same sentence: "
+                        + used.clauseNumber());
             }
         }
+    }
+
+    private boolean containsContractClauseReference(String claimText, String clauseNumber) {
+        if (isBlank(claimText) || isBlank(clauseNumber)) {
+            return false;
+        }
+
+        // Legal Russian drafting commonly groups references:
+        // "п. 8.2, 8.4 Договора" / "пп. 8.2 и 8.4".
+        // Treat every number inside such a group as an explicit citation instead
+        // of requiring a separate "п." marker before each number.
+        String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
+        String marker = "(?:пункт(?:а|у|е|ом|ы|ов)?|п\\.|пп\\.)\\s*"
+                + previousClauses
+                + Pattern.quote(clauseNumber);
+        return Pattern.compile("(?iu)" + marker).matcher(claimText).find();
+    }
+
+    private boolean containsClauseAndContractNumberInSameSentence(
+            String claimText,
+            String clauseNumber,
+            String contractNumber
+    ) {
+        if (isBlank(claimText) || isBlank(clauseNumber) || isBlank(contractNumber)) {
+            return false;
+        }
+
+        String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
+        String clauseMarker = "(?:пункт(?:а|у|е|ом|ы|ов)?|п\\.|пп\\.)\\s*"
+                + previousClauses
+                + Pattern.quote(clauseNumber);
+        String contractMarker = "(?:договор\\p{L}*\\s*)?(?:№\\s*)?"
+                + Pattern.quote(contractNumber);
+
+        // Clause numbers (4.2) and contract dates (10.01.2026) themselves
+        // contain dots, so a dot cannot be used as a sentence delimiter here.
+        // Require both markers on the same logical line instead. This still
+        // enforces a local, human-readable citation without rejecting normal
+        // Russian legal formatting.
+        Pattern linePattern = Pattern.compile(
+                "(?iu)(?=[^\\n]*" + clauseMarker + ")"
+                        + "(?=[^\\n]*" + contractMarker + ")"
+                        + "[^\\n]+"
+        );
+        return linePattern.matcher(claimText).find();
     }
 
     private void validateUsedLawArticles(
@@ -476,7 +550,8 @@ public class RuleBasedGuardrailService {
             return true;
         }
 
-        String articlePattern = "(?:статья|статьи|статью|статье|статьей|статьёй|ст\\.?)\\s*"
+        String articlePattern = "(?:статья|статьи|статью|статье|статьей|статьёй|статьями|статей|ст\\.?)\\s*"
+                + "(?:\\d+(?:\\.\\d+)?\\s*(?:,|;|и)\\s*)*"
                 + Pattern.quote(articleNumber);
 
         Pattern referencePattern = Pattern.compile(
@@ -564,10 +639,23 @@ public class RuleBasedGuardrailService {
         }
 
         Set<String> result = new LinkedHashSet<>();
-        Matcher matcher = ARTICLE_REFERENCE_PATTERN.matcher(text);
-        while (matcher.find()) {
-            result.add(matcher.group(1));
+
+        // Capture both standalone references ("ст. 395") and grouped references
+        // ("ст. 309, 314 ГК РФ"). The old implementation only saw the first
+        // article in a group and falsely blocked otherwise valid legal drafting.
+        Pattern articleListPattern = Pattern.compile(
+                "(?iu)(?:^|[^\\p{L}\\p{N}])"
+                        + "(?:статья|статьи|статью|статье|статьей|статьёй|статьями|статей|ст\\.?)\\s*"
+                        + "((?:\\d+(?:\\.\\d+)?)(?:\\s*(?:,|;|и)\\s*\\d+(?:\\.\\d+)?)*)"
+        );
+        Matcher listMatcher = articleListPattern.matcher(text);
+        while (listMatcher.find()) {
+            Matcher numberMatcher = ARTICLE_NUMBER_PATTERN.matcher(listMatcher.group(1));
+            while (numberMatcher.find()) {
+                result.add(numberMatcher.group());
+            }
         }
+
         return result;
     }
 
@@ -597,8 +685,16 @@ public class RuleBasedGuardrailService {
                 + (response.summaryForLawyer() == null ? "" : response.summaryForLawyer()))
                 .toLowerCase(Locale.ROOT);
 
+        // A neutral warning about the creditor's right to go to court after non-performance
+        // of the claim is allowed by the product requirements. Concrete procedural actions,
+        // invented courts and aggressive escalation language remain prohibited.
+        String textWithoutAllowedCourtWarning = text.replaceAll(
+                "(?iu)в\\s+случае\\s+неисполнени\\p{L}*[^.]{0,180}?"
+                        + "(?:вправе|имеет\\s+право)[^.]{0,80}?обратиться\\s+в\\s+суд",
+                ""
+        );
+
         List<String> forbiddenPhrases = List.of(
-                "обратиться в суд",
                 "в судебном порядке",
                 "исковое заявление",
                 "подать иск",
@@ -609,7 +705,7 @@ public class RuleBasedGuardrailService {
         );
 
         for (String phrase : forbiddenPhrases) {
-            if (text.contains(phrase)) {
+            if (textWithoutAllowedCourtWarning.contains(phrase)) {
                 errors.add("Model used forbidden court/escalation phrase: " + phrase);
             }
         }

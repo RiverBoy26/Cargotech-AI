@@ -65,6 +65,47 @@ class RagIndexRequestMapperTest {
         assertThat(chunks.get(0).clientId()).isEqualTo("7701234567");
     }
 
+    @Test
+    void allowsUnnumberedOriginalContractChunkWithoutFakeClause() {
+        IndexRagChunksRequest request = request(new IndexRagChunksRequest.IndexRagChunk(
+                "chunk-general",
+                RagCollection.CONTRACT_CONTEXT,
+                RagChunkType.CONTRACT_GENERAL,
+                "ALL",
+                "org-A",
+                "client-A",
+                "contract-A",
+                "45/2026",
+                null,
+                "EXPEDITOR_TO_CLIENT",
+                "CLIENT_CONTRACT",
+                "source-1",
+                "Договор № 45/2026",
+                "Общие положения",
+                "Общие положения",
+                null,
+                "Условия договора",
+                "Стороны согласовали общие условия сотрудничества.",
+                "раздел «Общие положения» Договора № 45/2026",
+                true,
+                Map.of(
+                    "source_kind", "original_contract",
+                    "organization_id", "org-B",
+                    "contract_id", "contract-B",
+                    "is_current", false
+                )
+        ));
+
+        assertThat(mapper.toChunks(request)).singleElement().satisfies(chunk -> {
+            assertThat(chunk.organizationId()).isEqualTo("org-A");
+            assertThat(chunk.clauseNumber()).isNull();
+            assertThat(chunk.toPayload())
+                .containsEntry("organization_id", "org-A")
+                .containsEntry("contract_id", "contract-A")
+                .containsEntry("is_current", true);
+        });
+    }
+
     private IndexRagChunksRequest request(IndexRagChunksRequest.IndexRagChunk chunk) {
         return new IndexRagChunksRequest("batch-1", "TEST", List.of(chunk));
     }

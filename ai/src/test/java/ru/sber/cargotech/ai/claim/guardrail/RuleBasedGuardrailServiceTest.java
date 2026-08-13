@@ -58,7 +58,7 @@ class RuleBasedGuardrailServiceTest {
         String text = """
                 От: ООО Экспедитор, ИНН 7800000000.
                 Кому: ООО Клиент, ИНН 7700000000.
-                Претензия по договору №45/2026 от 10.01.2026.
+                Претензия по п. 4.2 Договора №45/2026 от 10.01.2026.
                 Перевозка по маршруту Санкт-Петербург — Москва.
                 Услуги подтверждены актом №157 от 01.05.2026.
                 Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
@@ -74,7 +74,7 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
-    void blocksAttachmentWithWrongTtnNumber() {
+    void blocksPaymentDelayAttachmentsRegardlessOfDocumentType() {
         GenerateClaimResponse response = new GenerateClaimResponse(
                 GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
                 validText(),
@@ -101,7 +101,7 @@ class RuleBasedGuardrailServiceTest {
         GuardrailResult result = service.check(paymentRequest(true), response);
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
-        assertThat(result.errors()).anyMatch(error -> error.contains("unsupported attachment: TTN"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("attachments must be empty"));
     }
 
     @Test
@@ -111,6 +111,110 @@ class RuleBasedGuardrailServiceTest {
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
         assertThat(result.errors()).anyMatch(error -> error.contains("unknown INN"));
+    }
+
+    @Test
+    void acceptsRussianRublesAndKopecksAsExactBackendAmounts() {
+        String text = validText()
+                .replace("240 000 руб.", "240 000 рублей 00 копеек")
+                .replace("2 400 руб.", "2 400 рублей 00 копеек")
+                .replace("242 400 руб.", "242 400 рублей 00 копеек");
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void acceptsNonZeroKopecksWithoutInventingWholeRubleAmounts() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                new GenerateClaimRequest.BackendCalculation(
+                        new BigDecimal("250000.00"),
+                        GenerateClaimRequest.PenaltyType.LEGAL_INTEREST,
+                        "ст. 395 ГК РФ",
+                        50,
+                        new BigDecimal("5698.63"),
+                        new BigDecimal("255698.63"),
+                        "RUB",
+                        "backend"
+                ),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        String text = validText()
+                // Replace the total before the penalty: "242 400" contains
+                // "2 400" as a substring, so the opposite order corrupts
+                // the fixture into "245 698 ...".
+                .replace("242 400 руб.", "255 698 рублей 63 копейки")
+                .replace("240 000 руб.", "250 000 рублей 00 копеек")
+                .replace("2 400 руб.", "5 698 рублей 63 копейки");
+
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
+                text,
+                "Просрочка оплаты по договору",
+                List.of(new GenerateClaimResponse.UsedContractClause("4.2", "contract-payment", "срок оплаты")),
+                List.of(new GenerateClaimResponse.UsedLawArticle("law-309", "ГК РФ", "309", "надлежащее исполнение")),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        new BigDecimal("250000.00"),
+                        GenerateClaimRequest.PenaltyType.LEGAL_INTEREST,
+                        new BigDecimal("5698.63"),
+                        new BigDecimal("255698.63"),
+                        50,
+                        "RUB"
+                ),
+                List.of(),
+                List.of(),
+                true
+        );
+
+        GuardrailResult result = service.check(request, response);
+
+        assertThat(result.errors()).noneMatch(error -> error.contains("5698 RUB"));
+        assertThat(result.errors()).noneMatch(error -> error.contains("255698 RUB"));
+        assertThat(result.errors()).noneMatch(error -> error.contains("expected total_amount"));
+    }
+
+    @Test
+    void blocksPaymentDelayWhenContractClauseMetadataIsNotCitedInClaimText() {
+        String text = validText().replace("п. 4.2 Договора", "Договора");
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("does not cite used contract clause"));
+    }
+
+    @Test
+    void blocksPaymentDelayAttachmentsInCurrentScope() {
+        GenerateClaimResponse base = validPaymentResponse(validText());
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                base.summaryForLawyer(),
+                base.usedContractClauses(),
+                base.usedLawArticles(),
+                base.backendCalculationUsed(),
+                List.of(new GenerateClaimResponse.Attachment(
+                        GenerateClaimResponse.DocumentType.CALCULATION,
+                        "Расчёт задолженности",
+                        true
+                )),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+
+        GuardrailResult result = service.check(paymentRequest(true), response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("attachments must be empty"));
     }
 
     @Test
@@ -242,7 +346,7 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
-    void blocksOptionalLoadingFailureActWhenActFactsExist() {
+    void blocksLoadingFailureAttachmentsInCurrentScope() {
         GenerateClaimResponse base = detailedLoadingResponse(detailedLoadingText());
         GenerateClaimResponse response = new GenerateClaimResponse(
                 base.claimType(),
@@ -254,7 +358,7 @@ class RuleBasedGuardrailServiceTest {
                 List.of(new GenerateClaimResponse.Attachment(
                         GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT,
                         "Акт о срыве погрузки № ACT-LF-200 от 12.06.2026",
-                        false
+                        true
                 )),
                 base.warnings(),
                 base.manualReviewRequired()
@@ -263,7 +367,7 @@ class RuleBasedGuardrailServiceTest {
         GuardrailResult result = service.check(detailedLoadingRequest(), response);
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
-        assertThat(result.errors()).anyMatch(error -> error.contains("required LOADING_FAILURE_ACT"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("attachments must be empty"));
     }
 
     @Test
@@ -285,11 +389,7 @@ class RuleBasedGuardrailServiceTest {
                         0,
                         "RUB"
                 ),
-                List.of(new GenerateClaimResponse.Attachment(
-                        GenerateClaimResponse.DocumentType.TRANSPORT_ORDER,
-                        "Заявка ORD-1",
-                        true
-                )),
+                List.of(),
                 List.of(),
                 true
         );
@@ -367,6 +467,163 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
+    void acceptsGroupedContractAndLawCitations() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                base.backendCalculation(),
+                List.of(
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "contract-payment", "4.2", "Оплата", "Срок оплаты"
+                        ),
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "contract-payment-extra", "4.3", "Расчеты", "Порядок расчетов"
+                        )
+                ),
+                List.of(
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-309", "ГК РФ", "309", "надлежащее исполнение",
+                                "Обязательства исполняются надлежащим образом",
+                                "ст. 309 ГК РФ", "2026-08-13", "PAYMENT_DELAY"
+                        ),
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-314", "ГК РФ", "314", "срок исполнения",
+                                "Обязательство исполняется в установленный срок",
+                                "ст. 314 ГК РФ", "2026-08-13", "PAYMENT_DELAY"
+                        )
+                ),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        String text = validText()
+                .replace("п. 4.2 Договора", "п. 4.2, 4.3 Договора")
+                .replace("ст. 309 ГК РФ", "ст. 309, 314 ГК РФ");
+
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
+                text,
+                "Просрочка оплаты по договору",
+                List.of(
+                        new GenerateClaimResponse.UsedContractClause(
+                                "4.2", "contract-payment", "срок оплаты"
+                        ),
+                        new GenerateClaimResponse.UsedContractClause(
+                                "4.3", "contract-payment-extra", "порядок расчетов"
+                        )
+                ),
+                List.of(
+                        new GenerateClaimResponse.UsedLawArticle(
+                                "law-309", "ГК РФ", "309", "надлежащее исполнение"
+                        ),
+                        new GenerateClaimResponse.UsedLawArticle(
+                                "law-314", "ГК РФ", "314", "срок исполнения"
+                        )
+                ),
+                validPaymentResponse(text).backendCalculationUsed(),
+                List.of(),
+                List.of(),
+                true
+        );
+
+        GuardrailResult result = service.check(request, response);
+
+        assertThat(result.decision())
+                .withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksInventedOrderDateForPaymentDelay() {
+        String text = productionPaymentText()
+                .replace("оказаны услуги по маршруту", "по заказу № ORD-157 от 1 июня 2026 года оказаны услуги по маршруту");
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("invents an order/application date"));
+    }
+
+    @Test
+    void blocksAccountantConfirmationOverclaim() {
+        String text = validText()
+                + " Бухгалтером подтвержден факт выставления документов и наступления срока платежа.";
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("overstates accountant confirmation"));
+    }
+
+    @Test
+    void blocksResponseDeadlineUsedAsPaymentDeadline() {
+        String text = productionPaymentText()
+                .replace(
+                        "Требуем оплатить задолженность.\nПисьменный ответ направить в течение 10 календарных дней",
+                        "Требуем оплатить задолженность в течение 10 календарных дней.\nПисьменный ответ направить в течение 10 календарных дней"
+                );
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("uses contract.claim_response_days as a payment deadline"));
+    }
+
+    @Test
+    void blocksLegalInterestDescribedAsPenalty() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                new GenerateClaimRequest.BackendCalculation(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.LEGAL_INTEREST,
+                        "ст. 395 ГК РФ",
+                        10,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        "RUB",
+                        "backend"
+                ),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        GenerateClaimResponse baseResponse = validPaymentResponse(validText());
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                baseResponse.claimType(),
+                baseResponse.claimText(),
+                baseResponse.summaryForLawyer(),
+                baseResponse.usedContractClauses(),
+                baseResponse.usedLawArticles(),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.LEGAL_INTEREST,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        10,
+                        "RUB"
+                ),
+                List.of(),
+                baseResponse.warnings(),
+                true
+        );
+
+        GuardrailResult result = service.check(request, response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("describes LEGAL_INTEREST"));
+    }
+
+    @Test
     void blocksLawArticleMentionedOutsideLegalContext() {
         String text = validText() + " Дополнительно применена ст. 999 ГК РФ.";
 
@@ -434,8 +691,8 @@ class RuleBasedGuardrailServiceTest {
     @Test
     void blocksMissingContractualResponseDeadline() {
         String text = productionPaymentText().replace(
-                "Требуем оплатить задолженность и направить письменный ответ в течение 10 календарных дней с даты получения настоящей претензии.\n",
-                "Требуем оплатить задолженность.\n"
+                "Письменный ответ направить в течение 10 календарных дней с даты получения настоящей претензии.\n",
+                ""
         );
 
         GuardrailResult result = service.check(
@@ -448,7 +705,7 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
-    void allowsAttachmentsSectionButBlocksUnsupportedBankDetailsInClaimText() {
+    void blocksAttachmentsSectionAndBankDetailsInCurrentScope() {
         String text = productionPaymentText()
                 + "\nПриложения:\n1. Копия договора.\n"
                 + "Расчетный счет 40702810000000000000, БИК 044525000.";
@@ -459,6 +716,7 @@ class RuleBasedGuardrailServiceTest {
         );
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("attachments section"));
         assertThat(result.errors()).anyMatch(error -> error.contains("bank details"));
     }
 
@@ -537,12 +795,13 @@ class RuleBasedGuardrailServiceTest {
                 Претензия о нарушении срока оплаты оказанных услуг.
                 От: ООО Экспедитор, ИНН 7800000000.
                 Кому: ООО Клиент, ИНН 7700000000.
-                По договору №45/2026 от 10.01.2026 оказаны услуги по маршруту Санкт-Петербург — Москва.
+                По п. 4.2 Договора №45/2026 от 10.01.2026 оказаны услуги по маршруту Санкт-Петербург — Москва.
                 Оказание услуг подтверждено актом от 01.05.2026.
                 Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
                 неустойка — 2 400 руб., итого к оплате — 242 400 руб.
                 Правовое основание: ст. 309 ГК РФ.
-                Требуем оплатить задолженность и направить письменный ответ в течение 10 календарных дней с даты получения настоящей претензии.
+                Требуем оплатить задолженность.
+                Письменный ответ направить в течение 10 календарных дней с даты получения настоящей претензии.
                 Юрист __________ Дмитриев Павел Алексеевич
                 """;
     }
@@ -616,11 +875,7 @@ class RuleBasedGuardrailServiceTest {
                         0,
                         "RUB"
                 ),
-                List.of(new GenerateClaimResponse.Attachment(
-                        GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT,
-                        "Акт о срыве погрузки № ACT-LF-200 от 12.06.2026",
-                        true
-                )),
+                List.of(),
                 List.of(),
                 true
         );
@@ -631,11 +886,12 @@ class RuleBasedGuardrailServiceTest {
                 От: ООО Клиент-Заказчик, ИНН 7700000000, Москва.
                 Кому: ООО Перевозчик, ИНН 7800000000, Санкт-Петербург.
                 Претензия по договору № LF-77/2026 от 05.02.2026.
+                Согласно п. 5.1 Договора перевозчик обязан предоставить транспортное средство.
                 По заявке № ORD-LF-200 от 12.06.2026 требовался тент 20 т по маршруту Москва-Казань.
                 Погрузка была назначена на складе №4 в Москве с 09:00 до 12:00.
                 Факт непредоставления транспортного средства подтверждён актом № ACT-LF-200 от 12.06.2026.
                 Правовое основание: ст. 330 ГК РФ.
-                На основании нарушения просим оплатить штраф 15 000 руб.
+                На основании п. 6.4 Договора и допущенного нарушения просим оплатить штраф 15 000 руб.
                 """;
     }
 
@@ -733,9 +989,7 @@ class RuleBasedGuardrailServiceTest {
                         10,
                         "RUB"
                 ),
-                List.of(
-                        new GenerateClaimResponse.Attachment(GenerateClaimResponse.DocumentType.CALCULATION, "Расчёт", true)
-                ),
+                List.of(),
                 List.of(),
                 true
         );
@@ -745,7 +999,7 @@ class RuleBasedGuardrailServiceTest {
         return """
                 От: ООО Экспедитор, ИНН 7800000000.
                 Кому: ООО Клиент, ИНН 7700000000.
-                Претензия по договору №45/2026 от 10.01.2026.
+                Претензия по п. 4.2 Договора №45/2026 от 10.01.2026.
                 Перевозка по маршруту Санкт-Петербург — Москва, заказ ORD-157.
                 Услуги подтверждены актом №157 от 01.05.2026, ТТН-157 и счётом INV-157.
                 Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
@@ -753,4 +1007,50 @@ class RuleBasedGuardrailServiceTest {
                 Правовое основание: ст. 309 ГК РФ.
                 """;
     }
+
+    @Test
+    void blocksUnsupportedPartyHeaderNoiseForPaymentDelay() {
+        String text = productionPaymentText()
+                .replace(
+                        "От: ООО Экспедитор, ИНН 7800000000.",
+                        "г. Барнаул\nОт: ООО Экспедитор, ИНН 7800000000, адрес: Санкт-Петербург,\n"
+                                + "в лице Юриста Дмитриев Павел Алексеевич,\n"
+                                + "адрес: Санкт-Петербург,\nтелефон:"
+                )
+                .replace(
+                        "Кому: ООО Клиент, ИНН 7700000000.",
+                        "Кому: ООО Клиент, ИНН 7700000000, адрес: Москва,\n"
+                                + "в лице уполномоченного лица,\nадрес: Москва,\nтелефон:"
+                );
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("unsupported contact field"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("unsupported party representative"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("standalone document place"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("duplicates party addresses"));
+    }
+
+    @Test
+    void blocksPaymentClauseCitationWithoutContractNumberInSameSentence() {
+        String text = productionPaymentText().replace(
+                "По п. 4.2 Договора №45/2026 от 10.01.2026 оказаны услуги",
+                "По п. 4.2 Договора оказаны услуги"
+        );
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains(
+                "contract clause citation must include contract number"
+        ));
+    }
+
 }

@@ -9,9 +9,11 @@ import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatRequest;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatResponse;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
 import ru.sber.cargotech.ai.llm.logging.LlmLogService;
+import ru.sber.cargotech.ai.security.ReversiblePromptMasker;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class GigaChatClient {
@@ -20,17 +22,20 @@ public class GigaChatClient {
     private final GigaChatAuthService authService;
     private final RestClient restClient;
     private final LlmLogService llmLogService;
+    private final ReversiblePromptMasker reversiblePromptMasker;
 
     public GigaChatClient(
             GigaChatProperties properties,
             GigaChatAuthService authService,
             RestClient.Builder restClientBuilder,
-            LlmLogService llmLogService
+            LlmLogService llmLogService,
+            ReversiblePromptMasker reversiblePromptMasker
     ) {
         this.properties = properties;
         this.authService = authService;
         this.restClient = restClientBuilder.build();
         this.llmLogService = llmLogService;
+        this.reversiblePromptMasker = reversiblePromptMasker;
     }
 
     public GigaChatChatResponse sendChat(List<GigaChatMessage> messages) {
@@ -42,21 +47,35 @@ public class GigaChatClient {
     }
 
     public ChatCallResult sendChatWithTrace(List<GigaChatMessage> messages, String caseId, String operation) {
+        return sendChatWithTrace(messages, caseId, null, operation);
+    }
+
+    public ChatCallResult sendChatWithTrace(
+            List<GigaChatMessage> messages,
+            String caseId,
+            UUID userId,
+            String operation
+    ) {
         String requestId = llmLogService.newRequestId();
         Instant startedAt = llmLogService.now();
+        boolean providerInvoked = false;
+        GigaChatChatResponse providerResponse = null;
 
         try {
             llmLogService.ensureWithinLimits(caseId);
             String accessToken = authService.getAccessToken();
 
+            ReversiblePromptMasker.MaskedPrompt maskedPrompt = reversiblePromptMasker.mask(messages);
+
             GigaChatChatRequest request = new GigaChatChatRequest(
                     properties.getChatModel(),
-                    messages,
+                    maskedPrompt.providerMessages(),
                     properties.getTemperature(),
                     properties.getMaxTokens()
             );
 
-            GigaChatChatResponse response = restClient.post()
+            providerInvoked = true;
+            providerResponse = restClient.post()
                     .uri(properties.getChatUrl())
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -65,13 +84,16 @@ public class GigaChatClient {
                     .retrieve()
                     .body(GigaChatChatResponse.class);
 
-            if (response == null) {
+            if (providerResponse == null) {
                 throw new IllegalStateException("GigaChat returned empty response");
             }
+
+            GigaChatChatResponse response = maskedPrompt.restore(providerResponse);
 
             llmLogService.logSuccess(
                     requestId,
                     caseId,
+                    userId,
                     operation,
                     "GigaChat",
                     properties.getChatModel(),
@@ -85,12 +107,15 @@ public class GigaChatClient {
             llmLogService.logError(
                     requestId,
                     caseId,
+                    userId,
                     operation,
                     "GigaChat",
                     properties.getChatModel(),
                     messages,
+                    providerResponse,
                     e,
-                    startedAt
+                    startedAt,
+                    providerInvoked
             );
 
             throw e;

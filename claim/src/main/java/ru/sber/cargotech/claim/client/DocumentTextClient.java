@@ -26,9 +26,12 @@ public class DocumentTextClient {
             .build();
     }
 
-    public DocumentTextResponse getText(UUID documentId) {
+    public DocumentTextResponse getText(UUID organizationId, UUID documentId) {
         DocumentTextResponse response = restClient.get()
-            .uri("/internal/api/v1/documents/{documentId}/text", documentId)
+            .uri(
+                "/internal/api/v1/documents/{documentId}/text?organizationId={organizationId}",
+                documentId, organizationId
+            )
             .retrieve()
             .onStatus(HttpStatusCode::isError, (request, error) -> {
                 throw ClaimException.conflict("Не удалось получить текст загруженного договора");

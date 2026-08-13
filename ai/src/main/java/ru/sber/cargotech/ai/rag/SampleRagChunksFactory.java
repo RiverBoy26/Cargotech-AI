@@ -18,9 +18,22 @@ public class SampleRagChunksFactory {
                 legal310(),
                 legal314(),
                 legal330(),
+                legal395(),
+                legal801(),
 
                 paymentDelayTemplate(),
                 similarPaymentDelayExample()
+        );
+    }
+
+    public List<RagChunk> paymentDelayLegalChunks() {
+        return List.of(
+                legal309(),
+                legal310(),
+                legal314(),
+                legal330(),
+                legal395(),
+                legal801()
         );
     }
 
@@ -129,6 +142,24 @@ public class SampleRagChunksFactory {
         );
     }
 
+    private RagChunk legal395() {
+        return legal(
+                "chunk_legal_gk_395",
+                "395",
+                "проценты за пользование чужими денежными средствами при отсутствии применимой договорной неустойки",
+                "При неправомерном удержании денежных средств, уклонении от их возврата или иной просрочке денежного обязательства кредитор вправе требовать проценты в порядке статьи 395 ГК РФ."
+        );
+    }
+
+    private RagChunk legal801() {
+        return legal(
+                "chunk_legal_gk_801",
+                "801",
+                "договор транспортной экспедиции",
+                "Статья 801 ГК РФ определяет договор транспортной экспедиции и обязанность экспедитора выполнять или организовывать связанные с перевозкой услуги за вознаграждение и за счёт клиента."
+        );
+    }
+
     private RagChunk legal(String chunkId, String article, String purpose, String text) {
         return new RagChunk(
                 chunkId,
@@ -152,7 +183,9 @@ public class SampleRagChunksFactory {
                         "law_code", "ГК РФ",
                         "article", article,
                         "purpose", purpose,
-                        "topic", purpose
+                        "topic", purpose,
+                        "applicability", "PAYMENT_DELAY",
+                        "auto_use", true
                 )
         );
     }
@@ -173,7 +206,7 @@ public class SampleRagChunksFactory {
                 "Претензия о просрочке оплаты",
                 null,
                 null,
-                "Структура претензии: реквизиты сторон, ссылка на договор, описание оказанной услуги, нарушение срока оплаты, расчёт задолженности и неустойки, правовое основание, требование об оплате, приложения.",
+                "Структура претензии: стороны, точные ссылки на пункты договора, описание оказанной услуги, нарушение срока оплаты, расчёт задолженности и процентов/неустойки, правовое основание, требование об оплате и срок ответа. Приложения и банковские реквизиты в текущем scope не формируются.",
                 "Шаблон претензии о просрочке оплаты",
                 true,
                 Map.of(
@@ -188,7 +221,7 @@ public class SampleRagChunksFactory {
                                 "Расчёт задолженности и неустойки",
                                 "Правовое основание",
                                 "Требование об оплате",
-                                "Приложения"
+                                "Срок ответа на претензию"
                         )
                 )
         );

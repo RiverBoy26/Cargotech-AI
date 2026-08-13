@@ -62,6 +62,7 @@ public class LoadingFailurePromptBuilder {
                 28. Никогда не выводи в claim_text технические enum/коды: UNPAID, PAID, PARTIALLY_PAID, UNKNOWN, RUB, CONTRACT_PENALTY, NONE. Передавай только их смысл обычным русским языком.
                 29. Денежные суммы в claim_text оформляй читабельно: разделяй тысячи пробелами и не используй машинную запись вида «15000.00 рублей». Предпочтительный вид: «15 000 рублей 00 копеек». Числовое значение не меняй.
                 30. Правовую citation встраивай в естественную юридическую фразу, например «В соответствии со ст. 330 ГК РФ ...». Не используй конструкцию вида «В соответствии с ГК РФ, ст. 330 ...».
+                31. В текущем scope не формируй раздел «Приложения», не перечисляй приложения и верни attachments как пустой массив.
                 """;
     }
 
@@ -103,13 +104,7 @@ public class LoadingFailurePromptBuilder {
                     "overdue_days": 0,
                     "currency": "RUB"
                   },
-                  "attachments": [
-                    {
-                      "document_type": "TRANSPORT_ORDER",
-                      "document_name": "название документа",
-                      "required": true
-                    }
-                  ],
+                  "attachments": [],
                   "warnings": [],
                   "manual_review_required": true
                 }
@@ -131,10 +126,10 @@ public class LoadingFailurePromptBuilder {
                 12.2. Не ссылайся на нормы, отсутствующие в legal_context.
                 13. Укажи штраф или сумму требования строго из backend_calculation и сохрани юридическую квалификацию penalty_type.
                 14. Не добавляй новые сроки оплаты или исполнения, если они не заданы входными данными.
-                15. Сформируй список приложений только из документов, наличие которых подтверждается входными данными.
+                15. В текущем scope не формируй список приложений и не создавай раздел «Приложения».
                 16. Если обязательный для формулировки факт отсутствует, отрази это в warnings.
                 17. Дословно скопируй case_facts.shipment.order_number в claim_text. Не заменяй его словами «заявка» без номера.
-                18. Если act_number и act_date заполнены, добавь приложение LOADING_FAILURE_ACT с required=true и точными номером и датой. Не пиши «при наличии».
+                18. Если act_number и act_date заполнены, используй их только как реквизиты факта/акта в claim_text; не добавляй attachment.
                 19. Перед ответом проверь claim_text: в нём должны присутствовать точные order_number, route, loading_date, loading_address, loading_time_window, act_number, act_date и фраза «транспортное средство не было предоставлено к погрузке».
                 20. Значения дат должны совпадать с входными данными по календарной дате, но в claim_text быть отформатированы по-русски, а не скопированы как YYYY-MM-DD.
                 21. Денежные суммы в claim_text оформляй по-русски без десятичной точки; backend_calculation_used копируй численно без изменения.
@@ -159,10 +154,8 @@ public class LoadingFailurePromptBuilder {
                 3. Если overdue_days не применим к LOADING_FAILURE, верни значение из backend_calculation или 0, если backend передал 0.
 
                 Требования к attachments:
-                1. Не выдумывай документы.
-                2. Для заявки используй document_type = TRANSPORT_ORDER.
-                3. Для акта о срыве погрузки используй document_type = LOADING_FAILURE_ACT.
-                4. Если документ упомянут в claim_text как приложение, он должен присутствовать в attachments.
+                1. В текущем scope верни строго пустой массив [].
+                2. Не создавай раздел «Приложения» в claim_text.
                 """.replace("{INPUT_JSON}", inputJson);
     }
 
