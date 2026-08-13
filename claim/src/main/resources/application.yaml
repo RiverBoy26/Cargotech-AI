@@ -36,8 +36,10 @@ services:
 
   ai:
     base-url: ${AI_SERVICE_URL:http://localhost:8084}
+    internal-api-key: ${INTERNAL_API_KEY:cargotech-local-internal-key}
     connect-timeout: 5s
     read-timeout: 60s
+    rag-read-timeout: 5m
 
   document:
     base-url: ${DOCUMENT_SERVICE_URL:http://localhost:8085}

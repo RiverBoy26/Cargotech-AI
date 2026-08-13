@@ -2,8 +2,12 @@ package ru.sber.cargotech.claim.dto;
 
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
+import ru.sber.cargotech.claim.enums.ContractRagStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
+import ru.sber.cargotech.claim.enums.PenaltyCapBase;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -23,15 +27,25 @@ public record ContractResponse(
     LocalDate validTo,
     ContractStatus status,
     Integer paymentDays,
+    TermDayType paymentDayType,
     PaymentStartEvent paymentStartEvent,
+    PaymentScheduleType paymentScheduleType,
+    String paymentWeekDays,
     PenaltyType penaltyType,
     BigDecimal penaltyRate,
+    BigDecimal penaltyCapPercent,
+    PenaltyCapBase penaltyCapBase,
     Integer claimResponseDays,
+    TermDayType claimResponseDayType,
     String jurisdiction,
     UUID documentId,
     ContractExtractionStatus extractionStatus,
     OffsetDateTime extractionConfirmedAt,
     UUID extractionConfirmedBy,
+    ContractRagStatus ragIndexStatus,
+    OffsetDateTime ragIndexedAt,
+    String ragIndexError,
+    UUID ragSourceDocumentId,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt
 ) {

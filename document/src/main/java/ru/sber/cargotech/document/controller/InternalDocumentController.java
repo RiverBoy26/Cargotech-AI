@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.sber.cargotech.document.dto.InternalDocumentTextResponse;
 import ru.sber.cargotech.document.dto.InternalClaimDocumentReadinessResponse;
@@ -37,10 +38,11 @@ public class InternalDocumentController {
     @GetMapping("/{documentId}/text")
     public InternalDocumentTextResponse getText(
         @PathVariable UUID documentId,
+        @RequestParam UUID organizationId,
         @RequestHeader("X-Internal-Api-Key") String suppliedKey
     ) {
         validateKey(suppliedKey);
-        return extractionService.getInternal(documentId);
+        return extractionService.getInternal(organizationId, documentId);
     }
 
     @GetMapping("/claims/{claimId}/readiness")

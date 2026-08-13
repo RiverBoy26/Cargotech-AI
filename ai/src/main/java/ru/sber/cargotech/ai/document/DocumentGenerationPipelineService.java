@@ -207,7 +207,8 @@ public class DocumentGenerationPipelineService {
             context = ragSearchService.retrieveClaimContext(
                     request.caseFacts().claimType(),
                     request.ragOptions().contractId(),
-                    request.ragOptions().clientId()
+                    request.ragOptions().clientId(),
+                    request.ragOptions().organizationId()
             );
         } catch (RuntimeException exception) {
             if (request.contractContext() != null && !request.contractContext().isEmpty()) {

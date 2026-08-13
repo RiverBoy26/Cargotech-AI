@@ -6,84 +6,330 @@ import ru.sber.cargotech.claim.dto.SubmitContractExtractionRequest;
 import ru.sber.cargotech.claim.enums.ClauseType;
 import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
+import ru.sber.cargotech.claim.enums.PenaltyCapBase;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.math.BigDecimal;
+import java.time.DateTimeException;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
 public class ContractTextExtractionService {
 
-    private static final Pattern DAYS = Pattern.compile("(?iu)(\\d{1,3})\\s*(?:рабоч(?:их|ие)|календарн(?:ых|ые))?\\s*(?:дн(?:ей|я|ь))");
+    /**
+     * Real contracts commonly duplicate the numeric value in words:
+     * "45 (сорока пяти) календарных дней". The old regexp skipped such clauses
+     * and then could pick an unrelated later "30 календарных дней" instead.
+     */
+    private static final Pattern DAYS = Pattern.compile(
+        "(?iu)(\\d{1,3})\\s*(?:\\([^\\r\\n)]{1,80}\\)\\s*)?" +
+            "(?:(рабоч\\p{L}*|календарн\\p{L}*|банковск\\p{L}*)\\s+)?дн(?:ей|я|ь)(?!\\p{L})"
+    );
     private static final Pattern RATE = Pattern.compile("(?iu)(\\d{1,3}(?:[.,]\\d{1,6})?)\\s*%");
+    private static final Pattern PENALTY_CAP_PERCENT = Pattern.compile(
+        "(?iu)(?:не\\s+может\\s+превышать|(?:совокупно\\s+)?не\\s+более)\\s*(\\d{1,3}(?:[.,]\\d{1,6})?)\\s*%"
+    );
+    private static final Pattern NEXT_PAYMENT_DAY_SIGNAL = Pattern.compile(
+        "(?iu)(?:ближайш\\p{L}*|перв\\p{L}*)[\\p{L}\\s]{0,60}плат[её]жн\\p{L}*\\s+д(?:ень|ня|нём|нем)"
+    );
     private static final Pattern CLAUSE_NUMBER = Pattern.compile("(?iu)^(?:п(?:ункт)?\\.?\\s*)?(\\d+(?:\\.\\d+)+)\\.?");
     private static final Pattern PAGE_MARKER = Pattern.compile("^\\[\\[PAGE:(\\d+)]]$");
+    private static final Pattern CONTRACT_NUMBER = Pattern.compile(
+        "(?iu)договор(?:-заявка)?[^\\r\\n№]{0,80}(?:№|N)\\s*([\\p{L}\\p{N}][\\p{L}\\p{N}./_-]{0,127})"
+    );
+    private static final Pattern CONTRACT_DATE_NUMERIC = Pattern.compile(
+        "(?iu)договор(?:-заявка)?[^\\r\\n]{0,160}?от\\s+(\\d{1,2})[./-](\\d{1,2})[./-](\\d{4})"
+    );
+    private static final Pattern CONTRACT_DATE_TEXT = Pattern.compile(
+        "(?iu)договор(?:-заявка)?[^\\r\\n]{0,160}?от\\s+(\\d{1,2})\\s+" +
+            "(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\\s+(\\d{4})"
+    );
+    private static final Pattern PAYMENT_TERM_SIGNAL = Pattern.compile(
+        "(?iu)(?:" +
+            "(?:клиент|заказчик|плательщик).{0,140}(?:производит|осуществляет|обязан|обязуется|оплачивает).{0,100}оплат\\p{L}*" +
+            "|оплат\\p{L}*.{0,140}(?:осуществля\\p{L}*|производ\\p{L}*|подлеж\\p{L}*|в\\s+течение|не\\s+позднее|после\\s+истечения|срок\\p{L}*)" +
+            "|срок\\p{L}*\\s+оплат\\p{L}*" +
+            ")"
+    );
+    private static final Pattern PAYMENT_WORD = Pattern.compile("(?iu)(?:оплат\\p{L}*|плат[её]ж\\p{L}*|задолженн\\p{L}*)");
+    private static final Pattern PENALTY_WORD = Pattern.compile("(?iu)(?:неустойк\\p{L}*|(?<!\\p{L})пен(?:я|и|е|ей|ю)(?!\\p{L}))");
+    private static final Pattern PAYMENT_DELAY_WORD = Pattern.compile("(?iu)(?:просроч\\p{L}*|нарушен\\p{L}*\\s+срок\\p{L}*\\s+оплат\\p{L}*)");
+    private static final Pattern INVOICE_WORD = Pattern.compile("(?iu)(?:(?<!\\p{L})сч[её]т(?:а|у|ом|е|ы|ов)?(?!\\p{L})|инвойс\\p{L}*)");
+    private static final Pattern ARBITRATION_COURT = Pattern.compile(
+        "(?iu)(арбитражн(?:ый|ом)\\s+суд(?:е)?\\s+[\\p{L}0-9№«»\"()\\-\\s]{2,140}?)(?=[,.;]|$)"
+    );
 
+    private static final Map<DayOfWeek, Pattern> WEEK_DAY_PATTERNS = Map.ofEntries(
+        Map.entry(DayOfWeek.MONDAY, Pattern.compile("(?iu)(?<!\\p{L})понедельник\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.TUESDAY, Pattern.compile("(?iu)(?<!\\p{L})вторник\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.WEDNESDAY, Pattern.compile("(?iu)(?<!\\p{L})сред(?:а|ы|у|е|ой)(?!\\p{L})")),
+        Map.entry(DayOfWeek.THURSDAY, Pattern.compile("(?iu)(?<!\\p{L})четверг\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.FRIDAY, Pattern.compile("(?iu)(?<!\\p{L})пятниц\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.SATURDAY, Pattern.compile("(?iu)(?<!\\p{L})суббот\\p{L}*(?!\\p{L})")),
+        Map.entry(DayOfWeek.SUNDAY, Pattern.compile("(?iu)(?<!\\p{L})воскресень\\p{L}*(?!\\p{L})"))
+    );
+
+    private static final List<ContractExtractionField> REVIEW_FIELDS = List.of(
+        ContractExtractionField.CONTRACT_NUMBER,
+        ContractExtractionField.SIGNED_AT,
+        ContractExtractionField.PAYMENT_DAYS,
+        ContractExtractionField.PAYMENT_DAY_TYPE,
+        ContractExtractionField.PAYMENT_START_EVENT,
+        ContractExtractionField.PAYMENT_SCHEDULE_TYPE,
+        ContractExtractionField.PAYMENT_WEEK_DAYS,
+        ContractExtractionField.PENALTY_TYPE,
+        ContractExtractionField.PENALTY_RATE,
+        ContractExtractionField.PENALTY_CAP_PERCENT,
+        ContractExtractionField.PENALTY_CAP_BASE,
+        ContractExtractionField.CLAIM_RESPONSE_DAYS,
+        ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE,
+        ContractExtractionField.JURISDICTION
+    );
+    private static final Map<String, Integer> MONTHS = Map.ofEntries(
+        Map.entry("января", 1), Map.entry("февраля", 2), Map.entry("марта", 3),
+        Map.entry("апреля", 4), Map.entry("мая", 5), Map.entry("июня", 6),
+        Map.entry("июля", 7), Map.entry("августа", 8), Map.entry("сентября", 9),
+        Map.entry("октября", 10), Map.entry("ноября", 11), Map.entry("декабря", 12)
+    );
+
+    /** Used by unit tests and already page-marked text. */
     public SubmitContractExtractionRequest extract(String sourceText) {
+        return extract(sourceText, null);
+    }
+
+    /**
+     * extractionMethod is used only to avoid fake DOCX page numbers. Apache POI
+     * exposes a document page count, but XWPFWordExtractor does not tell which
+     * paragraph is on which page. For DOCX sourcePage therefore stays null.
+     */
+    public SubmitContractExtractionRequest extract(String sourceText, String extractionMethod) {
         String text = normalize(sourceText);
         Map<ContractExtractionField, ContractExtractionCandidateRequest> scalars = new LinkedHashMap<>();
         List<ContractExtractionCandidateRequest> clauses = new ArrayList<>();
+        ContractExtractionCandidateRequest explicitPenaltyAbsence = null;
+        ContractExtractionCandidateRequest explicitClaimResponseAbsence = null;
+        boolean unsupportedPaymentPenaltyFound = false;
+        boolean pageKnownByDefault = extractionMethod == null || !"APACHE_POI".equalsIgnoreCase(extractionMethod);
 
-        for (TextFragment textFragment : fragments(text)) {
+        for (TextFragment textFragment : fragments(text, pageKnownByDefault)) {
             String fragment = textFragment.text();
-            int page = textFragment.page();
+            Integer page = textFragment.page();
             String lower = fragment.toLowerCase(Locale.ROOT);
 
-            if (containsAny(lower, "оплат", "расчет", "расчёт") && containsAny(lower, "дн", "срок")) {
-                Matcher days = DAYS.matcher(fragment);
-                if (days.find()) {
-                    putOnce(scalars, candidate(ContractExtractionField.PAYMENT_DAYS, days.group(1), fragment, page, confidence("0.92"), null));
-                    PaymentStartEvent event = paymentStartEvent(lower);
-                    if (event != null) {
-                        putOnce(scalars, candidate(ContractExtractionField.PAYMENT_START_EVENT, event.name(), fragment, page, confidence("0.88"), null));
-                    }
-                    addClauseOnce(clauses, clause(fragment, page, ClauseType.PAYMENT_TERMS));
-                }
+            extractContractHeader(fragment, page, scalars);
+
+            Matcher paymentDays = DAYS.matcher(fragment);
+            if (paymentDays.find() && isPaymentTermClause(fragment)) {
+                putOnce(scalars, candidate(
+                    ContractExtractionField.PAYMENT_DAYS,
+                    paymentDays.group(1),
+                    fragment,
+                    page,
+                    confidence("0.92"),
+                    null
+                ));
+                TermDayType paymentDayType = termDayType(paymentDays.group(2));
+                putOnce(scalars, candidate(
+                    ContractExtractionField.PAYMENT_DAY_TYPE,
+                    paymentDayType == null ? null : paymentDayType.name(),
+                    fragment,
+                    page,
+                    paymentDayType == null ? null : confidence("0.93"),
+                    null
+                ));
+                PaymentStartEvent event = paymentStartEvent(lower);
+                putOnce(scalars, candidate(
+                    ContractExtractionField.PAYMENT_START_EVENT,
+                    event == null ? null : event.name(),
+                    fragment,
+                    page,
+                    event == null ? null : confidence("0.88"),
+                    null
+                ));
+                addClauseOnce(clauses, clause(fragment, page, ClauseType.PAYMENT_TERMS));
             }
 
-            if (containsAny(lower, "неустойк", "пеня", "пени", "ст. 395", "статья 395")) {
-                PenaltyType type = containsAny(lower, "ст. 395", "статья 395", "ключев", "рефинанс")
-                    ? PenaltyType.ARTICLE_395
-                    : PenaltyType.CONTRACT_PENALTY;
-                putOnce(scalars, candidate(ContractExtractionField.PENALTY_TYPE, type.name(), fragment, page, confidence("0.91"), null));
-                Matcher rate = RATE.matcher(fragment);
-                if (rate.find()) {
-                    putOnce(scalars, candidate(
-                        ContractExtractionField.PENALTY_RATE,
-                        rate.group(1).replace(',', '.'), fragment, page, confidence("0.94"), null
-                    ));
-                }
+            Set<DayOfWeek> paymentWeekDays = paymentWeekDays(lower);
+            boolean scheduleTypeFound = isNextPaymentDaySchedule(lower);
+            boolean weekDaysDeclared = isPaymentWeekDayDeclaration(lower);
+            if (scheduleTypeFound) {
+                putOnce(scalars, candidate(
+                    ContractExtractionField.PAYMENT_SCHEDULE_TYPE,
+                    PaymentScheduleType.NEXT_PAYMENT_DAY.name(),
+                    fragment,
+                    page,
+                    confidence("0.90"),
+                    null
+                ));
+                addClauseOnce(clauses, clause(fragment, page, ClauseType.PAYMENT_TERMS));
+            }
+            if (!paymentWeekDays.isEmpty() && (scheduleTypeFound || weekDaysDeclared)) {
+                putOnce(scalars, candidate(
+                    ContractExtractionField.PAYMENT_WEEK_DAYS,
+                    paymentWeekDays.stream()
+                        .sorted()
+                        .map(DayOfWeek::name)
+                        .collect(java.util.stream.Collectors.joining(",")),
+                    fragment,
+                    page,
+                    confidence("0.92"),
+                    null
+                ));
+                addClauseOnce(clauses, clause(fragment, page, ClauseType.PAYMENT_TERMS));
+            }
+
+            if (isPaymentPenaltyClause(lower)) {
                 addClauseOnce(clauses, clause(fragment, page, ClauseType.PENALTY));
+                boolean explicitArticle395 = containsAny(lower, "ст. 395", "статья 395", "статьи 395", "проценты за пользование чужими денежными средствами");
+                boolean explicitAbsence = isExplicitPenaltyAbsence(lower);
+                if (explicitAbsence) {
+                    explicitPenaltyAbsence = candidate(
+                        ContractExtractionField.PENALTY_TYPE,
+                        PenaltyType.ARTICLE_395.name(),
+                        fragment,
+                        page,
+                        null,
+                        null
+                    );
+                    putOnce(scalars, explicitPenaltyAbsence);
+                } else {
+                    Matcher rate = RATE.matcher(fragment);
+                    if (explicitArticle395) {
+                        putOnce(scalars, candidate(
+                            ContractExtractionField.PENALTY_TYPE,
+                            PenaltyType.ARTICLE_395.name(),
+                            fragment,
+                            page,
+                            confidence("0.91"),
+                            null
+                        ));
+                    } else if (rate.find()) {
+                        putOnce(scalars, candidate(
+                            ContractExtractionField.PENALTY_TYPE,
+                            PenaltyType.CONTRACT_PENALTY.name(),
+                            fragment,
+                            page,
+                            confidence("0.91"),
+                            null
+                        ));
+                        putOnce(scalars, candidate(
+                            ContractExtractionField.PENALTY_RATE,
+                            rate.group(1).replace(',', '.'),
+                            fragment,
+                            page,
+                            confidence("0.94"),
+                            null
+                        ));
+                        extractPenaltyCap(fragment, lower, page, scalars);
+                    } else {
+                        // Contract contains an explicit payment-delay sanction, but its formula is
+                        // not representable by the current scalar model (e.g. 1/300 key rate).
+                        // Do not silently replace it with Article 395; leave it for human review.
+                        unsupportedPaymentPenaltyFound = true;
+                    }
+                }
             }
 
-            if (containsAny(lower, "претензи") && containsAny(lower, "дн", "срок", "ответ")) {
-                Matcher days = DAYS.matcher(fragment);
-                if (days.find()) {
-                    putOnce(scalars, candidate(ContractExtractionField.CLAIM_RESPONSE_DAYS, days.group(1), fragment, page, confidence("0.89"), null));
+            if (isClaimProcedureClause(lower)) {
+                Matcher responseDays = DAYS.matcher(fragment);
+                if (isExplicitClaimResponseAbsence(lower)) {
+                    explicitClaimResponseAbsence = candidate(
+                        ContractExtractionField.CLAIM_RESPONSE_DAYS,
+                        "30",
+                        fragment,
+                        page,
+                        null,
+                        null
+                    );
+                }
+                if (hasClaimResponseSignal(lower) && responseDays.find() && !isExplicitClaimResponseAbsence(lower)) {
+                    putOnce(scalars, candidate(
+                        ContractExtractionField.CLAIM_RESPONSE_DAYS,
+                        responseDays.group(1),
+                        fragment,
+                        page,
+                        confidence("0.89"),
+                        null
+                    ));
+                    TermDayType responseDayType = termDayType(responseDays.group(2));
+                    putOnce(scalars, candidate(
+                        ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE,
+                        responseDayType == null ? null : responseDayType.name(),
+                        fragment,
+                        page,
+                        responseDayType == null ? null : confidence("0.90"),
+                        null
+                    ));
                 }
                 addClauseOnce(clauses, clause(fragment, page, ClauseType.CLAIM_PROCEDURE));
             }
 
-            if (containsAny(lower, "подсудн", "арбитражный суд", "арбитражном суде")) {
-                putOnce(scalars, candidate(ContractExtractionField.JURISDICTION, fragment, fragment, page, confidence("0.86"), null));
+            if (containsAny(
+                lower,
+                "подсудн", "арбитражный суд", "арбитражном суде",
+                "месту нахождения ответчика", "месту нахождения истца"
+            )) {
+                putOnce(scalars, candidate(
+                    ContractExtractionField.JURISDICTION,
+                    jurisdiction(fragment),
+                    fragment,
+                    page,
+                    confidence("0.86"),
+                    null
+                ));
                 addClauseOnce(clauses, clause(fragment, page, ClauseType.JURISDICTION));
             }
         }
 
-        List<ContractExtractionCandidateRequest> result = new ArrayList<>(scalars.values());
+        if (!scalars.containsKey(ContractExtractionField.PENALTY_TYPE) && !unsupportedPaymentPenaltyFound) {
+            scalars.put(
+                ContractExtractionField.PENALTY_TYPE,
+                explicitPenaltyAbsence != null
+                    ? explicitPenaltyAbsence
+                    : fallbackCandidate(ContractExtractionField.PENALTY_TYPE, PenaltyType.ARTICLE_395.name())
+            );
+        }
+        if (!scalars.containsKey(ContractExtractionField.CLAIM_RESPONSE_DAYS)) {
+            scalars.put(
+                ContractExtractionField.CLAIM_RESPONSE_DAYS,
+                explicitClaimResponseAbsence != null
+                    ? explicitClaimResponseAbsence
+                    : fallbackCandidate(ContractExtractionField.CLAIM_RESPONSE_DAYS, "30")
+            );
+        }
+        if (!scalars.containsKey(ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE)) {
+            scalars.put(
+                ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE,
+                explicitClaimResponseAbsence != null
+                    ? candidate(ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE, TermDayType.CALENDAR_DAYS.name(),
+                        explicitClaimResponseAbsence.source(), explicitClaimResponseAbsence.sourcePage(), null, null)
+                    : fallbackCandidate(ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE, TermDayType.CALENDAR_DAYS.name())
+            );
+        }
+
+        List<ContractExtractionCandidateRequest> result = new ArrayList<>();
+        for (ContractExtractionField field : REVIEW_FIELDS) {
+            result.add(scalars.getOrDefault(field, missingCandidate(field)));
+        }
         result.addAll(clauses);
         return new SubmitContractExtractionRequest(List.copyOf(result));
     }
 
-    private List<TextFragment> fragments(String text) {
+    private List<TextFragment> fragments(String text, boolean pageKnownByDefault) {
         List<TextFragment> result = new ArrayList<>();
-        int page = 1;
+        Integer page = pageKnownByDefault ? 1 : null;
         for (String paragraph : text.split("\\n+")) {
             String value = paragraph.trim();
             Matcher marker = PAGE_MARKER.matcher(value);
@@ -103,7 +349,145 @@ public class ContractTextExtractionService {
         return result;
     }
 
-    private ContractExtractionCandidateRequest clause(String fragment, int page, ClauseType type) {
+    private boolean isPaymentTermClause(String fragment) {
+        return PAYMENT_TERM_SIGNAL.matcher(fragment).find();
+    }
+
+    private boolean isNextPaymentDaySchedule(String lower) {
+        if (!containsAny(lower, "платежн", "платёжн")) return false;
+        return NEXT_PAYMENT_DAY_SIGNAL.matcher(lower).find();
+    }
+
+    private boolean isPaymentWeekDayDeclaration(String lower) {
+        if (!containsAny(lower, "платежн", "платёжн")) return false;
+        return containsAny(
+            lower,
+            "платежные дни", "платёжные дни",
+            "платежным днем является", "платёжным днём является",
+            "платежный день —", "платёжный день —"
+        );
+    }
+
+    private Set<DayOfWeek> paymentWeekDays(String lower) {
+        Set<DayOfWeek> result = new LinkedHashSet<>();
+        for (Map.Entry<DayOfWeek, Pattern> entry : WEEK_DAY_PATTERNS.entrySet()) {
+            if (entry.getValue().matcher(lower).find()) {
+                result.add(entry.getKey());
+            }
+        }
+        return result;
+    }
+
+    private boolean isPaymentPenaltyClause(String lower) {
+        if (isExplicitPenaltyAbsence(lower)) return true;
+        boolean explicitArticle395 = containsAny(lower, "ст. 395", "статья 395", "статьи 395", "проценты за пользование чужими денежными средствами");
+        boolean hasPenalty = PENALTY_WORD.matcher(lower).find();
+        boolean hasPayment = PAYMENT_WORD.matcher(lower).find();
+        boolean hasDelay = PAYMENT_DELAY_WORD.matcher(lower).find() || containsAny(lower, "срок оплаты", "срока оплаты", "сроков оплаты");
+        return explicitArticle395 || (hasPenalty && hasPayment && hasDelay);
+    }
+
+    private boolean isExplicitPenaltyAbsence(String lower) {
+        return containsAny(
+            lower,
+            "условие о пене отсутствует",
+            "условия о пене отсутствуют",
+            "отсутствует специальное условие о пене",
+            "отсутствует специальное условие о неустойке",
+            "неустойка не предусмотрена",
+            "пеня не предусмотрена",
+            "не устанавливают договорную неустойку",
+            "не устанавливается договорная неустойка",
+            "договорная неустойка не установлена"
+        );
+    }
+
+    private boolean isExplicitClaimResponseAbsence(String lower) {
+        return lower.contains("претензи") && containsAny(
+            lower,
+            "срок ответа не установлен",
+            "срок ответа на претензию не установлен",
+            "специальный срок ответа",
+            "специального срока ответа"
+        ) && containsAny(lower, "не установлен", "не предусмотрен", "отсутствует");
+    }
+
+    private void extractPenaltyCap(
+        String fragment,
+        String lower,
+        Integer page,
+        Map<ContractExtractionField, ContractExtractionCandidateRequest> scalars
+    ) {
+        Matcher cap = PENALTY_CAP_PERCENT.matcher(fragment);
+        BigDecimal capPercent = null;
+        if (cap.find()) {
+            capPercent = new BigDecimal(cap.group(1).replace(',', '.'));
+        } else if (containsAny(lower, "не более размера основного долга", "не может превышать размер основного долга")) {
+            capPercent = new BigDecimal("100");
+        }
+        if (capPercent == null) return;
+
+        PenaltyCapBase capBase = penaltyCapBase(lower);
+        if (capBase == null) return;
+        putOnce(scalars, candidate(
+            ContractExtractionField.PENALTY_CAP_PERCENT,
+            capPercent.stripTrailingZeros().toPlainString(),
+            fragment,
+            page,
+            confidence("0.90"),
+            null
+        ));
+        putOnce(scalars, candidate(
+            ContractExtractionField.PENALTY_CAP_BASE,
+            capBase.name(),
+            fragment,
+            page,
+            confidence("0.88"),
+            null
+        ));
+    }
+
+    private PenaltyCapBase penaltyCapBase(String lower) {
+        if (containsAny(lower, "стоимости соответствующей перевозки", "стоимость соответствующей перевозки")) {
+            return PenaltyCapBase.SHIPMENT_COST;
+        }
+        if (INVOICE_WORD.matcher(lower).find() && containsAny(lower, "соответствующего счета", "соответствующего счёта", "суммы счета", "суммы счёта")) {
+            return PenaltyCapBase.INVOICE_AMOUNT;
+        }
+        if (containsAny(lower, "основного долга", "размера основного долга")) {
+            return PenaltyCapBase.PRINCIPAL_DEBT;
+        }
+        if (lower.contains("задолженн")) {
+            return PenaltyCapBase.OUTSTANDING_DEBT;
+        }
+        return null;
+    }
+
+    private ContractExtractionCandidateRequest fallbackCandidate(ContractExtractionField field, String value) {
+        return new ContractExtractionCandidateRequest(field, value, null, null, null, null, null, false);
+    }
+
+    private boolean isClaimProcedureClause(String lower) {
+        if (!lower.contains("претензи")) return false;
+        return containsAny(
+            lower,
+            "досуд",
+            "до обращения",
+            "урегулир",
+            "рассматрива",
+            "мотивированный",
+            "ответ",
+            "направля",
+            "получившая претензи",
+            "срок предъявления претензи"
+        );
+    }
+
+    private boolean hasClaimResponseSignal(String lower) {
+        return lower.contains("претензи") && containsAny(lower, "ответ", "рассматрива", "срок ответа");
+    }
+
+    private ContractExtractionCandidateRequest clause(String fragment, Integer page, ClauseType type) {
         return candidate(ContractExtractionField.EXACT_CLAUSE, fragment, fragment, page, confidence("0.99"), type);
     }
 
@@ -111,7 +495,7 @@ public class ContractTextExtractionService {
         ContractExtractionField field,
         String value,
         String source,
-        int sourcePage,
+        Integer sourcePage,
         BigDecimal confidence,
         ClauseType clauseType
     ) {
@@ -122,8 +506,72 @@ public class ContractTextExtractionService {
             sourcePage,
             confidence,
             clauseNumber(source),
-            clauseType
+            clauseType,
+            false
         );
+    }
+
+    private ContractExtractionCandidateRequest missingCandidate(ContractExtractionField field) {
+        return new ContractExtractionCandidateRequest(field, null, null, null, null, null, null, false);
+    }
+
+    private void extractContractHeader(
+        String fragment,
+        Integer page,
+        Map<ContractExtractionField, ContractExtractionCandidateRequest> scalars
+    ) {
+        Matcher number = CONTRACT_NUMBER.matcher(fragment);
+        if (number.find()) {
+            String value = number.group(1).replaceFirst("[.,;:]+$", "");
+            if (!value.isBlank()) {
+                putOnce(scalars, candidate(
+                    ContractExtractionField.CONTRACT_NUMBER,
+                    value,
+                    fragment,
+                    page,
+                    confidence("0.94"),
+                    null
+                ));
+            }
+        }
+
+        Matcher numericDate = CONTRACT_DATE_NUMERIC.matcher(fragment);
+        if (numericDate.find()) {
+            putDateOnce(scalars, fragment, page, numericDate.group(3), numericDate.group(2), numericDate.group(1));
+            return;
+        }
+        Matcher textDate = CONTRACT_DATE_TEXT.matcher(fragment);
+        if (textDate.find()) {
+            Integer month = MONTHS.get(textDate.group(2).toLowerCase(Locale.ROOT));
+            if (month != null) {
+                putDateOnce(scalars, fragment, page, textDate.group(3), month.toString(), textDate.group(1));
+            }
+        }
+    }
+
+    private void putDateOnce(
+        Map<ContractExtractionField, ContractExtractionCandidateRequest> scalars,
+        String source,
+        Integer page,
+        String year,
+        String month,
+        String day
+    ) {
+        try {
+            LocalDate value = LocalDate.of(
+                Integer.parseInt(year), Integer.parseInt(month), Integer.parseInt(day)
+            );
+            putOnce(scalars, candidate(
+                ContractExtractionField.SIGNED_AT,
+                value.toString(),
+                source,
+                page,
+                confidence("0.90"),
+                null
+            ));
+        } catch (DateTimeException | NumberFormatException ignored) {
+            // Invalid or ambiguous dates remain empty for human review.
+        }
     }
 
     private void putOnce(
@@ -134,19 +582,93 @@ public class ContractTextExtractionService {
     }
 
     private void addClauseOnce(List<ContractExtractionCandidateRequest> target, ContractExtractionCandidateRequest value) {
-        boolean exists = target.stream().anyMatch(item -> item.value().equals(value.value()));
+        String normalized = normalizedClauseBody(value.value());
+        boolean exists = target.stream().anyMatch(item ->
+            item.clauseType() == value.clauseType()
+                && normalizedClauseBody(item.value()).equals(normalized)
+        );
         if (!exists) target.add(value);
     }
 
+    private String normalizedClauseBody(String value) {
+        if (value == null) return "";
+        return value
+            .replaceFirst("(?iu)^(?:п(?:ункт)?\\.?\\s*)?\\d+(?:\\.\\d+)+\\.?\\s*", "")
+            .replaceAll("\\s+", " ")
+            .trim()
+            .toLowerCase(Locale.ROOT);
+    }
+
     private PaymentStartEvent paymentStartEvent(String lower) {
-        if (containsAny(lower, "ттн", "товарно-транспорт")) return PaymentStartEvent.TTN_SIGNED;
-        if (containsAny(lower, "акт", "акта")) return PaymentStartEvent.ACT_SIGNED;
-        if (containsAny(lower, "разгруз", "выгруз")) return PaymentStartEvent.UNLOADING_DATE;
-        if (containsAny(lower, "счет", "счёт", "инвойс")) return PaymentStartEvent.INVOICE_DATE;
+        // Combined anchors cannot be represented safely as a single event.
+        if (containsAny(lower, "более поздн", "наступившей позднее", "которая наступит позднее")) return null;
+
+        List<PaymentStartEvent> events = new ArrayList<>();
+        if (lower.contains("реестр") && containsAny(
+            lower, "после включения рейса", "с даты включения рейса", "со дня включения рейса",
+            "после включения перевозки", "с даты включения перевозки", "включен в реестр",
+            "включения в реестр", "включения оказанных услуг в реестр", "включения услуги в реестр"
+        )) {
+            events.add(PaymentStartEvent.REGISTRY_INCLUDED);
+        }
+        if (containsAny(
+            lower,
+            "полного комплекта документов",
+            "полного комплекта оригиналов документов",
+            "полного пакета документов",
+            "комплекта закрывающих документов",
+            "пакета закрывающих документов"
+        ) && containsAny(lower, "получен", "предоставлен", "передан", "направлен", "представлен")) {
+            events.add(PaymentStartEvent.DOCUMENT_PACKAGE_RECEIVED);
+        }
+
+        // Match the event that actually starts the term instead of every document merely mentioned
+        // in the same sentence. Example: "со дня фактической выгрузки груза, указанной в
+        // транспортной накладной" is UNLOADING_DATE, not TTN_SIGNED.
+        if (matchesAnchor(lower, "(?:фактическ\\p{L}*\\s+)?(?:выгрузк\\p{L}*|разгрузк\\p{L}*)")) {
+            events.add(PaymentStartEvent.UNLOADING_DATE);
+        }
+        if (matchesAnchor(lower, "(?:(?:подписан|оформлен)\\p{L}*(?:\\s+\\p{L}+){0,3}\\s+)?(?:ттн|товарно-транспортн\\p{L}*\\s+накладн\\p{L}*|транспортн\\p{L}*\\s+накладн\\p{L}*)")) {
+            events.add(PaymentStartEvent.TTN_SIGNED);
+        }
+        if (matchesAnchor(lower, "(?:подписан\\p{L}*(?:\\s+\\p{L}+){0,3}\\s+)?акт\\p{L}*(?:\\s+оказанн\\p{L}*\\s+услуг)?")) {
+            events.add(PaymentStartEvent.ACT_SIGNED);
+        }
+        if (matchesAnchor(lower, "(?:(?:выставленн|полученн)\\p{L}*\\s+)?(?:сч[её]т\\p{L}*|инвойс\\p{L}*)")) {
+            events.add(PaymentStartEvent.INVOICE_DATE);
+        }
+        return events.stream().distinct().count() == 1 ? events.get(0) : null;
+    }
+
+    private boolean matchesAnchor(String lower, String eventPattern) {
+        String prefix = "(?:с\\s+(?:даты|момента|дня)|со\\s+дня|после|от\\s+даты)\\s+";
+        return lower.matches("(?su).*" + prefix + eventPattern + ".*");
+    }
+
+    private TermDayType termDayType(String rawUnit) {
+        if (rawUnit == null || rawUnit.isBlank()) return null;
+        String unit = rawUnit.toLowerCase(Locale.ROOT);
+        if (unit.startsWith("календарн")) return TermDayType.CALENDAR_DAYS;
+        if (unit.startsWith("рабоч")) return TermDayType.WORKING_DAYS;
+        if (unit.startsWith("банковск")) return TermDayType.BANKING_DAYS;
         return null;
     }
 
+    private String jurisdiction(String fragment) {
+        String lower = fragment.toLowerCase(Locale.ROOT);
+        if (lower.contains("по месту нахождения ответчика")) return "По месту нахождения ответчика";
+        if (lower.contains("по месту нахождения истца")) return "По месту нахождения истца";
+
+        Matcher matcher = ARBITRATION_COURT.matcher(fragment);
+        if (!matcher.find()) return fragment;
+        String value = matcher.group(1).trim();
+        value = value.replaceFirst("(?iu)^арбитражном\\s+суде", "Арбитражный суд");
+        value = value.replaceFirst("(?iu)^арбитражный\\s+суд", "Арбитражный суд");
+        return value.trim();
+    }
+
     private String clauseNumber(String source) {
+        if (source == null || source.isBlank()) return null;
         Matcher matcher = CLAUSE_NUMBER.matcher(source.stripLeading());
         return matcher.find() ? matcher.group(1) : null;
     }
@@ -166,7 +688,7 @@ public class ContractTextExtractionService {
     }
 
     private String trimTo(String value, int max) {
-        String trimmed = value.trim();
+        String trimmed = value == null ? "" : value.trim();
         return trimmed.length() <= max ? trimmed : trimmed.substring(0, max);
     }
 
@@ -174,5 +696,5 @@ public class ContractTextExtractionService {
         return new BigDecimal(value);
     }
 
-    private record TextFragment(String text, int page) {}
+    private record TextFragment(String text, Integer page) {}
 }

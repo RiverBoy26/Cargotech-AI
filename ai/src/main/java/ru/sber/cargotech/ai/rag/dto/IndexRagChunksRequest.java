@@ -29,6 +29,9 @@ public record IndexRagChunksRequest(
             @JsonProperty("claim_type")
             String claimType,
 
+            @JsonProperty("organization_id")
+            String organizationId,
+
             @JsonProperty("client_id")
             String clientId,
 
@@ -72,5 +75,34 @@ public record IndexRagChunksRequest(
 
             Map<String, Object> extra
     ) {
+        public IndexRagChunk(
+                String chunkId,
+                RagCollection ragCollection,
+                RagChunkType chunkType,
+                String claimType,
+                String clientId,
+                String contractId,
+                String contractNumber,
+                String contractDate,
+                String contour,
+                String contractType,
+                String sourceId,
+                String sourceTitle,
+                String sectionTitle,
+                String sectionPath,
+                String clauseNumber,
+                String clauseTopic,
+                String text,
+                String citation,
+                Boolean isCurrent,
+                Map<String, Object> extra
+        ) {
+            this(
+                    chunkId, ragCollection, chunkType, claimType, null, clientId,
+                    contractId, contractNumber, contractDate, contour, contractType,
+                    sourceId, sourceTitle, sectionTitle, sectionPath, clauseNumber,
+                    clauseTopic, text, citation, isCurrent, extra
+            );
+        }
     }
 }

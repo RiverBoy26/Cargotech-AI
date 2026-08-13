@@ -189,6 +189,11 @@ public record AiGenerateClaimRequest(
     public record RagOptions(
             Boolean enabled,
             @JsonProperty("contract_id") String contractId,
-            @JsonProperty("client_id") String clientId
-    ) {}
+            @JsonProperty("client_id") String clientId,
+            @JsonProperty("organization_id") String organizationId
+    ) {
+        public RagOptions(Boolean enabled, String contractId, String clientId) {
+            this(enabled, contractId, clientId, null);
+        }
+    }
 }

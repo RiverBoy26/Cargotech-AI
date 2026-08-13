@@ -42,6 +42,21 @@ public class RagController {
         return result;
     }
 
+    @PostMapping("/demo/seed-legal-payment-delay")
+    public Map<String, Object> seedPaymentDelayLegalChunks() {
+        List<RagChunk> chunks = sampleRagChunksFactory.paymentDelayLegalChunks();
+        Object qdrantResponse = ragIndexService.indexChunks(chunks);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("success", true);
+        result.put("indexed_chunks", chunks.size());
+        result.put("chunk_ids", chunks.stream().map(RagChunk::chunkId).toList());
+        result.put("qdrant_response", qdrantResponse);
+        result.put("checkedAt", Instant.now().toString());
+
+        return result;
+    }
+
     @GetMapping("/demo/payment-delay-context")
     public Map<String, Object> paymentDelayContext(
             @RequestParam(defaultValue = "contract_45_2026") String contractId,

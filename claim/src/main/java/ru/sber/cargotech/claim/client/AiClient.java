@@ -1,5 +1,7 @@
 package ru.sber.cargotech.claim.client;
 
+import java.util.UUID;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -33,9 +35,19 @@ public class AiClient {
     }
 
     public AiGenerateClaimResponse generate(AiGenerateClaimRequest request) {
+        return generate(request, null);
+    }
+
+    public AiGenerateClaimResponse generate(AiGenerateClaimRequest request, UUID actorUserId) {
         try {
-            ResponseEntity<byte[]> aiHttpResponse = restClient.post()
-                    .uri("/api/ai/claims/generate")
+            RestClient.RequestBodySpec requestSpec = restClient.post()
+                    .uri("/api/ai/claims/generate");
+
+            if (actorUserId != null) {
+                requestSpec.header("X-CargoTech-Actor-User-Id", actorUserId.toString());
+            }
+
+            ResponseEntity<byte[]> aiHttpResponse = requestSpec
                     .body(request)
                     .retrieve()
                     .onStatus(HttpStatusCode::is4xxClientError, (httpRequest, httpResponse) -> {

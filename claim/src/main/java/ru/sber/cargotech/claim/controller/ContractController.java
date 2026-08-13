@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import ru.sber.cargotech.claim.dto.ContractRequest;
+import ru.sber.cargotech.claim.dto.ContractIntakeRequest;
 import ru.sber.cargotech.claim.dto.ContractResponse;
 import ru.sber.cargotech.claim.dto.ContractExtractionResponse;
 import ru.sber.cargotech.claim.dto.SubmitContractExtractionRequest;
@@ -69,10 +70,16 @@ public class ContractController {
         return contractService.confirmExtraction(currentUserProvider.getRequiredUser(), contractId);
     }
 
+    @PostMapping("/{contractId}/rag/reindex")
+    @PreAuthorize("hasAuthority('CONTRACT_UPDATE')")
+    public ContractResponse reindexContractRag(@PathVariable UUID contractId) {
+        return contractService.requestRagReindex(currentUserProvider.getRequiredUser(), contractId);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('CONTRACT_CREATE')")
-    public ContractResponse create(@Valid @RequestBody ContractRequest request) {
+    public ContractResponse create(@Valid @RequestBody ContractIntakeRequest request) {
         log.info("Вызов endpoint: create");
         return contractService.create(currentUserProvider.getRequiredUser(), request);
     }

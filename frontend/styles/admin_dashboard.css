@@ -480,12 +480,95 @@ header {
   font-weight: 700;
 }
 
+#contract_form .add_user_form_fields {
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 2fr);
+}
+
+.contract_value_missing,
+.contract_source_missing {
+  color: #8A5A3B;
+}
+
+.contract_review_hint {
+  margin: 0 0 16px;
+  color: #59636f;
+}
+
+.contract_review_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .contract_extraction_item {
-  margin-bottom: 10px;
   padding: 12px;
   border: 1px solid #e6e9ed;
   border-radius: 8px;
   background: #fff;
+}
+
+.contract_candidate_label,
+.contract_clause_item label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contract_candidate_reliability {
+  display: block;
+  margin-top: 8px;
+  color: #59636f;
+}
+
+.contract_manual_badge,
+.contract_missing_badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.contract_manual_badge {
+  color: #315a8a;
+  background: #e7f0fb;
+}
+
+.contract_missing_badge {
+  color: #8A5A3B;
+  background: #fff1e8;
+}
+
+.contract_source_missing {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.contract_clause_item {
+  grid-column: 1 / -1;
+}
+
+.contract_clause_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.contract_clause_grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.contract_clause_remove {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.contract_clause_add {
+  margin-top: 14px;
 }
 
 .contract_extraction_item blockquote {
@@ -527,6 +610,137 @@ header {
   .add_user_form_actions {
     flex-wrap: wrap;
   }
+
+  #contract_form .add_user_form_fields,
+  .contract_review_grid,
+  .contract_clause_grid,
+  .contract_payment_schedule_grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.contract_clause_section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e6e9ed;
+}
+
+.contract_clause_section_header h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.contract_clause_section_header p,
+.contract_clause_empty {
+  margin: 0 0 12px;
+  color: #59636f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.contract_clause_list {
+  display: grid;
+  gap: 12px;
+}
+
+
+
+.contract_optional_badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #59636f;
+  background: #f1f3f5;
+}
+
+.contract_payment_schedule_add {
+  margin-top: 14px;
+}
+
+.contract_payment_schedule_section {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #eadfd6;
+  border-radius: 10px;
+  background: #fffaf6;
+}
+
+.contract_payment_schedule_header h4 {
+  margin: 0 0 5px;
+  font-size: 15px;
+}
+
+.contract_payment_schedule_header p {
+  margin: 0 0 12px;
+  color: #59636f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.contract_payment_schedule_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.contract_weekday_picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 44px;
+  align-items: center;
+}
+
+.contract_weekday_option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #f0b487;
+  border-radius: 10px;
+  background: #fff7f1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.contract_weekday_option input {
+  margin: 0;
+}
+
+.contract_weekday_option:has(input:checked) {
+  background: #ffe9d8;
+  border-color: #f36a21;
+}
+
+.contract_fallback_badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #73510f;
+  background: #fff4cf;
+}
+
+.contract_source_fallback {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #73510f;
+}
+
+.contract_special_terms_add {
+  margin-top: 14px;
+}
+
+.contract_special_term_group + .contract_special_term_group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eadfd6;
+}
+
+.contract_special_term_group > strong {
+  display: block;
+  margin-bottom: 10px;
 }
 
 

@@ -24,6 +24,7 @@ public record ShipmentResponse(
     LocalDate actSignedAt,
     LocalDate ttnSignedAt,
     LocalDate invoiceDate,
+    LocalDate paymentStartEventDate,
     BigDecimal serviceAmount,
     String currency,
     ShipmentStatus status,

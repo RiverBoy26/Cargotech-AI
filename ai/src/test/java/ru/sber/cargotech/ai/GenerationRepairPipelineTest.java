@@ -60,7 +60,7 @@ class GenerationRepairPipelineTest {
                 "second",
                 response("good", 1, 25, 26)
         );
-        when(client.sendChatWithTrace(anyList(), anyString(), anyString()))
+        when(client.sendChatWithTrace(anyList(), anyString(), any(), anyString()))
                 .thenReturn(firstCall)
                 .thenReturn(secondCall);
 
@@ -94,7 +94,7 @@ class GenerationRepairPipelineTest {
         assertThat(result.tokenUsage().promptTokens()).isEqualTo(101);
         assertThat(result.tokenUsage().completionTokens()).isEqualTo(45);
         assertThat(result.tokenUsage().totalTokens()).isEqualTo(146);
-        verify(client, times(2)).sendChatWithTrace(anyList(), anyString(), anyString());
+        verify(client, times(2)).sendChatWithTrace(anyList(), anyString(), any(), anyString());
     }
 
     @Test

@@ -19,6 +19,7 @@ public class ClaimFactConsistencyValidator {
     private static final Pattern INN_PATTERN = Pattern.compile("(?<!\\d)(?:\\d{10}|\\d{12})(?!\\d)");
     private static final Pattern RUB_AMOUNT_PATTERN = Pattern.compile(
             "(?iu)(?<!\\d)(\\d[\\d \\u00A0]{0,18}(?:[,.]\\d{1,2})?)\\s*(?:руб(?:лей|ля|ль|\\.)?|₽)"
+                    + "(?:\\s*(\\d{1,2})\\s*коп(?:еек|ейки|ейка|\\.)?)?"
     );
     private static final Pattern CLOCK_TIME_PATTERN = Pattern.compile(
             "(?<!\\d)([01]?\\d|2[0-3])[:.]([0-5]\\d)(?!\\d)"
@@ -31,6 +32,12 @@ public class ClaimFactConsistencyValidator {
                     + "корреспондентск\\p{L}*\\s+сч[её]т\\p{L}*|"
                     + "расч[её]тн\\p{L}*\\s+сч[её]т\\p{L}*|"
                     + "р\\s*/\\s*с|к\\s*/\\s*с)(?![\\p{L}\\p{N}_])"
+    );
+    private static final Pattern BANK_DETAILS_MENTION_PATTERN = Pattern.compile(
+            "(?iu)банковск\\p{L}*\\s+реквизит\\p{L}*"
+    );
+    private static final Pattern ATTACHMENTS_SECTION_PATTERN = Pattern.compile(
+            "(?imu)^\\s*приложени[ея]\\s*:"
     );
     private static final Pattern ISO_DATE_IN_CLAIM_PATTERN = Pattern.compile(
             "(?<!\\d)\\d{4}-\\d{2}-\\d{2}(?!\\d)"
@@ -66,6 +73,18 @@ public class ClaimFactConsistencyValidator {
             "на", "в", "во", "у", "д", "дом", "корп", "корпус",
             "стр", "строен"
     );
+    private static final Pattern UNSUPPORTED_CONTACT_FIELD_PATTERN = Pattern.compile(
+            "(?imu)^\\s*(?:телефон|тел\\.?|e-?mail|email|электронная\\s+почта|факс|сайт)\\s*:"
+    );
+    private static final Pattern UNSUPPORTED_REPRESENTATIVE_PATTERN = Pattern.compile(
+            "(?iu)(?:^|[^\\p{L}])в\\s+лице(?:[^\\p{L}]|$)"
+                    + "|(?:^|[^\\p{L}])уполномоченн\\p{L}*\\s+лиц\\p{L}*(?:[^\\p{L}]|$)"
+    );
+    private static final Pattern STANDALONE_DOCUMENT_PLACE_PATTERN = Pattern.compile(
+            "(?imu)^\\s*г\\.\\s*[А-ЯЁ][А-Яа-яЁё .\\-]{1,80}\\s*$"
+    );
+    private static final Pattern ADDRESS_LABEL_PATTERN = Pattern.compile("(?iu)адрес\\s*:");
+
     private static final int ADDRESS_TOKEN_WINDOW = 20;
     private static final int TIME_WINDOW_MAX_DISTANCE = 120;
 
@@ -106,6 +125,8 @@ public class ClaimFactConsistencyValidator {
 
         if (facts.claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
             validatePaymentDelayFacts(facts, text, errors);
+            validatePaymentDelaySemantics(facts, request.backendCalculation(), text, errors);
+            validatePaymentDelayPresentation(text, errors);
         } else if (facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
             validateLoadingFailureFacts(facts, request.backendCalculation(), text, narrative, errors, warnings);
         }
@@ -149,9 +170,11 @@ public class ClaimFactConsistencyValidator {
             String text,
             List<String> errors
     ) {
-        String allowedBankDetails = facts.creditor() == null ? null : facts.creditor().bankDetails();
-        if (!hasText(allowedBankDetails) && BANK_DETAILS_PATTERN.matcher(text).find()) {
-            errors.add("claim_text must not contain bank details");
+        if (BANK_DETAILS_PATTERN.matcher(text).find() || BANK_DETAILS_MENTION_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not contain or mention bank details in current scope");
+        }
+        if (ATTACHMENTS_SECTION_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not contain an attachments section in current scope");
         }
     }
 
@@ -262,6 +285,104 @@ public class ClaimFactConsistencyValidator {
         requireTextValue(text, shipment.route(), "shipment.route", errors);
     }
 
+    private void validatePaymentDelaySemantics(
+            GenerateClaimRequest.CaseFacts facts,
+            GenerateClaimRequest.BackendCalculation calculation,
+            String text,
+            List<String> errors
+    ) {
+        if (facts == null || text == null) {
+            return;
+        }
+
+        GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
+
+        // There is no order/application date in GenerateClaimRequest.
+        // A model must not turn order_number into "заказ № ... от <invented date>".
+        if (shipment != null && hasText(shipment.orderNumber())) {
+            String orderDatePattern = "(?isu)(?:заказ|заявк)\\p{L}*[^.!?\\n]{0,100}"
+                    + "(?:№\\s*)?" + Pattern.quote(shipment.orderNumber())
+                    + "[^.!?\\n]{0,60}\\sот\\s+\\d{1,2}\\s+"
+                    + "(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)"
+                    + "\\s+\\d{4}";
+            if (Pattern.compile(orderDatePattern).matcher(text).find()) {
+                errors.add("claim_text invents an order/application date absent from case_facts.shipment");
+            }
+        }
+
+        // Accountant confirmation in this workflow confirms the payment status
+        // (non-payment/partial payment), not issuance/receipt of documents or the
+        // legal moment when the payment term started.
+        if (facts.payment() != null && Boolean.TRUE.equals(facts.payment().paymentConfirmedByAccountant())) {
+            Pattern accountantOverclaim = Pattern.compile(
+                    "(?isu)бухгалтер\\p{L}*[^.!?\\n]{0,220}"
+                            + "(?:выставлен\\p{L}*\\s+документ\\p{L}*"
+                            + "|получен\\p{L}*\\s+(?:полн\\p{L}*\\s+)?комплект\\p{L}*\\s+документ\\p{L}*"
+                            + "|наступлен\\p{L}*\\s+срок\\p{L}*\\s+(?:платеж\\p{L}*|оплат\\p{L}*))"
+            );
+            if (accountantOverclaim.matcher(text).find()) {
+                errors.add("claim_text overstates accountant confirmation beyond the confirmed payment status");
+            }
+        }
+
+        // ARTICLE_395/LEGAL_INTEREST is interest for use of another's money,
+        // not contractual penalty / fine / late fee.
+        if (calculation != null
+                && calculation.penaltyType() == GenerateClaimRequest.PenaltyType.LEGAL_INTEREST
+                && calculation.penaltyAmount() != null
+                && calculation.penaltyAmount().compareTo(BigDecimal.ZERO) > 0) {
+            Pattern wrongInterestTerm = Pattern.compile(
+                    "(?iu)(?<![\\p{L}\\p{N}_])(?:неустойк\\p{L}*|штраф\\p{L}*|пен(?:я|и|ей|ю))(?![\\p{L}\\p{N}_])"
+            );
+            if (wrongInterestTerm.matcher(text).find()) {
+                errors.add("claim_text describes LEGAL_INTEREST as contractual penalty/fine/late fee");
+            }
+        }
+
+        // claim_response_days is the deadline for a written response to the
+        // claim. It must not silently become a new payment deadline.
+        Integer responseDays = facts.contract() == null ? null : facts.contract().claimResponseDays();
+        if (responseDays != null && responseDays > 0) {
+            Pattern paymentDeadline = Pattern.compile(
+                    "(?iu)(?:оплат\\p{L}*|перечисл\\p{L}*|погас\\p{L}*)"
+                            + "[^.!?\\n]{0,180}"
+                            + "(?:в\\s+течение\\s+)?"
+                            + Pattern.quote(String.valueOf(responseDays))
+                            + "\\s+календарн\\p{L}*\\s+дн\\p{L}*"
+            );
+            if (paymentDeadline.matcher(text).find()) {
+                errors.add("claim_text incorrectly uses contract.claim_response_days as a payment deadline");
+            }
+        }
+    }
+
+    private void validatePaymentDelayPresentation(String text, List<String> errors) {
+        if (!hasText(text)) {
+            return;
+        }
+
+        if (UNSUPPORTED_CONTACT_FIELD_PATTERN.matcher(text).find()) {
+            errors.add("claim_text contains unsupported contact field not present in case_facts");
+        }
+
+        if (UNSUPPORTED_REPRESENTATIVE_PATTERN.matcher(text).find()) {
+            errors.add("claim_text contains unsupported party representative wording");
+        }
+
+        if (STANDALONE_DOCUMENT_PLACE_PATTERN.matcher(text).find()) {
+            errors.add("claim_text invents a standalone document place not present in case_facts");
+        }
+
+        Matcher addressMatcher = ADDRESS_LABEL_PATTERN.matcher(text);
+        int addressLabels = 0;
+        while (addressMatcher.find()) {
+            addressLabels++;
+        }
+        if (addressLabels > 2) {
+            errors.add("claim_text duplicates party addresses");
+        }
+    }
+
     private void validateLoadingFailureFacts(
             GenerateClaimRequest.CaseFacts facts,
             GenerateClaimRequest.BackendCalculation calculation,
@@ -323,7 +444,7 @@ public class ClaimFactConsistencyValidator {
 
         Matcher matcher = RUB_AMOUNT_PATTERN.matcher(text);
         while (matcher.find()) {
-            BigDecimal found = parseAmount(matcher.group(1));
+            BigDecimal found = parseRubAmount(matcher);
             if (found != null && !containsAmount(allowed, found)) {
                 errors.add("claim_text contains amount not present in backend_calculation: " + found.toPlainString() + " RUB");
             }
@@ -336,39 +457,8 @@ public class ClaimFactConsistencyValidator {
             List<String> errors,
             List<String> warnings
     ) {
-        Set<GenerateClaimResponse.DocumentType> allowed = EnumSet.noneOf(GenerateClaimResponse.DocumentType.class);
-        GenerateClaimRequest.CaseFacts facts = request.caseFacts();
-        GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
-
-        if (facts.contract() != null && hasText(facts.contract().documentId())) {
-            allowed.add(GenerateClaimResponse.DocumentType.CONTRACT);
-        }
-        if (request.backendCalculation() != null) allowed.add(GenerateClaimResponse.DocumentType.CALCULATION);
-        if (shipment != null) {
-            if (Boolean.TRUE.equals(shipment.failureConfirmedByDispatcher())) {
-                allowed.add(GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT);
-            }
-        }
-
-        for (GenerateClaimResponse.Attachment attachment : safeList(response.attachments())) {
-            if (attachment == null || attachment.documentType() == null) {
-                errors.add("response.attachments contains item without document_type");
-                continue;
-            }
-            if (attachment.documentType() == GenerateClaimResponse.DocumentType.OTHER
-                    || !allowed.contains(attachment.documentType())) {
-                errors.add("Model added unsupported attachment: " + attachment.documentType());
-                continue;
-            }
-
-            validateAttachmentIdentity(attachment, facts, errors);
-        }
-
-        validateRequiredLoadingFailureAct(facts, response.attachments(), errors);
-
-        if ((response.attachments() == null || response.attachments().isEmpty())
-                && facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
-            warnings.add("Model returned no attachments");
+        if (response.attachments() != null && !response.attachments().isEmpty()) {
+            errors.add("attachments must be empty in current scope");
         }
     }
 
@@ -751,7 +841,7 @@ public class ClaimFactConsistencyValidator {
     private void requireAmount(String text, BigDecimal amount, String field, List<String> errors) {
         Matcher matcher = RUB_AMOUNT_PATTERN.matcher(text);
         while (matcher.find()) {
-            BigDecimal found = parseAmount(matcher.group(1));
+            BigDecimal found = parseRubAmount(matcher);
             if (found != null && sameAmount(found, amount)) {
                 return;
             }
@@ -759,9 +849,19 @@ public class ClaimFactConsistencyValidator {
         errors.add("claim_text does not contain expected " + field + ": " + amount.toPlainString() + " RUB");
     }
 
-    private BigDecimal parseAmount(String raw) {
+    private BigDecimal parseRubAmount(Matcher matcher) {
+        if (matcher == null) {
+            return null;
+        }
         try {
-            return new BigDecimal(raw.replace(" ", "").replace("\u00A0", "").replace(',', '.'));
+            BigDecimal rubles = new BigDecimal(
+                    matcher.group(1).replace(" ", "").replace("\u00A0", "").replace(',', '.')
+            );
+            String kopecksRaw = matcher.groupCount() >= 2 ? matcher.group(2) : null;
+            if (kopecksRaw == null || kopecksRaw.isBlank() || matcher.group(1).contains(".") || matcher.group(1).contains(",")) {
+                return rubles;
+            }
+            return rubles.add(new BigDecimal(kopecksRaw).movePointLeft(2));
         } catch (NumberFormatException ignored) {
             return null;
         }

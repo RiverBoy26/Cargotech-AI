@@ -3,12 +3,14 @@ package ru.sber.cargotech.ai;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import ru.sber.cargotech.ai.config.GigaChatProperties;
 import ru.sber.cargotech.ai.config.QdrantProperties;
 import ru.sber.cargotech.ai.config.RagSearchProperties;
 import ru.sber.cargotech.ai.config.AiDiagnosticsProperties;
 
 @SpringBootApplication
+@EnableScheduling
 @EnableConfigurationProperties({
         GigaChatProperties.class,
         QdrantProperties.class,

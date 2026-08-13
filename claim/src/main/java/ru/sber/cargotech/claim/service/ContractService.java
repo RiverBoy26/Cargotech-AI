@@ -4,10 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.context.ApplicationEventPublisher;
 import ru.sber.cargotech.claim.dto.ContractRequest;
+import ru.sber.cargotech.claim.dto.ContractIntakeRequest;
 import ru.sber.cargotech.claim.dto.ContractResponse;
 import ru.sber.cargotech.claim.dto.ContractExtractionResponse;
 import ru.sber.cargotech.claim.dto.SubmitContractExtractionRequest;
@@ -18,9 +20,13 @@ import ru.sber.cargotech.claim.entity.ContractExtractedValue;
 import ru.sber.cargotech.claim.enums.ClauseType;
 import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
+import ru.sber.cargotech.claim.enums.ContractRagStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
+import ru.sber.cargotech.claim.enums.PenaltyCapBase;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimContractClauseRepository;
 import ru.sber.cargotech.claim.repository.ClaimContractRepository;
@@ -29,8 +35,11 @@ import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -65,26 +74,25 @@ public class ContractService {
     }
 
     @Transactional
-    public ContractResponse create(CurrentClaimUser user, ContractRequest request) {
+    public ContractResponse create(CurrentClaimUser user, ContractIntakeRequest request) {
         UUID expeditorId = user.organizationId();
-        log.debug("Создание договора: organizationId={}, userId={}, number={}, clientId={}, expeditorId={}, paymentDays={}, penaltyType={}, penaltyRate={}", user.organizationId(), user.userId(), request.number(), request.clientId(), expeditorId, request.paymentDays(), request.penaltyType(), request.penaltyRate());
+        log.debug(
+            "Загрузка договора на распознавание: organizationId={}, userId={}, clientId={}, documentId={}",
+            user.organizationId(), user.userId(), request.clientId(), request.documentId()
+        );
 
-        if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNull(
-            user.organizationId(), request.number()
-        )) {
-            throw ClaimException.conflict("Договор с таким номером уже существует");
-        }
         validateParties(user.organizationId(), request.clientId(), expeditorId);
         ClaimContract contract = new ClaimContract();
         contract.setOrganizationId(user.organizationId());
+        contract.setClientId(request.clientId());
+        contract.setExpeditorId(expeditorId);
+        contract.setDocumentId(request.documentId());
+        contract.setStatus(ContractStatus.DRAFT);
         contract.setCreatedBy(user.userId());
         contract.setUpdatedBy(user.userId());
-        apply(contract, request, user.userId(), expeditorId);
         ClaimContract saved = contractRepository.save(contract);
         outboxWriter.write("CONTRACT", saved.getId(), "CONTRACT_CREATED", user.organizationId(), user.userId(), Map.of("contractId", saved.getId()));
-        if (saved.getDocumentId() != null) {
-            requestExtraction(saved, user);
-        }
+        requestExtraction(saved, user);
         return toResponse(user.organizationId(), saved);
     }
 
@@ -94,16 +102,56 @@ public class ContractService {
 
         ClaimContract contract = getEntity(user.organizationId(), id);
         UUID previousDocumentId = contract.getDocumentId();
+        UUID previousClientId = contract.getClientId();
+        String previousNumber = contract.getNumber();
+        LocalDate previousSignedAt = contract.getSignedAt();
+        ContractStatus previousStatus = contract.getStatus();
         UUID expeditorId = user.organizationId();
         validateParties(user.organizationId(), request.clientId(), expeditorId);
+        String requestedNumber = request.number().trim();
+        if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNullAndIdNot(
+            user.organizationId(), requestedNumber, contract.getId()
+        )) {
+            throw ClaimException.conflict("Договор с таким номером уже существует");
+        }
         apply(contract, request, user.userId(), expeditorId);
         ClaimContract saved = contractRepository.save(contract);
         outboxWriter.write("CONTRACT", saved.getId(), "CONTRACT_UPDATED", user.organizationId(), user.userId(), Map.of("contractId", saved.getId()));
         if (!Objects.equals(previousDocumentId, saved.getDocumentId())) {
+            if (previousDocumentId != null) {
+                eventPublisher.publishEvent(new ContractRagDeleteRequestedEvent(
+                    saved.getId(), user.organizationId(), previousClientId, previousDocumentId
+                ));
+            }
+            resetRagState(saved);
             if (saved.getDocumentId() == null) {
                 clearExtraction(saved);
             } else {
                 requestExtraction(saved, user);
+            }
+        } else if (saved.getDocumentId() != null
+            && saved.getExtractionStatus() == ContractExtractionStatus.CONFIRMED) {
+            boolean ragMetadataChanged = !Objects.equals(previousClientId, saved.getClientId())
+                || !Objects.equals(previousNumber, saved.getNumber())
+                || !Objects.equals(previousSignedAt, saved.getSignedAt());
+            if (previousStatus == ContractStatus.ACTIVE && saved.getStatus() != ContractStatus.ACTIVE) {
+                eventPublisher.publishEvent(new ContractRagDeleteRequestedEvent(
+                    saved.getId(), user.organizationId(), previousClientId, previousDocumentId
+                ));
+                resetRagState(saved);
+                contractRepository.save(saved);
+            } else if (saved.getStatus() == ContractStatus.ACTIVE
+                && (previousStatus != ContractStatus.ACTIVE || ragMetadataChanged)) {
+                if (!Objects.equals(previousClientId, saved.getClientId())) {
+                    eventPublisher.publishEvent(new ContractRagDeleteRequestedEvent(
+                        saved.getId(), user.organizationId(), previousClientId, previousDocumentId
+                    ));
+                }
+                markRagPending(saved);
+                contractRepository.save(saved);
+                eventPublisher.publishEvent(new ContractRagIndexRequestedEvent(
+                    saved.getId(), user.organizationId(), user.userId(), saved.getDocumentId()
+                ));
             }
         }
         return toResponse(user.organizationId(), saved);
@@ -118,6 +166,9 @@ public class ContractService {
         contract.setUpdatedBy(user.userId());
         contractRepository.save(contract);
         outboxWriter.write("CONTRACT", contract.getId(), "CONTRACT_DELETED", user.organizationId(), user.userId(), Map.of("contractId", contract.getId()));
+        eventPublisher.publishEvent(new ContractRagDeleteRequestedEvent(
+            contract.getId(), user.organizationId(), contract.getClientId(), null
+        ));
     }
 
     public ClaimContract getEntity(UUID organizationId, UUID id) {
@@ -178,16 +229,96 @@ public class ContractService {
         }
         List<ContractExtractedValue> candidates = extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contractId);
         applyConfirmedCandidates(contract, candidates, user.userId());
+        if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNullAndIdNot(
+            user.organizationId(), contract.getNumber(), contract.getId()
+        )) {
+            throw ClaimException.conflict("Договор с таким номером уже существует");
+        }
+        contract.setStatus(ContractStatus.ACTIVE);
         contract.setExtractionStatus(ContractExtractionStatus.CONFIRMED);
         contract.setExtractionConfirmedAt(OffsetDateTime.now());
         contract.setExtractionConfirmedBy(user.userId());
+        markRagPending(contract);
         contract.setUpdatedBy(user.userId());
-        contractRepository.save(contract);
+        try {
+            contractRepository.saveAndFlush(contract);
+        } catch (DataIntegrityViolationException exception) {
+            throw ClaimException.conflict("Договор с таким номером уже существует");
+        }
         outboxWriter.write(
             "CONTRACT", contractId, "CONTRACT_EXTRACTION_CONFIRMED",
             user.organizationId(), user.userId(), Map.of("contractId", contractId)
         );
+        eventPublisher.publishEvent(new ContractRagIndexRequestedEvent(
+            contractId, user.organizationId(), user.userId(), contract.getDocumentId()
+        ));
         return toExtractionResponse(contract);
+    }
+
+    @Transactional
+    public ContractResponse requestRagReindex(CurrentClaimUser user, UUID contractId) {
+        ClaimContract contract = getEntity(user.organizationId(), contractId);
+        if (contract.getStatus() != ContractStatus.ACTIVE
+            || contract.getExtractionStatus() != ContractExtractionStatus.CONFIRMED
+            || contract.getDocumentId() == null) {
+            throw ClaimException.conflict("RAG можно переиндексировать только для подтверждённого договора с документом");
+        }
+        markRagPending(contract);
+        contract.setUpdatedBy(user.userId());
+        contractRepository.save(contract);
+        outboxWriter.write(
+            "CONTRACT", contractId, "CONTRACT_RAG_REINDEX_REQUESTED",
+            user.organizationId(), user.userId(), Map.of("contractId", contractId)
+        );
+        eventPublisher.publishEvent(new ContractRagIndexRequestedEvent(
+            contractId, user.organizationId(), user.userId(), contract.getDocumentId()
+        ));
+        return toResponse(user.organizationId(), contract);
+    }
+
+    @Transactional(readOnly = true)
+    public ContractRagSnapshot getRagSnapshot(UUID organizationId, UUID contractId, UUID documentId) {
+        ClaimContract contract = getEntity(organizationId, contractId);
+        if (contract.getStatus() != ContractStatus.ACTIVE
+            || contract.getExtractionStatus() != ContractExtractionStatus.CONFIRMED
+            || contract.getDocumentId() == null
+            || !contract.getDocumentId().equals(documentId)) {
+            throw ClaimException.conflict("Договор больше не готов к RAG-индексации");
+        }
+        return new ContractRagSnapshot(
+            contract.getId(), contract.getOrganizationId(), contract.getClientId(),
+            contract.getDocumentId(), contract.getNumber(), contract.getSignedAt()
+        );
+    }
+
+    @Transactional
+    public void markRagIndexed(UUID organizationId, UUID contractId, UUID documentId) {
+        contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId)
+            .filter(contract -> documentId.equals(contract.getDocumentId()))
+            .filter(contract -> contract.getExtractionStatus() == ContractExtractionStatus.CONFIRMED)
+            .filter(contract -> contract.getStatus() == ContractStatus.ACTIVE)
+            .ifPresent(contract -> {
+                contract.setRagIndexStatus(ContractRagStatus.INDEXED);
+                contract.setRagIndexedAt(OffsetDateTime.now());
+                contract.setRagIndexError(null);
+                contract.setRagSourceDocumentId(documentId);
+                contractRepository.save(contract);
+            });
+    }
+
+    @Transactional
+    public void markRagFailed(UUID organizationId, UUID contractId, UUID documentId, String safeError) {
+        contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId)
+            .filter(contract -> documentId.equals(contract.getDocumentId()))
+            .filter(contract -> contract.getExtractionStatus() == ContractExtractionStatus.CONFIRMED)
+            .filter(contract -> contract.getStatus() == ContractStatus.ACTIVE)
+            .ifPresent(contract -> {
+                contract.setRagIndexStatus(ContractRagStatus.FAILED);
+                contract.setRagIndexedAt(null);
+                contract.setRagIndexError(trimError(safeError));
+                contract.setRagSourceDocumentId(documentId);
+                contractRepository.save(contract);
+            });
     }
 
     private void apply(
@@ -196,7 +327,7 @@ public class ContractService {
         UUID userId,
         UUID expeditorId
     ) {
-        contract.setNumber(request.number());
+        contract.setNumber(request.number().trim());
         contract.setClientId(request.clientId());
         contract.setExpeditorId(expeditorId);
         contract.setSignedAt(request.signedAt());
@@ -204,10 +335,18 @@ public class ContractService {
         contract.setValidTo(request.validTo());
         contract.setStatus(request.status() == null ? ContractStatus.ACTIVE : request.status());
         contract.setPaymentDays(request.paymentDays());
+        contract.setPaymentDayType(request.paymentDayType());
         contract.setPaymentStartEvent(request.paymentStartEvent());
-        contract.setPenaltyType(request.penaltyType() == null ? PenaltyType.NONE : request.penaltyType());
+        contract.setPaymentScheduleType(request.paymentScheduleType());
+        contract.setPaymentWeekDays(normalizePaymentWeekDays(request.paymentWeekDays()));
+        validatePaymentSchedule(contract);
+        contract.setPenaltyType(request.penaltyType() == null ? PenaltyType.ARTICLE_395 : request.penaltyType());
         contract.setPenaltyRate(request.penaltyRate());
-        contract.setClaimResponseDays(request.claimResponseDays());
+        contract.setPenaltyCapPercent(request.penaltyCapPercent());
+        contract.setPenaltyCapBase(request.penaltyCapBase());
+        validatePenaltyCap(contract);
+        contract.setClaimResponseDays(request.claimResponseDays() == null ? 30 : request.claimResponseDays());
+        contract.setClaimResponseDayType(request.claimResponseDayType() == null ? TermDayType.CALENDAR_DAYS : request.claimResponseDayType());
         contract.setJurisdiction(request.jurisdiction());
         contract.setDocumentId(request.documentId());
         contract.setUpdatedBy(userId);
@@ -237,15 +376,25 @@ public class ContractService {
             contract.getValidTo(),
             contract.getStatus(),
             contract.getPaymentDays(),
+            contract.getPaymentDayType(),
             contract.getPaymentStartEvent(),
+            contract.getPaymentScheduleType(),
+            contract.getPaymentWeekDays(),
             contract.getPenaltyType(),
             contract.getPenaltyRate(),
+            contract.getPenaltyCapPercent(),
+            contract.getPenaltyCapBase(),
             contract.getClaimResponseDays(),
+            contract.getClaimResponseDayType(),
             contract.getJurisdiction(),
             contract.getDocumentId(),
             contract.getExtractionStatus(),
             contract.getExtractionConfirmedAt(),
             contract.getExtractionConfirmedBy(),
+            contract.getRagIndexStatus(),
+            contract.getRagIndexedAt(),
+            contract.getRagIndexError(),
+            contract.getRagSourceDocumentId(),
             contract.getCreatedAt(),
             contract.getUpdatedAt()
         );
@@ -281,11 +430,12 @@ public class ContractService {
             value.setContractId(contract.getId());
             value.setField(candidate.field());
             value.setValue(blankToNull(candidate.value()));
-            value.setSource(candidate.source().trim());
+            value.setSource(blankToNull(candidate.source()));
             value.setSourcePage(candidate.sourcePage());
             value.setConfidence(candidate.confidence());
             value.setClauseNumber(blankToNull(candidate.clauseNumber()));
             value.setClauseType(candidate.clauseType());
+            value.setManuallyEdited(candidate.manuallyEdited());
             value.setCreatedBy(userId);
             return value;
         }).toList();
@@ -324,6 +474,11 @@ public class ContractService {
                 throw ClaimException.validation("Поле разбора договора не должно повторяться: " + candidate.field());
             }
         }
+        Set<ContractExtractionField> requiredReviewFields = EnumSet.allOf(ContractExtractionField.class);
+        requiredReviewFields.remove(ContractExtractionField.EXACT_CLAUSE);
+        if (!scalarFields.equals(requiredReviewFields)) {
+            throw ClaimException.validation("Экран проверки должен содержать все поля договора");
+        }
     }
 
     private void applyConfirmedCandidates(
@@ -333,11 +488,19 @@ public class ContractService {
     ) {
         // The uploaded document becomes the only source of extracted values.
         // Missing fields are deliberately null instead of being guessed.
+        contract.setNumber(null);
+        contract.setSignedAt(null);
         contract.setPaymentDays(null);
+        contract.setPaymentDayType(null);
         contract.setPaymentStartEvent(null);
+        contract.setPaymentScheduleType(null);
+        contract.setPaymentWeekDays(null);
         contract.setPenaltyType(null);
         contract.setPenaltyRate(null);
+        contract.setPenaltyCapPercent(null);
+        contract.setPenaltyCapBase(null);
         contract.setClaimResponseDays(null);
+        contract.setClaimResponseDayType(null);
         contract.setJurisdiction(null);
         contractClauseRepository.deleteByContractIdAndExtractedTrue(contract.getId());
 
@@ -350,17 +513,33 @@ public class ContractService {
             if (value == null) continue;
             try {
                 switch (candidate.getField()) {
+                    case CONTRACT_NUMBER -> contract.setNumber(contractNumber(value));
+                    case SIGNED_AT -> contract.setSignedAt(contractSignedAt(value));
                     case PAYMENT_DAYS -> contract.setPaymentDays(nonNegativeInteger(value));
+                    case PAYMENT_DAY_TYPE -> contract.setPaymentDayType(TermDayType.valueOf(value));
                     case PAYMENT_START_EVENT -> contract.setPaymentStartEvent(PaymentStartEvent.valueOf(value));
+                    case PAYMENT_SCHEDULE_TYPE -> contract.setPaymentScheduleType(PaymentScheduleType.valueOf(value));
+                    case PAYMENT_WEEK_DAYS -> contract.setPaymentWeekDays(normalizePaymentWeekDays(value));
                     case PENALTY_TYPE -> contract.setPenaltyType(PenaltyType.valueOf(value));
                     case PENALTY_RATE -> contract.setPenaltyRate(nonNegativeDecimal(value));
+                    case PENALTY_CAP_PERCENT -> contract.setPenaltyCapPercent(nonNegativeDecimal(value));
+                    case PENALTY_CAP_BASE -> contract.setPenaltyCapBase(PenaltyCapBase.valueOf(value));
                     case CLAIM_RESPONSE_DAYS -> contract.setClaimResponseDays(nonNegativeInteger(value));
+                    case CLAIM_RESPONSE_DAY_TYPE -> contract.setClaimResponseDayType(TermDayType.valueOf(value));
                     case JURISDICTION -> contract.setJurisdiction(value);
                     case EXACT_CLAUSE -> { }
                 }
             } catch (IllegalArgumentException exception) {
                 throw ClaimException.validation("Неверный формат извлечённого поля " + candidate.getField() + ": " + value);
             }
+        }
+        validatePaymentSchedule(contract);
+        validatePenaltyCap(contract);
+        if (contract.getPenaltyType() == null) contract.setPenaltyType(PenaltyType.ARTICLE_395);
+        if (contract.getClaimResponseDays() == null) contract.setClaimResponseDays(30);
+        if (contract.getClaimResponseDayType() == null) contract.setClaimResponseDayType(TermDayType.CALENDAR_DAYS);
+        if (contract.getNumber() == null) {
+            throw ClaimException.validation("Укажите номер договора перед подтверждением");
         }
     }
 
@@ -377,6 +556,54 @@ public class ContractService {
         contractClauseRepository.save(clause);
     }
 
+    private void validatePenaltyCap(ClaimContract contract) {
+        if (contract.getPenaltyCapPercent() == null && contract.getPenaltyCapBase() == null) return;
+        if (contract.getPenaltyType() != PenaltyType.CONTRACT_PENALTY) {
+            throw ClaimException.validation("Ограничение размера применяется только к договорной неустойке");
+        }
+        if (contract.getPenaltyCapPercent() == null || contract.getPenaltyCapBase() == null) {
+            throw ClaimException.validation("Для ограничения неустойки укажите и процент, и базу расчёта");
+        }
+        if (contract.getPenaltyCapPercent().signum() < 0) {
+            throw ClaimException.validation("Лимит неустойки не может быть отрицательным");
+        }
+    }
+
+    private void validatePaymentSchedule(ClaimContract contract) {
+        String weekDays = normalizePaymentWeekDays(contract.getPaymentWeekDays());
+        contract.setPaymentWeekDays(weekDays);
+        if (contract.getPaymentScheduleType() == null) {
+            if (weekDays != null) {
+                throw ClaimException.validation("Платёжные дни нельзя указать без порядка применения платёжного календаря");
+            }
+            return;
+        }
+        if (contract.getPaymentScheduleType() == PaymentScheduleType.NEXT_PAYMENT_DAY && weekDays == null) {
+            throw ClaimException.validation("Для переноса на ближайший платёжный день укажите дни недели");
+        }
+    }
+
+    private String normalizePaymentWeekDays(String value) {
+        String normalized = blankToNull(value);
+        if (normalized == null) return null;
+
+        Set<DayOfWeek> days = new LinkedHashSet<>();
+        for (String token : normalized.split(",")) {
+            String item = token.trim();
+            if (item.isEmpty()) continue;
+            try {
+                days.add(DayOfWeek.valueOf(item.toUpperCase(java.util.Locale.ROOT)));
+            } catch (IllegalArgumentException exception) {
+                throw ClaimException.validation("Неизвестный платёжный день недели: " + item);
+            }
+        }
+        if (days.isEmpty()) return null;
+        return days.stream()
+            .sorted()
+            .map(DayOfWeek::name)
+            .collect(java.util.stream.Collectors.joining(","));
+    }
+
     private int nonNegativeInteger(String value) {
         int parsed = Integer.parseInt(value);
         if (parsed < 0) throw new IllegalArgumentException();
@@ -389,11 +616,26 @@ public class ContractService {
         return parsed;
     }
 
+    private String contractNumber(String value) {
+        String normalized = value.trim();
+        if (normalized.isEmpty() || normalized.length() > 128) throw new IllegalArgumentException();
+        return normalized;
+    }
+
+    private LocalDate contractSignedAt(String value) {
+        try {
+            return LocalDate.parse(value);
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException(exception);
+        }
+    }
+
     private ContractExtractionResponse toExtractionResponse(ClaimContract contract) {
         var candidates = extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contract.getId()).stream()
             .map(value -> new ContractExtractionResponse.Candidate(
                 value.getField(), value.getValue(), value.getSource(), value.getSourcePage(),
-                value.getConfidence(), value.getClauseNumber(), value.getClauseType()
+                value.getConfidence(), value.getClauseNumber(), value.getClauseType(),
+                value.isManuallyEdited()
             ))
             .toList();
         return new ContractExtractionResponse(
@@ -406,4 +648,33 @@ public class ContractService {
         if (value == null || value.isBlank()) return null;
         return value.trim();
     }
+
+    private void markRagPending(ClaimContract contract) {
+        contract.setRagIndexStatus(ContractRagStatus.PENDING);
+        contract.setRagIndexedAt(null);
+        contract.setRagIndexError(null);
+        contract.setRagSourceDocumentId(contract.getDocumentId());
+    }
+
+    private void resetRagState(ClaimContract contract) {
+        contract.setRagIndexStatus(ContractRagStatus.NOT_INDEXED);
+        contract.setRagIndexedAt(null);
+        contract.setRagIndexError(null);
+        contract.setRagSourceDocumentId(null);
+    }
+
+    private String trimError(String value) {
+        if (value == null || value.isBlank()) return "CONTRACT_RAG_INDEXING_FAILED";
+        String normalized = value.replaceAll("[\\r\\n\\t]+", " ").trim();
+        return normalized.length() <= 1000 ? normalized : normalized.substring(0, 1000);
+    }
+
+    public record ContractRagSnapshot(
+        UUID contractId,
+        UUID organizationId,
+        UUID clientId,
+        UUID documentId,
+        String contractNumber,
+        LocalDate contractDate
+    ) {}
 }
