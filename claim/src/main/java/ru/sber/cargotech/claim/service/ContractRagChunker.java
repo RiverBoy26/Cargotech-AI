@@ -17,6 +17,9 @@ public class ContractRagChunker {
     private static final Pattern SECTION = Pattern.compile(
         "(?iu)^(статья|раздел|глава)\\s+([0-9IVXLCDM]+(?:\\.[0-9]+)*)\\.?\\s*[-–—:]?\\s*(.*)$"
     );
+    private static final Pattern BARE_NUMBERED_SECTION = Pattern.compile(
+        "(?iu)^([0-9IVXLCDM]+)\\.\\s+(.+)$"
+    );
     private static final Pattern CLAUSE = Pattern.compile("^(\\d+(?:\\.\\d+)+)\\.?\\s*(.*)$");
     private static final Pattern PASSPORT = Pattern.compile("\\b\\d{4}\\s?\\d{6}\\b");
     private static final Pattern BANK_ACCOUNT = Pattern.compile("\\b\\d{20}\\b");
@@ -81,6 +84,16 @@ public class ContractRagChunker {
             }
             if (skipRequisites) continue;
 
+            Matcher bareSection = BARE_NUMBERED_SECTION.matcher(line);
+            if (bareSection.matches()) {
+                addBlock(blocks, current);
+                current = null;
+                sectionTitle = bareSection.group(1) + ". " + normalizeLine(bareSection.group(2));
+                sectionPath = sectionTitle;
+                sectionNeedsTitle = false;
+                continue;
+            }
+
             Matcher clause = CLAUSE.matcher(line);
             if (clause.matches()) {
                 addBlock(blocks, current);
@@ -139,18 +152,46 @@ public class ContractRagChunker {
         if (sanction && loadingFailure) {
             return new Classification("LOADING_FAILURE_PENALTY", "LOADING_FAILURE", "Штраф за непредоставление транспорта");
         }
-        if (containsAny(lower, "претензионн", "претензия", "претензии")
-            && containsAny(lower, "порядок", "срок", "ответ", "направ")) {
+
+        boolean pretrial = containsAny(lower, "претензи", "досудеб")
+            && containsAny(
+                lower,
+                "порядок", "срок", "ответ", "рассматрива", "направ",
+                "урегулиров", "до обращения в суд", "письменн", "требован"
+            );
+        if (pretrial) {
             return new Classification("PRETRIAL_ORDER", "ALL", "Претензионный порядок");
         }
+
         if (sanction && containsAny(lower, "просроч", "оплат", "задолж", "денежн")) {
             return new Classification("CONTRACT_PENALTY", "PAYMENT_DELAY", "Ответственность за просрочку оплаты");
         }
         if (containsAny(lower, "пода", "предостав") && vehicleReference && loadingReference) {
             return new Classification("VEHICLE_SUPPLY_DUTY", "LOADING_FAILURE", "Обязанность подать транспорт");
         }
-        if (containsAny(lower, "оплат", "расчёт", "расчет")
-            && containsAny(lower, "срок", "дн", "акт", "накладн", "документ", "счёт", "счет")) {
+
+        boolean paymentCore = containsAny(
+            lower,
+            "оплат", "платеж", "платёж",
+            "расчеты производ", "расчёты производ",
+            "расчеты осуществ", "расчёты осуществ"
+        );
+        boolean paymentTiming = containsAny(
+            lower,
+            "срок", "дн", "в течение", "после", "с даты", "с момента",
+            "не позднее", "банковск", "календарн", "рабоч"
+        );
+        boolean paymentDocuments = containsAny(
+            lower,
+            "закрывающ", "комплект", "реестр", "акт", "упд",
+            "накладн", "счет на оплату", "счёт на оплату"
+        );
+        boolean unrelatedPayment = containsAny(
+            lower,
+            "оплата простоя", "оплате простоя", "оплату простоя",
+            "оплаты простоя"
+        );
+        if (paymentCore && !unrelatedPayment && (paymentTiming || paymentDocuments)) {
             return new Classification("PAYMENT_TERM", "PAYMENT_DELAY", "Условия оплаты");
         }
         return new Classification("CONTRACT_GENERAL", "ALL", "Условия договора");

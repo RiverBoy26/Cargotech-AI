@@ -33,6 +33,66 @@ class ContractRagChunkerTest {
     }
 
     @Test
+    void recognizesBareNumberedSectionHeadingsAndDoesNotAppendThemToPreviousClause() {
+        List<ContractRagChunker.ContractSourceChunk> chunks = chunker.chunk("""
+            7. ПРОСТОЙ И ДОПОЛНИТЕЛЬНЫЕ РАСХОДЫ
+            7.4. Оригиналы документов возвращаются после выгрузки.
+            8. СТОИМОСТЬ УСЛУГ И ПОРЯДОК РАСЧЕТОВ
+            8.2. Заказчик производит оплату в течение 5 банковских дней после включения рейса в реестр.
+            9. ОТВЕТСТВЕННОСТЬ СТОРОН
+            9.4. За просрочку оплаты уплачивается неустойка 0,2 процента за каждый день.
+            """);
+
+        assertThat(chunks)
+            .filteredOn(chunk -> "7.4".equals(chunk.clauseNumber()))
+            .singleElement()
+            .satisfies(chunk -> {
+                assertThat(chunk.sectionTitle()).isEqualTo("7. ПРОСТОЙ И ДОПОЛНИТЕЛЬНЫЕ РАСХОДЫ");
+                assertThat(chunk.text()).doesNotContain("8. СТОИМОСТЬ");
+            });
+
+        assertThat(chunks)
+            .filteredOn(chunk -> "8.2".equals(chunk.clauseNumber()))
+            .singleElement()
+            .satisfies(chunk -> assertThat(chunk.sectionTitle())
+                .isEqualTo("8. СТОИМОСТЬ УСЛУГ И ПОРЯДОК РАСЧЕТОВ"));
+
+        assertThat(chunks)
+            .filteredOn(chunk -> "9.4".equals(chunk.clauseNumber()))
+            .singleElement()
+            .satisfies(chunk -> assertThat(chunk.sectionTitle())
+                .isEqualTo("9. ОТВЕТСТВЕННОСТЬ СТОРОН"));
+    }
+
+    @Test
+    void classifiesRealPretrialClausesInsteadOfPaymentTerms() {
+        assertThat(single(
+            "10.1. До обращения в суд Стороны урегулируют разногласия письменной претензией. "
+                + "Претензия должна содержать обстоятельства нарушения, требование, расчет заявленной суммы и копии документов."
+        ).chunkType()).isEqualTo("PRETRIAL_ORDER");
+
+        assertThat(single(
+            "10.2. Сторона, получившая претензию, рассматривает ее и направляет мотивированный письменный ответ "
+                + "в течение 10 календарных дней."
+        ).chunkType()).isEqualTo("PRETRIAL_ORDER");
+    }
+
+    @Test
+    void doesNotClassifyUnrelatedSettlementClausesAsPaymentTerms() {
+        assertThat(single(
+            "7.2. Требование об оплате простоя предъявляется при наличии документов, позволяющих определить время ожидания."
+        ).chunkType()).isEqualTo("CONTRACT_GENERAL");
+
+        assertThat(single(
+            "14.4. Стороны не создают препятствий для закрытия документов, сверки расчетов и урегулирования требований."
+        ).chunkType()).isEqualTo("CONTRACT_GENERAL");
+
+        assertThat(single(
+            "15.3. Сторона вправе отказаться от договора за 30 календарных дней при условии завершения взаиморасчетов."
+        ).chunkType()).isEqualTo("CONTRACT_GENERAL");
+    }
+
+    @Test
     void longClauseIsSplitWithoutLosingWordsAndKeepsClauseNumber() {
         String body = ("обязательство исполняется надлежащим образом в согласованный срок. ").repeat(80).trim();
         List<ContractRagChunker.ContractSourceChunk> chunks = chunker.chunk("10.4. " + body);
