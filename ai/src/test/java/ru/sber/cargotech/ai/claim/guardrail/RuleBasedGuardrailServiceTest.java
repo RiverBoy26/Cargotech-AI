@@ -346,7 +346,7 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
-    void blocksOptionalLoadingFailureActWhenActFactsExist() {
+    void blocksLoadingFailureAttachmentsInCurrentScope() {
         GenerateClaimResponse base = detailedLoadingResponse(detailedLoadingText());
         GenerateClaimResponse response = new GenerateClaimResponse(
                 base.claimType(),
@@ -358,7 +358,7 @@ class RuleBasedGuardrailServiceTest {
                 List.of(new GenerateClaimResponse.Attachment(
                         GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT,
                         "Акт о срыве погрузки № ACT-LF-200 от 12.06.2026",
-                        false
+                        true
                 )),
                 base.warnings(),
                 base.manualReviewRequired()
@@ -367,7 +367,7 @@ class RuleBasedGuardrailServiceTest {
         GuardrailResult result = service.check(detailedLoadingRequest(), response);
 
         assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
-        assertThat(result.errors()).anyMatch(error -> error.contains("required LOADING_FAILURE_ACT"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("attachments must be empty"));
     }
 
     @Test
@@ -389,11 +389,7 @@ class RuleBasedGuardrailServiceTest {
                         0,
                         "RUB"
                 ),
-                List.of(new GenerateClaimResponse.Attachment(
-                        GenerateClaimResponse.DocumentType.TRANSPORT_ORDER,
-                        "Заявка ORD-1",
-                        true
-                )),
+                List.of(),
                 List.of(),
                 true
         );
@@ -879,11 +875,7 @@ class RuleBasedGuardrailServiceTest {
                         0,
                         "RUB"
                 ),
-                List.of(new GenerateClaimResponse.Attachment(
-                        GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT,
-                        "Акт о срыве погрузки № ACT-LF-200 от 12.06.2026",
-                        true
-                )),
+                List.of(),
                 List.of(),
                 true
         );

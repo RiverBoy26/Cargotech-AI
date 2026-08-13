@@ -78,7 +78,7 @@ public class ClaimGenerationService {
                 user,
                 contractClauses
         );
-        AiGenerateClaimResponse aiResponse = aiClient.generate(aiRequest);
+        AiGenerateClaimResponse aiResponse = aiClient.generate(aiRequest, user.userId());
 
         validateAiResponse(aiResponse);
         AiGenerateClaimResponse.GeneratedClaim generated = aiResponse.generatedClaim();

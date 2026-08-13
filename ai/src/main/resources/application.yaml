@@ -52,5 +52,5 @@ ai:
     input-token-cost-rub-per-1000: ${AI_INPUT_TOKEN_COST_RUB_PER_1000:0.20}
     output-token-cost-rub-per-1000: ${AI_OUTPUT_TOKEN_COST_RUB_PER_1000:0.20}
   audit:
-    retention-days: ${AI_AUDIT_RETENTION_DAYS:1095}
+    retention-days: ${AI_AUDIT_RETENTION_DAYS:365}
     retention-cron: ${AI_AUDIT_RETENTION_CRON:0 30 3 * * *}

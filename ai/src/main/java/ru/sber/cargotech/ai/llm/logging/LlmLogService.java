@@ -67,6 +67,7 @@ public class LlmLogService {
     public void logSuccess(
             String requestId,
             String caseId,
+            UUID userId,
             String operation,
             String provider,
             String model,
@@ -83,6 +84,7 @@ public class LlmLogService {
         LlmCallLog entry = new LlmCallLog(
                 requestId,
                 caseId,
+                userId,
                 operation,
                 provider,
                 model,
@@ -97,6 +99,7 @@ public class LlmLogService {
                 calculateCost(usage),
                 LlmCallStatus.SUCCESS,
                 null,
+                true,
                 startedAt,
                 finishedAt,
                 Duration.between(startedAt, finishedAt).toMillis()
@@ -119,32 +122,39 @@ public class LlmLogService {
     public void logError(
             String requestId,
             String caseId,
+            UUID userId,
             String operation,
             String provider,
             String model,
             List<GigaChatMessage> messages,
+            GigaChatChatResponse providerResponse,
             Exception exception,
-            Instant startedAt
+            Instant startedAt,
+            boolean providerInvoked
     ) {
         Instant finishedAt = Instant.now();
+        GigaChatChatResponse.Usage usage = providerResponse == null ? null : providerResponse.usage();
+        String providerRawResponse = providerResponse == null ? null : providerResponse.firstContent();
 
         LlmCallLog entry = new LlmCallLog(
                 requestId,
                 caseId,
+                userId,
                 operation,
                 provider,
                 model,
                 promptVersion(operation),
                 rawMessages(messages),
                 previewMessages(messages),
-                null,
-                null,
-                null,
-                null,
-                null,
-                BigDecimal.ZERO.setScale(4),
+                providerRawResponse,
+                preview(providerRawResponse),
+                usage == null ? null : usage.promptTokens(),
+                usage == null ? null : usage.completionTokens(),
+                usage == null ? null : usage.totalTokens(),
+                calculateCost(usage),
                 LlmCallStatus.ERROR,
                 exception == null ? "Unknown error" : preview(exception.getMessage()),
+                providerInvoked,
                 startedAt,
                 finishedAt,
                 Duration.between(startedAt, finishedAt).toMillis()
@@ -202,16 +212,17 @@ public class LlmLogService {
                 // database permissions/retention controls.
                 jdbcTemplate.update("""
                         INSERT INTO cargotech.ai_llm_call_logs (
-                            request_id, claim_id, operation, provider, model, prompt_version,
+                            request_id, claim_id, user_id, operation, provider, model, prompt_version,
                             masked_prompt, masked_response,
                             prompt_tokens, completion_tokens, total_tokens, cost_rub,
-                            status, error_message, started_at, finished_at, duration_ms
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            status, error_message, provider_invoked,
+                            started_at, finished_at, duration_ms
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        entry.requestId(), entry.caseId(), entry.operation(), entry.provider(), entry.model(),
+                        entry.requestId(), entry.caseId(), entry.userId(), entry.operation(), entry.provider(), entry.model(),
                         entry.promptVersion(), entry.maskedPrompt(), entry.maskedResponse(),
                         entry.promptTokens(), entry.completionTokens(), entry.totalTokens(), entry.costRub(),
-                        entry.status().name(), entry.errorMessage(),
+                        entry.status().name(), entry.errorMessage(), entry.providerInvoked(),
                         entry.startedAt() == null ? null : entry.startedAt().atOffset(ZoneOffset.UTC),
                         entry.finishedAt() == null ? null : entry.finishedAt().atOffset(ZoneOffset.UTC),
                         entry.durationMs()
@@ -245,7 +256,9 @@ public class LlmLogService {
             try {
                 return jdbcTemplate.queryForObject("""
                         SELECT COUNT(*), COALESCE(SUM(cost_rub), 0)
-                        FROM cargotech.ai_llm_call_logs WHERE claim_id = ?
+                        FROM cargotech.ai_llm_call_logs
+                        WHERE claim_id = ?
+                          AND provider_invoked = TRUE
                         """, (rs, rowNum) -> new UsageTotals(rs.getInt(1), rs.getBigDecimal(2)), caseId);
             } catch (RuntimeException persistenceError) {
                 SQLException sqlException = findSqlException(persistenceError);
@@ -261,7 +274,7 @@ public class LlmLogService {
         int calls = 0;
         BigDecimal cost = BigDecimal.ZERO;
         for (LlmCallLog entry : logs) {
-            if (caseId.equals(entry.caseId())) {
+            if (caseId.equals(entry.caseId()) && entry.providerInvoked()) {
                 calls++;
                 cost = cost.add(entry.costRub() == null ? BigDecimal.ZERO : entry.costRub());
             }

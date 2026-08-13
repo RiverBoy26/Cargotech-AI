@@ -4,10 +4,12 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 public record LlmCallLog(
         String requestId,
         String caseId,
+        UUID userId,
         String operation,
         String provider,
         String model,
@@ -22,6 +24,7 @@ public record LlmCallLog(
         BigDecimal costRub,
         LlmCallStatus status,
         String errorMessage,
+        boolean providerInvoked,
         Instant startedAt,
         Instant finishedAt,
         Long durationMs

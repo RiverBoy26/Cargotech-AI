@@ -13,6 +13,7 @@ import ru.sber.cargotech.ai.security.ReversiblePromptMasker;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class GigaChatClient {
@@ -46,8 +47,19 @@ public class GigaChatClient {
     }
 
     public ChatCallResult sendChatWithTrace(List<GigaChatMessage> messages, String caseId, String operation) {
+        return sendChatWithTrace(messages, caseId, null, operation);
+    }
+
+    public ChatCallResult sendChatWithTrace(
+            List<GigaChatMessage> messages,
+            String caseId,
+            UUID userId,
+            String operation
+    ) {
         String requestId = llmLogService.newRequestId();
         Instant startedAt = llmLogService.now();
+        boolean providerInvoked = false;
+        GigaChatChatResponse providerResponse = null;
 
         try {
             llmLogService.ensureWithinLimits(caseId);
@@ -62,7 +74,8 @@ public class GigaChatClient {
                     properties.getMaxTokens()
             );
 
-            GigaChatChatResponse response = restClient.post()
+            providerInvoked = true;
+            providerResponse = restClient.post()
                     .uri(properties.getChatUrl())
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -71,15 +84,16 @@ public class GigaChatClient {
                     .retrieve()
                     .body(GigaChatChatResponse.class);
 
-            if (response == null) {
+            if (providerResponse == null) {
                 throw new IllegalStateException("GigaChat returned empty response");
             }
 
-            response = maskedPrompt.restore(response);
+            GigaChatChatResponse response = maskedPrompt.restore(providerResponse);
 
             llmLogService.logSuccess(
                     requestId,
                     caseId,
+                    userId,
                     operation,
                     "GigaChat",
                     properties.getChatModel(),
@@ -93,12 +107,15 @@ public class GigaChatClient {
             llmLogService.logError(
                     requestId,
                     caseId,
+                    userId,
                     operation,
                     "GigaChat",
                     properties.getChatModel(),
                     messages,
+                    providerResponse,
                     e,
-                    startedAt
+                    startedAt,
+                    providerInvoked
             );
 
             throw e;

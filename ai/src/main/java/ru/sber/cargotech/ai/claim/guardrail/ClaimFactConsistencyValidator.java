@@ -457,46 +457,8 @@ public class ClaimFactConsistencyValidator {
             List<String> errors,
             List<String> warnings
     ) {
-        Set<GenerateClaimResponse.DocumentType> allowed = EnumSet.noneOf(GenerateClaimResponse.DocumentType.class);
-        GenerateClaimRequest.CaseFacts facts = request.caseFacts();
-        GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
-
-        if (facts.claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY
-                && response.attachments() != null
-                && !response.attachments().isEmpty()) {
-            errors.add("PAYMENT_DELAY attachments must be empty in current scope");
-            return;
-        }
-
-        if (facts.contract() != null && hasText(facts.contract().documentId())) {
-            allowed.add(GenerateClaimResponse.DocumentType.CONTRACT);
-        }
-        if (request.backendCalculation() != null) allowed.add(GenerateClaimResponse.DocumentType.CALCULATION);
-        if (shipment != null) {
-            if (Boolean.TRUE.equals(shipment.failureConfirmedByDispatcher())) {
-                allowed.add(GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT);
-            }
-        }
-
-        for (GenerateClaimResponse.Attachment attachment : safeList(response.attachments())) {
-            if (attachment == null || attachment.documentType() == null) {
-                errors.add("response.attachments contains item without document_type");
-                continue;
-            }
-            if (attachment.documentType() == GenerateClaimResponse.DocumentType.OTHER
-                    || !allowed.contains(attachment.documentType())) {
-                errors.add("Model added unsupported attachment: " + attachment.documentType());
-                continue;
-            }
-
-            validateAttachmentIdentity(attachment, facts, errors);
-        }
-
-        validateRequiredLoadingFailureAct(facts, response.attachments(), errors);
-
-        if ((response.attachments() == null || response.attachments().isEmpty())
-                && facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
-            warnings.add("Model returned no attachments");
+        if (response.attachments() != null && !response.attachments().isEmpty()) {
+            errors.add("attachments must be empty in current scope");
         }
     }
 

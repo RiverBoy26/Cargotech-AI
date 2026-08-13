@@ -21,6 +21,7 @@ import ru.sber.cargotech.ai.rag.RagSearchService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class ClaimGenerationPipelineService {
@@ -51,6 +52,13 @@ public class ClaimGenerationPipelineService {
     }
 
     public GenerateClaimPipelineResponse generate(GenerateClaimPipelineRequest request) {
+        return generate(request, null);
+    }
+
+    public GenerateClaimPipelineResponse generate(
+            GenerateClaimPipelineRequest request,
+            UUID actorUserId
+    ) {
         validateRequest(request);
 
         List<String> ragWarnings = new ArrayList<>();
@@ -63,6 +71,7 @@ public class ClaimGenerationPipelineService {
         GigaChatClient.ChatCallResult callResult = gigaChatClient.sendChatWithTrace(
                 messages,
                 enrichedRequest.caseFacts().claimId(),
+                actorUserId,
                 operationName(enrichedRequest.caseFacts().claimType())
         );
         GigaChatChatResponse chatResponse = callResult.response();
@@ -100,6 +109,7 @@ public class ClaimGenerationPipelineService {
             GigaChatClient.ChatCallResult repairCall = gigaChatClient.sendChatWithTrace(
                     repairMessages,
                     enrichedRequest.caseFacts().claimId(),
+                    actorUserId,
                     operationName(enrichedRequest.caseFacts().claimType()) + "_REPAIR"
             );
             GigaChatChatResponse repairResponse = repairCall.response();

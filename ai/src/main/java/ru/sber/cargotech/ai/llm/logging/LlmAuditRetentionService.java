@@ -8,7 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-/** Keeps LLM audit data for the configured retention window (3 years by default). */
+/** Keeps LLM audit data for the configured retention window (1 year by default). */
 @Service
 public class LlmAuditRetentionService {
 
@@ -16,7 +16,7 @@ public class LlmAuditRetentionService {
 
     private final JdbcTemplate jdbcTemplate;
 
-    @Value("${ai.audit.retention-days:1095}")
+    @Value("${ai.audit.retention-days:365}")
     private int retentionDays;
 
     public LlmAuditRetentionService(ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
