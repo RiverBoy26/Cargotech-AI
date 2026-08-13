@@ -196,21 +196,36 @@ public class LlmLogService {
 
         if (jdbcTemplate != null) {
             try {
+                // The main audit table is the masked, diagnostics-safe copy.
+                // Raw prompt/response are stored separately so they are never
+                // returned by the normal diagnostics path and can have tighter
+                // database permissions/retention controls.
                 jdbcTemplate.update("""
                         INSERT INTO cargotech.ai_llm_call_logs (
                             request_id, claim_id, operation, provider, model, prompt_version,
-                            raw_prompt, masked_prompt, raw_response, masked_response,
+                            masked_prompt, masked_response,
                             prompt_tokens, completion_tokens, total_tokens, cost_rub,
                             status, error_message, started_at, finished_at, duration_ms
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         entry.requestId(), entry.caseId(), entry.operation(), entry.provider(), entry.model(),
-                        entry.promptVersion(), entry.rawPrompt(), entry.maskedPrompt(), entry.rawResponse(),
-                        entry.maskedResponse(), entry.promptTokens(), entry.completionTokens(), entry.totalTokens(),
-                        entry.costRub(), entry.status().name(), entry.errorMessage(),
+                        entry.promptVersion(), entry.maskedPrompt(), entry.maskedResponse(),
+                        entry.promptTokens(), entry.completionTokens(), entry.totalTokens(), entry.costRub(),
+                        entry.status().name(), entry.errorMessage(),
                         entry.startedAt() == null ? null : entry.startedAt().atOffset(ZoneOffset.UTC),
                         entry.finishedAt() == null ? null : entry.finishedAt().atOffset(ZoneOffset.UTC),
                         entry.durationMs()
+                );
+
+                jdbcTemplate.update("""
+                        INSERT INTO cargotech.ai_llm_call_log_raw (
+                            request_id, raw_prompt, raw_response, created_at
+                        ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT (request_id) DO UPDATE SET
+                            raw_prompt = EXCLUDED.raw_prompt,
+                            raw_response = EXCLUDED.raw_response
+                        """,
+                        entry.requestId(), entry.rawPrompt(), entry.rawResponse()
                 );
             } catch (RuntimeException persistenceError) {
                 SQLException sqlException = findSqlException(persistenceError);

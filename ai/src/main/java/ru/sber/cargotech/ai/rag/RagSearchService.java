@@ -201,14 +201,14 @@ public class RagSearchService {
         }
 
         List<RagSearchHit> legalHits = search(
-                "ГК РФ надлежащее исполнение обязательств срок оплаты проценты статья 395 договорная неустойка транспортная экспедиция статья 801",
+                "ГК РФ статьи 309 310 314 330 395 801 надлежащее исполнение срок оплаты проценты договорная неустойка транспортная экспедиция",
                 filters(
                         "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
-                        "claim_type", "PAYMENT_DELAY",
+                        "claim_type", List.of("PAYMENT_DELAY", "ALL"),
                         "is_current", true,
                         "auto_use", true
                 ),
-                8,
+                10,
                 searchProperties.getLegalMinScore()
         );
 
@@ -217,13 +217,13 @@ public class RagSearchService {
         // must not lose legal_context while old data is still present.
         if (legalHits.isEmpty()) {
             legalHits = search(
-                    "ГК РФ надлежащее исполнение обязательств срок оплаты проценты статья 395 договорная неустойка транспортная экспедиция статья 801",
+                    "ГК РФ статьи 309 310 314 330 395 801 надлежащее исполнение срок оплаты проценты договорная неустойка транспортная экспедиция",
                     filters(
                             "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
-                            "claim_type", "PAYMENT_DELAY",
+                            "claim_type", List.of("PAYMENT_DELAY", "ALL"),
                             "is_current", true
                     ),
-                    8,
+                    10,
                     searchProperties.getLegalMinScore()
             );
         }
@@ -293,26 +293,26 @@ public class RagSearchService {
         }
 
         List<RagSearchHit> legalHits = search(
-                "ГК РФ надлежащее исполнение обязательств договорная неустойка непредоставление транспортного средства",
+                "ГК РФ статьи 309 310 314 330 797 УАТ статьи 39 40 непредоставление транспортного средства претензионный порядок перевозка груза",
                 filters(
                         "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
-                        "claim_type", "LOADING_FAILURE",
+                        "claim_type", List.of("LOADING_FAILURE", "ALL"),
                         "is_current", true,
                         "auto_use", true
                 ),
-                6,
+                10,
                 searchProperties.getLegalMinScore()
         );
 
         if (legalHits.isEmpty()) {
             legalHits = search(
-                    "ГК РФ надлежащее исполнение обязательств договорная неустойка непредоставление транспортного средства",
+                    "ГК РФ статьи 309 310 314 330 797 УАТ статьи 39 40 непредоставление транспортного средства претензионный порядок перевозка груза",
                     filters(
                             "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
-                            "claim_type", "LOADING_FAILURE",
+                            "claim_type", List.of("LOADING_FAILURE", "ALL"),
                             "is_current", true
                     ),
-                    6,
+                    10,
                     searchProperties.getLegalMinScore()
             );
         }

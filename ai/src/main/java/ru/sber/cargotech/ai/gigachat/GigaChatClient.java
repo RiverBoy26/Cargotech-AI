@@ -9,6 +9,7 @@ import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatRequest;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatResponse;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
 import ru.sber.cargotech.ai.llm.logging.LlmLogService;
+import ru.sber.cargotech.ai.security.ReversiblePromptMasker;
 
 import java.time.Instant;
 import java.util.List;
@@ -20,17 +21,20 @@ public class GigaChatClient {
     private final GigaChatAuthService authService;
     private final RestClient restClient;
     private final LlmLogService llmLogService;
+    private final ReversiblePromptMasker reversiblePromptMasker;
 
     public GigaChatClient(
             GigaChatProperties properties,
             GigaChatAuthService authService,
             RestClient.Builder restClientBuilder,
-            LlmLogService llmLogService
+            LlmLogService llmLogService,
+            ReversiblePromptMasker reversiblePromptMasker
     ) {
         this.properties = properties;
         this.authService = authService;
         this.restClient = restClientBuilder.build();
         this.llmLogService = llmLogService;
+        this.reversiblePromptMasker = reversiblePromptMasker;
     }
 
     public GigaChatChatResponse sendChat(List<GigaChatMessage> messages) {
@@ -49,9 +53,11 @@ public class GigaChatClient {
             llmLogService.ensureWithinLimits(caseId);
             String accessToken = authService.getAccessToken();
 
+            ReversiblePromptMasker.MaskedPrompt maskedPrompt = reversiblePromptMasker.mask(messages);
+
             GigaChatChatRequest request = new GigaChatChatRequest(
                     properties.getChatModel(),
-                    messages,
+                    maskedPrompt.messages(),
                     properties.getTemperature(),
                     properties.getMaxTokens()
             );
@@ -68,6 +74,8 @@ public class GigaChatClient {
             if (response == null) {
                 throw new IllegalStateException("GigaChat returned empty response");
             }
+
+            response = maskedPrompt.restore(response);
 
             llmLogService.logSuccess(
                     requestId,
