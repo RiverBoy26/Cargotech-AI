@@ -367,7 +367,15 @@ public class RuleBasedGuardrailService {
         if (isBlank(claimText) || isBlank(clauseNumber)) {
             return false;
         }
-        String marker = "(?:пункт(?:а|у|е|ом)?|п\\.)\\s*" + Pattern.quote(clauseNumber);
+
+        // Legal Russian drafting commonly groups references:
+        // "п. 8.2, 8.4 Договора" / "пп. 8.2 и 8.4".
+        // Treat every number inside such a group as an explicit citation instead
+        // of requiring a separate "п." marker before each number.
+        String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
+        String marker = "(?:пункт(?:а|у|е|ом|ы|ов)?|п\\.|пп\\.)\\s*"
+                + previousClauses
+                + Pattern.quote(clauseNumber);
         return Pattern.compile("(?iu)" + marker).matcher(claimText).find();
     }
 
@@ -499,7 +507,8 @@ public class RuleBasedGuardrailService {
             return true;
         }
 
-        String articlePattern = "(?:статья|статьи|статью|статье|статьей|статьёй|ст\\.?)\\s*"
+        String articlePattern = "(?:статья|статьи|статью|статье|статьей|статьёй|статьями|статей|ст\\.?)\\s*"
+                + "(?:\\d+(?:\\.\\d+)?\\s*(?:,|;|и)\\s*)*"
                 + Pattern.quote(articleNumber);
 
         Pattern referencePattern = Pattern.compile(
@@ -587,10 +596,23 @@ public class RuleBasedGuardrailService {
         }
 
         Set<String> result = new LinkedHashSet<>();
-        Matcher matcher = ARTICLE_REFERENCE_PATTERN.matcher(text);
-        while (matcher.find()) {
-            result.add(matcher.group(1));
+
+        // Capture both standalone references ("ст. 395") and grouped references
+        // ("ст. 309, 314 ГК РФ"). The old implementation only saw the first
+        // article in a group and falsely blocked otherwise valid legal drafting.
+        Pattern articleListPattern = Pattern.compile(
+                "(?iu)(?:^|[^\\p{L}\\p{N}])"
+                        + "(?:статья|статьи|статью|статье|статьей|статьёй|статьями|статей|ст\\.?)\\s*"
+                        + "((?:\\d+(?:\\.\\d+)?)(?:\\s*(?:,|;|и)\\s*\\d+(?:\\.\\d+)?)*)"
+        );
+        Matcher listMatcher = articleListPattern.matcher(text);
+        while (listMatcher.find()) {
+            Matcher numberMatcher = ARTICLE_NUMBER_PATTERN.matcher(listMatcher.group(1));
+            while (numberMatcher.find()) {
+                result.add(numberMatcher.group());
+            }
         }
+
         return result;
     }
 

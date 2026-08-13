@@ -471,6 +471,163 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
+    void acceptsGroupedContractAndLawCitations() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                base.backendCalculation(),
+                List.of(
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "contract-payment", "4.2", "Оплата", "Срок оплаты"
+                        ),
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "contract-payment-extra", "4.3", "Расчеты", "Порядок расчетов"
+                        )
+                ),
+                List.of(
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-309", "ГК РФ", "309", "надлежащее исполнение",
+                                "Обязательства исполняются надлежащим образом",
+                                "ст. 309 ГК РФ", "2026-08-13", "PAYMENT_DELAY"
+                        ),
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-314", "ГК РФ", "314", "срок исполнения",
+                                "Обязательство исполняется в установленный срок",
+                                "ст. 314 ГК РФ", "2026-08-13", "PAYMENT_DELAY"
+                        )
+                ),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        String text = validText()
+                .replace("п. 4.2 Договора", "п. 4.2, 4.3 Договора")
+                .replace("ст. 309 ГК РФ", "ст. 309, 314 ГК РФ");
+
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
+                text,
+                "Просрочка оплаты по договору",
+                List.of(
+                        new GenerateClaimResponse.UsedContractClause(
+                                "4.2", "contract-payment", "срок оплаты"
+                        ),
+                        new GenerateClaimResponse.UsedContractClause(
+                                "4.3", "contract-payment-extra", "порядок расчетов"
+                        )
+                ),
+                List.of(
+                        new GenerateClaimResponse.UsedLawArticle(
+                                "law-309", "ГК РФ", "309", "надлежащее исполнение"
+                        ),
+                        new GenerateClaimResponse.UsedLawArticle(
+                                "law-314", "ГК РФ", "314", "срок исполнения"
+                        )
+                ),
+                validPaymentResponse(text).backendCalculationUsed(),
+                List.of(),
+                List.of(),
+                true
+        );
+
+        GuardrailResult result = service.check(request, response);
+
+        assertThat(result.decision())
+                .withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksInventedOrderDateForPaymentDelay() {
+        String text = productionPaymentText()
+                .replace("оказаны услуги по маршруту", "по заказу № ORD-157 от 1 июня 2026 года оказаны услуги по маршруту");
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("invents an order/application date"));
+    }
+
+    @Test
+    void blocksAccountantConfirmationOverclaim() {
+        String text = validText()
+                + " Бухгалтером подтвержден факт выставления документов и наступления срока платежа.";
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("overstates accountant confirmation"));
+    }
+
+    @Test
+    void blocksResponseDeadlineUsedAsPaymentDeadline() {
+        String text = productionPaymentText()
+                .replace(
+                        "Требуем оплатить задолженность.\nПисьменный ответ направить в течение 10 календарных дней",
+                        "Требуем оплатить задолженность в течение 10 календарных дней.\nПисьменный ответ направить в течение 10 календарных дней"
+                );
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("uses contract.claim_response_days as a payment deadline"));
+    }
+
+    @Test
+    void blocksLegalInterestDescribedAsPenalty() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                new GenerateClaimRequest.BackendCalculation(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.LEGAL_INTEREST,
+                        "ст. 395 ГК РФ",
+                        10,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        "RUB",
+                        "backend"
+                ),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        GenerateClaimResponse baseResponse = validPaymentResponse(validText());
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                baseResponse.claimType(),
+                baseResponse.claimText(),
+                baseResponse.summaryForLawyer(),
+                baseResponse.usedContractClauses(),
+                baseResponse.usedLawArticles(),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.LEGAL_INTEREST,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        10,
+                        "RUB"
+                ),
+                List.of(),
+                baseResponse.warnings(),
+                true
+        );
+
+        GuardrailResult result = service.check(request, response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("describes LEGAL_INTEREST"));
+    }
+
+    @Test
     void blocksLawArticleMentionedOutsideLegalContext() {
         String text = validText() + " Дополнительно применена ст. 999 ГК РФ.";
 
@@ -538,8 +695,8 @@ class RuleBasedGuardrailServiceTest {
     @Test
     void blocksMissingContractualResponseDeadline() {
         String text = productionPaymentText().replace(
-                "Требуем оплатить задолженность и направить письменный ответ в течение 10 календарных дней с даты получения настоящей претензии.\n",
-                "Требуем оплатить задолженность.\n"
+                "Письменный ответ направить в течение 10 календарных дней с даты получения настоящей претензии.\n",
+                ""
         );
 
         GuardrailResult result = service.check(
@@ -647,7 +804,8 @@ class RuleBasedGuardrailServiceTest {
                 Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
                 неустойка — 2 400 руб., итого к оплате — 242 400 руб.
                 Правовое основание: ст. 309 ГК РФ.
-                Требуем оплатить задолженность и направить письменный ответ в течение 10 календарных дней с даты получения настоящей претензии.
+                Требуем оплатить задолженность.
+                Письменный ответ направить в течение 10 календарных дней с даты получения настоящей претензии.
                 Юрист __________ Дмитриев Павел Алексеевич
                 """;
     }

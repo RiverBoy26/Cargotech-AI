@@ -159,13 +159,14 @@ public class ClaimGenerationPipelineService {
 
         if (result.decision() == GuardrailDecision.BLOCK) {
             log.warn(
-                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errorCount={}, warningCount={}",
+                    "Claim guardrail: stage={}, caseId={}, requestId={}, decision={}, errorCount={}, warningCount={}, errors={}",
                     stage,
                     caseId,
                     requestId,
                     result.decision(),
                     result.errors() == null ? 0 : result.errors().size(),
-                    result.warnings() == null ? 0 : result.warnings().size()
+                    result.warnings() == null ? 0 : result.warnings().size(),
+                    result.errors() == null ? List.of() : result.errors()
             );
         } else {
             log.info(
@@ -214,14 +215,18 @@ public class ClaimGenerationPipelineService {
                 8. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
                 9. Не используй термин «непредставление транспортного средства».
                 10. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
-                11. Если legal_context не пуст, выбери минимум одну применимую норму, дословно вставь её citation в claim_text и добавь ту же норму в used_law_articles.
+                11. Если legal_context не пуст, выбери минимум одну применимую норму из него, процитируй ту же статью и закон в claim_text и добавь её в used_law_articles. Естественный порядок слов допустим.
                 12. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
-                13. Для PAYMENT_DELAY используй банковские реквизиты только из creditor.bank_details; в раздел «Приложения» и attachments включи только документы с подтверждённым идентификатором и обязательный расчёт задолженности.
-                14. В claim_text не должно быть ISO-дат YYYY-MM-DD: преобразуй их в русскую письменную форму «07 августа 2026 года», не меняя саму календарную дату.
-                15. В claim_text не должно быть технических enum/кодов UNPAID, PAID, PARTIALLY_PAID, UNKNOWN, RUB, CONTRACT_PENALTY, NONE. Вырази их смысл обычным русским языком.
-                16. Денежные суммы в claim_text форматируй для документа: разделяй тысячи пробелами и не используй десятичную точку перед словом «рублей»; например «100 000 рублей 00 копеек». backend_calculation_used не изменяй.
-                17. Правовую citation вставляй в естественную фразу «В соответствии со <citation> ...».
-                18. Верни только валидный JSON без markdown и текста вне JSON.
+                13. Для PAYMENT_DELAY attachments должен быть строго []; не добавляй раздел «Приложения», банковские реквизиты и фразы об их отсутствии.
+                14. Если contract_context содержит нумерованные пункты, относящиеся к использованным условиям, процитируй их в claim_text и укажи те же chunk_id/clause_number в used_contract_clauses.
+                15. shipment.order_number — только номер. Не добавляй к нему «от <дата>»: отдельной даты заказа/заявки во входе нет.
+                16. payment_confirmed_by_accountant подтверждает только статус оплаты. Не приписывай бухгалтеру подтверждение выставления/получения документов или наступления срока платежа.
+                17. Если backend_calculation.penalty_type = LEGAL_INTEREST, называй начисление процентами по ст. 395 ГК РФ / процентами за пользование чужими денежными средствами. Не называй его неустойкой, штрафом или пеней.
+                18. contract.claim_response_days — срок письменного ответа, а не новый срок оплаты. Требование погасить задолженность и срок ответа сформулируй раздельно.
+                19. В claim_text не должно быть ISO-дат YYYY-MM-DD: преобразуй их в русскую письменную форму «07 августа 2026 года», не меняя саму календарную дату.
+                20. В claim_text не должно быть технических enum/кодов UNPAID, PAID, PARTIALLY_PAID, UNKNOWN, RUB, CONTRACT_PENALTY, NONE. Вырази их смысл обычным русским языком.
+                21. Денежные суммы в claim_text форматируй для документа: разделяй тысячи пробелами и не используй десятичную точку перед словом «рублей»; например «100 000 рублей 00 копеек». backend_calculation_used не изменяй.
+                22. Верни только валидный JSON без markdown и текста вне JSON.
                 """.formatted(String.join("\n- ", errors == null ? List.of() : errors))
         ));
         return messages;

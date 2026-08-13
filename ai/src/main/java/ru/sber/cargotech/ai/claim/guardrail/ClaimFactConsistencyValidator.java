@@ -113,6 +113,7 @@ public class ClaimFactConsistencyValidator {
 
         if (facts.claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
             validatePaymentDelayFacts(facts, text, errors);
+            validatePaymentDelaySemantics(facts, request.backendCalculation(), text, errors);
         } else if (facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
             validateLoadingFailureFacts(facts, request.backendCalculation(), text, narrative, errors, warnings);
         }
@@ -269,6 +270,77 @@ public class ClaimFactConsistencyValidator {
             errors.add("claim_text contains a dangling act number marker while shipment.act_number is empty");
         }
         requireTextValue(text, shipment.route(), "shipment.route", errors);
+    }
+
+    private void validatePaymentDelaySemantics(
+            GenerateClaimRequest.CaseFacts facts,
+            GenerateClaimRequest.BackendCalculation calculation,
+            String text,
+            List<String> errors
+    ) {
+        if (facts == null || text == null) {
+            return;
+        }
+
+        GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
+
+        // There is no order/application date in GenerateClaimRequest.
+        // A model must not turn order_number into "заказ № ... от <invented date>".
+        if (shipment != null && hasText(shipment.orderNumber())) {
+            String orderDatePattern = "(?isu)(?:заказ|заявк)\\p{L}*[^.!?\\n]{0,100}"
+                    + "(?:№\\s*)?" + Pattern.quote(shipment.orderNumber())
+                    + "[^.!?\\n]{0,60}\\sот\\s+\\d{1,2}\\s+"
+                    + "(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)"
+                    + "\\s+\\d{4}";
+            if (Pattern.compile(orderDatePattern).matcher(text).find()) {
+                errors.add("claim_text invents an order/application date absent from case_facts.shipment");
+            }
+        }
+
+        // Accountant confirmation in this workflow confirms the payment status
+        // (non-payment/partial payment), not issuance/receipt of documents or the
+        // legal moment when the payment term started.
+        if (facts.payment() != null && Boolean.TRUE.equals(facts.payment().paymentConfirmedByAccountant())) {
+            Pattern accountantOverclaim = Pattern.compile(
+                    "(?isu)бухгалтер\\p{L}*[^.!?\\n]{0,220}"
+                            + "(?:выставлен\\p{L}*\\s+документ\\p{L}*"
+                            + "|получен\\p{L}*\\s+(?:полн\\p{L}*\\s+)?комплект\\p{L}*\\s+документ\\p{L}*"
+                            + "|наступлен\\p{L}*\\s+срок\\p{L}*\\s+(?:платеж\\p{L}*|оплат\\p{L}*))"
+            );
+            if (accountantOverclaim.matcher(text).find()) {
+                errors.add("claim_text overstates accountant confirmation beyond the confirmed payment status");
+            }
+        }
+
+        // ARTICLE_395/LEGAL_INTEREST is interest for use of another's money,
+        // not contractual penalty / fine / late fee.
+        if (calculation != null
+                && calculation.penaltyType() == GenerateClaimRequest.PenaltyType.LEGAL_INTEREST
+                && calculation.penaltyAmount() != null
+                && calculation.penaltyAmount().compareTo(BigDecimal.ZERO) > 0) {
+            Pattern wrongInterestTerm = Pattern.compile(
+                    "(?iu)(?<![\\p{L}\\p{N}_])(?:неустойк\\p{L}*|штраф\\p{L}*|пен(?:я|и|ей|ю))(?![\\p{L}\\p{N}_])"
+            );
+            if (wrongInterestTerm.matcher(text).find()) {
+                errors.add("claim_text describes LEGAL_INTEREST as contractual penalty/fine/late fee");
+            }
+        }
+
+        // claim_response_days is the deadline for a written response to the
+        // claim. It must not silently become a new payment deadline.
+        Integer responseDays = facts.contract() == null ? null : facts.contract().claimResponseDays();
+        if (responseDays != null && responseDays > 0) {
+            Pattern paymentDeadline = Pattern.compile(
+                    "(?iu)(?:оплат\\p{L}*|перечисл\\p{L}*|погас\\p{L}*)"
+                            + "[^.!?\\n]{0,180}"
+                            + "(?:в\\s+течение\\s+)?"
+                            + Pattern.quote(String.valueOf(responseDays))
+                            + "\\s+календарн\\p{L}*\\s+дн\\p{L}*"
+            );
+            if (paymentDeadline.matcher(text).find()) {
+                errors.add("claim_text incorrectly uses contract.claim_response_days as a payment deadline");
+            }
+        }
     }
 
     private void validateLoadingFailureFacts(
