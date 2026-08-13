@@ -3,6 +3,7 @@ package ru.sber.cargotech.claim.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.client.PaymentClient;
 import ru.sber.cargotech.claim.dto.ClaimCalculationResponse;
@@ -47,7 +48,7 @@ public class ClaimCalculationService {
             .orElseThrow(() -> ClaimException.notFound("Расчёт по претензии не найден"));
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ClaimCalculationResponse recalculate(CurrentClaimUser user, UUID claimId) {
         log.debug("Запуск перерасчёта: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
 

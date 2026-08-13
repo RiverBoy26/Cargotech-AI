@@ -507,7 +507,7 @@ public class ClaimService {
             );
         }
         var calculation = calculationService.recalculate(user, claimId);
-        if (calculation.remainingDebt() == null || calculation.remainingDebt().signum() <= 0) {
+        if (calculation.totalAmount() == null || calculation.totalAmount().signum() <= 0) {
             throw ClaimException.conflict("Отправка заблокирована: задолженность погашена");
         }
         SendChecklistResponse checklist = buildSendChecklist(claim);
@@ -558,7 +558,9 @@ public class ClaimService {
 
     private SendChecklistResponse buildSendChecklist(ClaimEntity claim) {
         Map<String, Boolean> checks = new LinkedHashMap<>();
-        checks.put("debt", claim.getPrincipalDebt() != null && claim.getPrincipalDebt().signum() > 0);
+        BigDecimal outstandingAmount = safeAmount(claim.getPrincipalDebt())
+            .add(safeAmount(claim.getPenaltyAmount()));
+        checks.put("debt", outstandingAmount.signum() > 0);
         checks.put("penaltyCalculation", claim.getPenaltyAmount() != null);
         checks.put("partyDetails", claim.getCreditorId() != null && claim.getDebtorId() != null);
         checks.put("contractReferences", claim.getContractId() != null);
@@ -710,7 +712,7 @@ public class ClaimService {
             throw ClaimException.conflict("Нельзя отметить оплату по отменённой или закрытой в суде претензии");
         }
         var calculation = calculationService.recalculate(user, claimId);
-        if (calculation.remainingDebt() == null || calculation.remainingDebt().signum() > 0) {
+        if (calculation.totalAmount() == null || calculation.totalAmount().signum() > 0) {
             throw ClaimException.conflict("Нельзя отметить претензию оплаченной: задолженность погашена не полностью");
         }
         return closeAsPaid(
@@ -728,8 +730,8 @@ public class ClaimService {
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         var calculation = calculationService.recalculate(user, claimId);
 
-        if (calculation.remainingDebt() == null
-                || calculation.remainingDebt().signum() > 0
+        if (calculation.totalAmount() == null
+                || calculation.totalAmount().signum() > 0
                 || CLOSED_STATUSES.contains(claim.getStatus())) {
             return;
         }
@@ -933,6 +935,10 @@ public class ClaimService {
             systemActor ? systemActorLabel(claim) : userFullName(history.getChangedBy()),
             history.getChangedAt()
         );
+    }
+
+    private static BigDecimal safeAmount(BigDecimal amount) {
+        return amount == null ? BigDecimal.ZERO : amount;
     }
 
     private String systemActorLabel(ClaimEntity claim) {

@@ -76,7 +76,7 @@ class ClaimServiceSendOrderTest {
                 .thenReturn(Optional.of(claim));
         when(calculationService.recalculate(user, claimId))
                 .thenReturn(calculation);
-        when(calculation.remainingDebt()).thenReturn(new java.math.BigDecimal("100.00"));
+        when(calculation.totalAmount()).thenReturn(new java.math.BigDecimal("100.00"));
 
         ClaimService service = new ClaimService(
                 claimRepository,
@@ -123,7 +123,7 @@ class ClaimServiceSendOrderTest {
         ClaimCalculationResponse calculation = org.mockito.Mockito.mock(
                 ClaimCalculationResponse.class
         );
-        when(calculation.remainingDebt()).thenReturn(java.math.BigDecimal.ZERO);
+        when(calculation.totalAmount()).thenReturn(java.math.BigDecimal.ZERO);
         when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
                 .thenReturn(Optional.of(claim));
         when(calculationService.recalculate(user, claimId)).thenReturn(calculation);
