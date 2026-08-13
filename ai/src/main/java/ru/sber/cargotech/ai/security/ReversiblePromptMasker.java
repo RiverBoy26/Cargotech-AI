@@ -35,7 +35,10 @@ public class ReversiblePromptMasker {
     private static final Pattern VEHICLE_NUMBER = Pattern.compile(
             "(?iu)(?<![А-ЯA-Z0-9])[АВЕКМНОРСТУХABEKMHOPCTYX]\\s?\\d{3}\\s?[АВЕКМНОРСТУХABEKMHOPCTYX]{2}\\s?\\d{2,3}(?![А-ЯA-Z0-9])"
     );
-    private static final Pattern PLACEHOLDER = Pattern.compile("__CT_PII_[A-Z_]+_\\d{3}__");
+    private static final Pattern PLACEHOLDER = Pattern.compile("__CTP_\\d{3}__");
+    private static final Pattern RESERVED_PLACEHOLDER = Pattern.compile(
+            "(?:__CTP_\\d{3}__|__CT_PII_[A-Z_]+_\\d{3}__)"
+    );
 
     private static final List<String> STRUCTURED_FIELDS = List.of(
             "name",
@@ -68,6 +71,13 @@ public class ReversiblePromptMasker {
                 .filter(message -> message != null && message.content() != null)
                 .map(GigaChatMessage::content)
                 .reduce("", (left, right) -> left + "\n" + right);
+
+        Matcher reservedInInput = RESERVED_PLACEHOLDER.matcher(all);
+        if (reservedInInput.find()) {
+            throw new IllegalArgumentException(
+                    "Prompt contains reserved sensitive-data placeholder syntax: " + reservedInInput.group()
+            );
+        }
 
         collectStructuredValues(all, originalToPlaceholder);
         collectMatches(all, EMAIL, "EMAIL", originalToPlaceholder);
@@ -134,8 +144,11 @@ public class ReversiblePromptMasker {
         if (value == null || value.isBlank() || values.containsKey(value)) {
             return;
         }
-        String safeCategory = category.replaceAll("[^A-Z0-9_]+", "_");
-        String placeholder = "__CT_PII_" + safeCategory + "_" + String.format("%03d", values.size() + 1) + "__";
+        // The category is intentionally not encoded in the provider-visible token.
+        // Semantic placeholder names such as CITY/NAME encouraged the model to
+        // invent or rename placeholders (for example __CT_PII_CITY_001__).
+        // Field names and surrounding JSON already carry the semantic meaning.
+        String placeholder = "__CTP_" + String.format("%03d", values.size() + 1) + "__";
         values.put(value, placeholder);
     }
 
@@ -143,6 +156,31 @@ public class ReversiblePromptMasker {
             List<GigaChatMessage> messages,
             Map<String, String> reverseMap
     ) {
+        private static final String PLACEHOLDER_INSTRUCTION = """
+                ВАЖНОЕ ПРАВИЛО КОНФИДЕНЦИАЛЬНОСТИ:
+                Токены вида __CTP_001__ являются непрозрачными неизменяемыми значениями.
+                Если такой токен нужен в ответе, копируй его посимвольно и целиком.
+                Не создавай новые токены, не переименовывай, не перенумеровывай,
+                не разделяй и не объединяй существующие токены.
+                Не пытайся угадывать скрытые значения.
+                """;
+
+        public List<GigaChatMessage> providerMessages() {
+            if (messages == null || messages.isEmpty()) {
+                return List.of();
+            }
+
+            List<GigaChatMessage> result = new ArrayList<>(messages.size() + 1);
+            result.add(new GigaChatMessage("system", PLACEHOLDER_INSTRUCTION));
+
+            for (GigaChatMessage message : messages) {
+                if (message != null) {
+                    result.add(message);
+                }
+            }
+            return List.copyOf(result);
+        }
+
         public String restore(String content) {
             if (content == null || content.isBlank() || reverseMap == null || reverseMap.isEmpty()) {
                 ensureNoUnknownPlaceholders(content);
@@ -181,7 +219,7 @@ public class ReversiblePromptMasker {
             if (content == null) {
                 return;
             }
-            Matcher matcher = PLACEHOLDER.matcher(content);
+            Matcher matcher = RESERVED_PLACEHOLDER.matcher(content);
             if (matcher.find()) {
                 throw new IllegalStateException(
                         "LLM response contains unresolved sensitive-data placeholder: " + matcher.group()

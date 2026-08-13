@@ -57,7 +57,7 @@ public class GigaChatClient {
 
             GigaChatChatRequest request = new GigaChatChatRequest(
                     properties.getChatModel(),
-                    maskedPrompt.messages(),
+                    maskedPrompt.providerMessages(),
                     properties.getTemperature(),
                     properties.getMaxTokens()
             );
