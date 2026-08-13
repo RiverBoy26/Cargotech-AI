@@ -171,13 +171,38 @@ public class ReversiblePromptMasker {
             }
 
             List<GigaChatMessage> result = new ArrayList<>(messages.size() + 1);
-            result.add(new GigaChatMessage("system", PLACEHOLDER_INSTRUCTION));
 
-            for (GigaChatMessage message : messages) {
-                if (message != null) {
-                    result.add(message);
-                }
+            int startIndex = 0;
+            GigaChatMessage first = messages.getFirst();
+
+            if (first != null && "system".equalsIgnoreCase(first.role())) {
+                String existingSystem = first.content() == null ? "" : first.content().trim();
+                String mergedSystem = existingSystem.isBlank()
+                        ? PLACEHOLDER_INSTRUCTION
+                        : PLACEHOLDER_INSTRUCTION + "\n\n" + existingSystem;
+
+                // GigaChat accepts a system message only in the first position.
+                // Merge our masking instruction into the existing first system
+                // message instead of creating a second system message.
+                result.add(new GigaChatMessage("system", mergedSystem));
+                startIndex = 1;
+            } else {
+                result.add(new GigaChatMessage("system", PLACEHOLDER_INSTRUCTION));
             }
+
+            for (int i = startIndex; i < messages.size(); i++) {
+                GigaChatMessage message = messages.get(i);
+                if (message == null) {
+                    continue;
+                }
+                if ("system".equalsIgnoreCase(message.role())) {
+                    throw new IllegalArgumentException(
+                            "System message is allowed only as the first provider message"
+                    );
+                }
+                result.add(message);
+            }
+
             return List.copyOf(result);
         }
 

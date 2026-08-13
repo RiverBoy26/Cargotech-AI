@@ -148,4 +148,52 @@ class ReversiblePromptMaskerTest {
                 .isEqualTo("Адрес: г. Санкт-Петербург, ул. Ленина, 1");
     }
 
+
+    @Test
+    void mergesMaskingInstructionIntoExistingFirstSystemMessage() {
+        var masked = masker.mask(List.of(
+                new GigaChatMessage("system", "Ты формируешь юридическую претензию."),
+                new GigaChatMessage("user", "{\"name\":\"ООО Тест\"}")
+        ));
+
+        List<GigaChatMessage> provider = masked.providerMessages();
+
+        assertThat(provider).hasSize(2);
+        assertThat(provider.get(0).role()).isEqualTo("system");
+        assertThat(provider.get(0).content())
+                .contains("непрозрачными неизменяемыми")
+                .contains("Ты формируешь юридическую претензию.");
+        assertThat(provider.get(1).role()).isEqualTo("user");
+        assertThat(provider.stream().filter(message -> "system".equals(message.role())).count())
+                .isEqualTo(1);
+    }
+
+    @Test
+    void prependsSingleSystemMessageWhenOriginalPromptHasNone() {
+        var masked = masker.mask(List.of(
+                new GigaChatMessage("user", "{\"name\":\"ООО Тест\"}")
+        ));
+
+        List<GigaChatMessage> provider = masked.providerMessages();
+
+        assertThat(provider).hasSize(2);
+        assertThat(provider.get(0).role()).isEqualTo("system");
+        assertThat(provider.get(1).role()).isEqualTo("user");
+        assertThat(provider.stream().filter(message -> "system".equals(message.role())).count())
+                .isEqualTo(1);
+    }
+
+    @Test
+    void rejectsSecondSystemMessageBeforeCallingProvider() {
+        var masked = masker.mask(List.of(
+                new GigaChatMessage("system", "Первое системное сообщение"),
+                new GigaChatMessage("user", "Запрос"),
+                new GigaChatMessage("system", "Недопустимое второе системное сообщение")
+        ));
+
+        assertThatThrownBy(masked::providerMessages)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("System message is allowed only as the first");
+    }
+
 }
