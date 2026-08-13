@@ -73,6 +73,18 @@ public class ClaimFactConsistencyValidator {
             "на", "в", "во", "у", "д", "дом", "корп", "корпус",
             "стр", "строен"
     );
+    private static final Pattern UNSUPPORTED_CONTACT_FIELD_PATTERN = Pattern.compile(
+            "(?imu)^\\s*(?:телефон|тел\\.?|e-?mail|email|электронная\\s+почта|факс|сайт)\\s*:"
+    );
+    private static final Pattern UNSUPPORTED_REPRESENTATIVE_PATTERN = Pattern.compile(
+            "(?iu)(?:^|[^\\p{L}])в\\s+лице(?:[^\\p{L}]|$)"
+                    + "|(?:^|[^\\p{L}])уполномоченн\\p{L}*\\s+лиц\\p{L}*(?:[^\\p{L}]|$)"
+    );
+    private static final Pattern STANDALONE_DOCUMENT_PLACE_PATTERN = Pattern.compile(
+            "(?imu)^\\s*г\\.\\s*[А-ЯЁ][А-Яа-яЁё .\\-]{1,80}\\s*$"
+    );
+    private static final Pattern ADDRESS_LABEL_PATTERN = Pattern.compile("(?iu)адрес\\s*:");
+
     private static final int ADDRESS_TOKEN_WINDOW = 20;
     private static final int TIME_WINDOW_MAX_DISTANCE = 120;
 
@@ -114,6 +126,7 @@ public class ClaimFactConsistencyValidator {
         if (facts.claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
             validatePaymentDelayFacts(facts, text, errors);
             validatePaymentDelaySemantics(facts, request.backendCalculation(), text, errors);
+            validatePaymentDelayPresentation(text, errors);
         } else if (facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
             validateLoadingFailureFacts(facts, request.backendCalculation(), text, narrative, errors, warnings);
         }
@@ -340,6 +353,33 @@ public class ClaimFactConsistencyValidator {
             if (paymentDeadline.matcher(text).find()) {
                 errors.add("claim_text incorrectly uses contract.claim_response_days as a payment deadline");
             }
+        }
+    }
+
+    private void validatePaymentDelayPresentation(String text, List<String> errors) {
+        if (!hasText(text)) {
+            return;
+        }
+
+        if (UNSUPPORTED_CONTACT_FIELD_PATTERN.matcher(text).find()) {
+            errors.add("claim_text contains unsupported contact field not present in case_facts");
+        }
+
+        if (UNSUPPORTED_REPRESENTATIVE_PATTERN.matcher(text).find()) {
+            errors.add("claim_text contains unsupported party representative wording");
+        }
+
+        if (STANDALONE_DOCUMENT_PLACE_PATTERN.matcher(text).find()) {
+            errors.add("claim_text invents a standalone document place not present in case_facts");
+        }
+
+        Matcher addressMatcher = ADDRESS_LABEL_PATTERN.matcher(text);
+        int addressLabels = 0;
+        while (addressMatcher.find()) {
+            addressLabels++;
+        }
+        if (addressLabels > 2) {
+            errors.add("claim_text duplicates party addresses");
         }
     }
 

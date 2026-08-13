@@ -360,6 +360,20 @@ public class RuleBasedGuardrailService {
                     && !containsContractClauseReference(response.claimText(), used.clauseNumber())) {
                 errors.add("claim_text does not cite used contract clause: " + used.clauseNumber());
             }
+
+            if (!isBlank(used.clauseNumber())
+                    && request.caseFacts() != null
+                    && request.caseFacts().claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                    && request.caseFacts().contract() != null
+                    && !isBlank(request.caseFacts().contract().contractNumber())
+                    && !containsClauseAndContractNumberInSameSentence(
+                            response.claimText(),
+                            used.clauseNumber(),
+                            request.caseFacts().contract().contractNumber()
+                    )) {
+                errors.add("claim_text contract clause citation must include contract number in the same sentence: "
+                        + used.clauseNumber());
+            }
         }
     }
 
@@ -377,6 +391,35 @@ public class RuleBasedGuardrailService {
                 + previousClauses
                 + Pattern.quote(clauseNumber);
         return Pattern.compile("(?iu)" + marker).matcher(claimText).find();
+    }
+
+    private boolean containsClauseAndContractNumberInSameSentence(
+            String claimText,
+            String clauseNumber,
+            String contractNumber
+    ) {
+        if (isBlank(claimText) || isBlank(clauseNumber) || isBlank(contractNumber)) {
+            return false;
+        }
+
+        String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
+        String clauseMarker = "(?:пункт(?:а|у|е|ом|ы|ов)?|п\\.|пп\\.)\\s*"
+                + previousClauses
+                + Pattern.quote(clauseNumber);
+        String contractMarker = "(?:договор\\p{L}*\\s*)?(?:№\\s*)?"
+                + Pattern.quote(contractNumber);
+
+        // Clause numbers (4.2) and contract dates (10.01.2026) themselves
+        // contain dots, so a dot cannot be used as a sentence delimiter here.
+        // Require both markers on the same logical line instead. This still
+        // enforces a local, human-readable citation without rejecting normal
+        // Russian legal formatting.
+        Pattern linePattern = Pattern.compile(
+                "(?iu)(?=[^\\n]*" + clauseMarker + ")"
+                        + "(?=[^\\n]*" + contractMarker + ")"
+                        + "[^\\n]+"
+        );
+        return linePattern.matcher(claimText).find();
     }
 
     private void validateUsedLawArticles(

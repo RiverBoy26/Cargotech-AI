@@ -1015,4 +1015,50 @@ class RuleBasedGuardrailServiceTest {
                 Правовое основание: ст. 309 ГК РФ.
                 """;
     }
+
+    @Test
+    void blocksUnsupportedPartyHeaderNoiseForPaymentDelay() {
+        String text = productionPaymentText()
+                .replace(
+                        "От: ООО Экспедитор, ИНН 7800000000.",
+                        "г. Барнаул\nОт: ООО Экспедитор, ИНН 7800000000, адрес: Санкт-Петербург,\n"
+                                + "в лице Юриста Дмитриев Павел Алексеевич,\n"
+                                + "адрес: Санкт-Петербург,\nтелефон:"
+                )
+                .replace(
+                        "Кому: ООО Клиент, ИНН 7700000000.",
+                        "Кому: ООО Клиент, ИНН 7700000000, адрес: Москва,\n"
+                                + "в лице уполномоченного лица,\nадрес: Москва,\nтелефон:"
+                );
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("unsupported contact field"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("unsupported party representative"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("standalone document place"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("duplicates party addresses"));
+    }
+
+    @Test
+    void blocksPaymentClauseCitationWithoutContractNumberInSameSentence() {
+        String text = productionPaymentText().replace(
+                "По п. 4.2 Договора №45/2026 от 10.01.2026 оказаны услуги",
+                "По п. 4.2 Договора оказаны услуги"
+        );
+
+        GuardrailResult result = service.check(
+                productionPaymentRequest(),
+                productionPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains(
+                "contract clause citation must include contract number"
+        ));
+    }
+
 }
