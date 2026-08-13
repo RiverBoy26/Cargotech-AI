@@ -1,0 +1,269 @@
+/*
+ * Contract review UI only.
+ * Intentionally loaded AFTER admin_dashboard.css and scoped to #tab_panel_contracts,
+ * so generic admin tables / parties / shipments keep the current frontend styles.
+ */
+
+#tab_panel_contracts .contract_review_btn {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+#tab_panel_contracts .contract_extraction_panel {
+  padding: 20px;
+  border-top: 1px solid #e6e9ed;
+  background: #fffaf6;
+  text-align: left;
+}
+
+#tab_panel_contracts .contract_extraction_title {
+  margin-bottom: 14px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+#tab_panel_contracts #contract_form .add_user_form_fields {
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 2fr);
+}
+
+#tab_panel_contracts .contract_value_missing,
+#tab_panel_contracts .contract_source_missing {
+  color: #8A5A3B;
+}
+
+#tab_panel_contracts .contract_review_hint {
+  margin: 0 0 16px;
+  color: #59636f;
+}
+
+#tab_panel_contracts .contract_review_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#tab_panel_contracts .contract_extraction_item {
+  margin-bottom: 0;
+  padding: 12px;
+  border: 1px solid #e6e9ed;
+  border-radius: 8px;
+  background: #fff;
+}
+
+#tab_panel_contracts .contract_candidate_label,
+#tab_panel_contracts .contract_clause_item label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#tab_panel_contracts .contract_candidate_reliability {
+  display: block;
+  margin-top: 8px;
+  color: #59636f;
+}
+
+#tab_panel_contracts .contract_manual_badge,
+#tab_panel_contracts .contract_missing_badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+#tab_panel_contracts .contract_manual_badge {
+  color: #315a8a;
+  background: #e7f0fb;
+}
+
+#tab_panel_contracts .contract_missing_badge {
+  color: #8A5A3B;
+  background: #fff1e8;
+}
+
+#tab_panel_contracts .contract_source_missing {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+#tab_panel_contracts .contract_clause_item {
+  grid-column: 1 / -1;
+}
+
+#tab_panel_contracts .contract_clause_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+#tab_panel_contracts .contract_clause_grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+#tab_panel_contracts .contract_clause_remove {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+#tab_panel_contracts .contract_clause_add {
+  margin-top: 14px;
+}
+
+#tab_panel_contracts .contract_extraction_item blockquote {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid #e7a477;
+  color: #59636f;
+}
+
+#tab_panel_contracts .contract_clause_section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e6e9ed;
+}
+
+#tab_panel_contracts .contract_clause_section_header h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+#tab_panel_contracts .contract_clause_section_header p,
+#tab_panel_contracts .contract_clause_empty {
+  margin: 0 0 12px;
+  color: #59636f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#tab_panel_contracts .contract_clause_list {
+  display: grid;
+  gap: 12px;
+}
+
+#tab_panel_contracts .contract_optional_badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #59636f;
+  background: #f1f3f5;
+}
+
+#tab_panel_contracts .contract_payment_schedule_add {
+  margin-top: 14px;
+}
+
+#tab_panel_contracts .contract_payment_schedule_section {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #eadfd6;
+  border-radius: 10px;
+  background: #fffaf6;
+}
+
+#tab_panel_contracts .contract_payment_schedule_header h4 {
+  margin: 0 0 5px;
+  font-size: 15px;
+}
+
+#tab_panel_contracts .contract_payment_schedule_header p {
+  margin: 0 0 12px;
+  color: #59636f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#tab_panel_contracts .contract_payment_schedule_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#tab_panel_contracts .contract_weekday_picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 44px;
+  align-items: center;
+}
+
+#tab_panel_contracts .contract_weekday_option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #f0b487;
+  border-radius: 10px;
+  background: #fff7f1;
+  cursor: pointer;
+  user-select: none;
+}
+
+#tab_panel_contracts .contract_weekday_option input {
+  margin: 0;
+}
+
+#tab_panel_contracts .contract_weekday_option:has(input:checked) {
+  background: #ffe9d8;
+  border-color: #f36a21;
+}
+
+#tab_panel_contracts .contract_fallback_badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #73510f;
+  background: #fff4cf;
+}
+
+#tab_panel_contracts .contract_source_fallback {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #73510f;
+}
+
+#tab_panel_contracts .contract_special_terms_add {
+  margin-top: 14px;
+}
+
+#tab_panel_contracts .contract_special_term_group + .contract_special_term_group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eadfd6;
+}
+
+#tab_panel_contracts .contract_special_term_group > strong {
+  display: block;
+  margin-bottom: 10px;
+}
+
+#tab_panel_contracts #contract_file::file-selector-button {
+  margin-right: 20px;
+  padding: 12px 18px;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  background: #F26522;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#tab_panel_contracts #contract_file::file-selector-button:hover {
+  background: #D9531A;
+}
+
+@media (max-width: 760px) {
+  #tab_panel_contracts #contract_form .add_user_form_fields,
+  #tab_panel_contracts .contract_review_grid,
+  #tab_panel_contracts .contract_clause_grid,
+  #tab_panel_contracts .contract_payment_schedule_grid {
+    grid-template-columns: 1fr;
+  }
+}

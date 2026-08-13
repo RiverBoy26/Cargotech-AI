@@ -566,6 +566,13 @@ async function getContractExtraction(contractId) {
   return apiRequest(`/contracts/${contractId}/extraction`);
 }
 
+async function submitContractExtraction(contractId, candidates) {
+  return apiRequest(`/contracts/${contractId}/extraction/results`, {
+    method: 'POST',
+    body: JSON.stringify({ candidates }),
+  });
+}
+
 async function confirmContractExtraction(contractId) {
   return apiRequest(`/contracts/${contractId}/extraction/confirm`, { method: 'POST' });
 }
