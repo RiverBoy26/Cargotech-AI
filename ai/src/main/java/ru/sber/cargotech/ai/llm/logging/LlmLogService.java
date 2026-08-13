@@ -16,6 +16,7 @@ import java.math.RoundingMode;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -206,8 +207,10 @@ public class LlmLogService {
                         entry.requestId(), entry.caseId(), entry.operation(), entry.provider(), entry.model(),
                         entry.promptVersion(), entry.rawPrompt(), entry.maskedPrompt(), entry.rawResponse(),
                         entry.maskedResponse(), entry.promptTokens(), entry.completionTokens(), entry.totalTokens(),
-                        entry.costRub(), entry.status().name(), entry.errorMessage(), entry.startedAt(),
-                        entry.finishedAt(), entry.durationMs()
+                        entry.costRub(), entry.status().name(), entry.errorMessage(),
+                        entry.startedAt() == null ? null : entry.startedAt().atOffset(ZoneOffset.UTC),
+                        entry.finishedAt() == null ? null : entry.finishedAt().atOffset(ZoneOffset.UTC),
+                        entry.durationMs()
                 );
             } catch (RuntimeException persistenceError) {
                 SQLException sqlException = findSqlException(persistenceError);
