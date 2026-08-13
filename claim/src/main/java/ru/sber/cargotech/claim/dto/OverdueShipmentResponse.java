@@ -10,6 +10,7 @@ public record OverdueShipmentResponse(
     UUID shipmentId,
     String shipmentNumber,
     String clientName,
+    String clientInn,
     String expeditorName,
     BigDecimal shipmentAmount,
     BigDecimal paidAmount,

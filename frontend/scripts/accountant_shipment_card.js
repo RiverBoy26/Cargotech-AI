@@ -29,8 +29,8 @@ async function initAccountantShipmentCard() {
     setAccountantCardText('shipment_client', claim.debtorName);
     setAccountantCardText('shipment_expeditor', claim.creditorName);
     setAccountantCardText('shipment_amount', formatMoney(shipment.shipmentAmount));
-    setAccountantCardText('shipment_debt', formatMoney(claim.principalDebt));
-    setAccountantCardText('shipment_overdue', `${claim.overdueDays ?? 0} дн.`);
+    setAccountantCardText('shipment_debt', formatMoney(shipment.remainingDebt ?? claim.principalDebt));
+    setAccountantCardText('shipment_overdue', `${shipment.overdueDays ?? claim.overdueDays ?? 0} дн.`);
     setAccountantCardText('shipment_claim_number', claim.claimNumber);
     const statusElement = document.getElementById('shipment_claim_status');
     statusElement.textContent = status.text;

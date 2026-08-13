@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import ru.sber.cargotech.payment.dto.CreatePaymentMatchRequest;
@@ -119,6 +120,14 @@ public class PaymentController {
             paymentId,
             userProvider.getRequiredUser()
         );
+    }
+
+    @DeleteMapping("/{paymentId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority('PAYMENT_DELETE')")
+    public void deletePayment(@PathVariable UUID paymentId) {
+        log.info("Вызов endpoint: deletePayment");
+        paymentService.delete(paymentId, userProvider.getRequiredUser());
     }
 
     @PostMapping("/reconcile")

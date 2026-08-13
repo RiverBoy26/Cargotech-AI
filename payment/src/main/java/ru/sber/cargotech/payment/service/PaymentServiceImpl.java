@@ -48,6 +48,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentOutboxWriter outboxWriter;
     private final ClaimClient claimClient;
     private final OrganizationRecipientRepository organizationRecipientRepository;
+    private final ClaimPaymentSynchronizationService claimSynchronizationService;
 
     @Transactional
     public PaymentResponse create(
@@ -435,6 +436,37 @@ public class PaymentServiceImpl implements PaymentService {
                 response.remainingPrincipalAmount(),
                 response.remainingPenaltyAmount(),
                 response.status()
+        );
+    }
+
+    @Transactional
+    public void delete(UUID paymentId, CurrentPaymentUser user) {
+        log.debug(
+                "Удаление платежа: paymentId={}, organizationId={}, userId={}",
+                paymentId,
+                user.organizationId(),
+                user.userId()
+        );
+
+        Payment payment = getPayment(paymentId, user.organizationId());
+        List<UUID> affectedClaimIds = matchRepository
+                .findActiveTargetIdsByPaymentIdAndType(
+                        paymentId,
+                        PaymentTargetType.CLAIM
+                );
+
+        paymentRepository.delete(payment);
+        outboxWriter.write(
+                "PAYMENT",
+                paymentId,
+                "PAYMENT_DELETED",
+                user.organizationId(),
+                user.userId(),
+                Map.of("paymentId", paymentId)
+        );
+
+        affectedClaimIds.forEach(
+                claimSynchronizationService::synchronizeAfterCommit
         );
     }
 

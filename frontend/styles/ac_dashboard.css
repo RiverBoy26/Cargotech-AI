@@ -190,9 +190,23 @@ header {
   overflow: hidden;
 }
 
-.overdues_table_head {
+.overdues_table_head,
+.overdue_row {
   display: grid;
-  grid-template-columns: 1fr 1fr 0.75fr 0.8fr 0.8fr 0.8fr 0.7fr 1fr 1.2fr;
+  grid-template-columns:
+    minmax(0, 0.8fr)
+    minmax(0, 0.7fr)
+    minmax(0, 0.9fr)
+    minmax(0, 0.75fr)
+    minmax(0, 0.75fr)
+    minmax(0, 0.75fr)
+    minmax(0, 0.75fr)
+    minmax(0, 0.7fr)
+    minmax(0, 1fr)
+    minmax(0, 1.8fr);
+}
+
+.overdues_table_head {
   background: #FCEADF;
 }
 
@@ -206,21 +220,26 @@ header {
 /* строки */
 
 .overdue_row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 0.75fr 0.8fr 0.8fr 0.8fr 0.7fr 1fr 1.2fr;
   align-items: center;
   border-bottom: 1px solid #E6E9ED;
   font-size: 14px;
+}
+
+.overdues_table_head > div,
+.overdue_row > div {
+  min-width: 0;
 }
 
 .overdue_row:last-child {
   border-bottom: none;
 }
 
-.overdue_row_clickable { cursor: pointer; }
+.overdue_row_clickable { cursor: pointer; user-select: none; }
 .overdue_row_clickable:hover { background: #f7f8fa; }
+.overdue_row_clickable .overdue_row_inn { cursor: text; user-select: text; }
 
 .overdue_row_client,
+.overdue_row_inn,
 .overdue_row_carrier,
 .overdue_row_trip,
 .overdue_row_amount,
@@ -233,7 +252,14 @@ header {
 .overdue_row_action_cell {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 16px 20px;
+}
+
+.overdue_row_action_cell .action_btn {
+  max-width: 100%;
+  white-space: normal;
 }
 
 /* статус */
@@ -242,7 +268,7 @@ header {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 170px;
+  width: 90px;
   font-size: 13px;
   padding: 6px 12px;
   border-radius: 20px;
@@ -465,8 +491,9 @@ header {
     minmax(120px, 0.85fr)
     minmax(115px, 0.8fr)
     minmax(115px, 0.8fr)
-    minmax(145px, 0.9fr);
-  min-width: 1120px;
+    minmax(145px, 0.9fr)
+    minmax(110px, 0.7fr);
+  min-width: 1230px;
 }
 
 .payments_table_head {
@@ -533,6 +560,31 @@ header {
 .payment_status_rejected {
   background: #ECEFF3;
   color: #69727D;
+}
+
+.action_btn_delete {
+  background: #FFE0E0;
+  color: #C0392B;
+  border: 1px solid #DDE1E6;
+}
+
+.action_btn_delete:hover {
+  background: #FFC9C9;
+}
+
+#payment_import_file::file-selector-button {
+  margin-right: 20px;
+  padding: 6px 8px;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  background: #F26522;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#payment_import_file::file-selector-button:hover {
+  background: #D9531A;
 }
 
 .empty_row {

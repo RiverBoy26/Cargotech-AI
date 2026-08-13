@@ -62,6 +62,11 @@ public class ClaimService {
         ClaimStatus.CANCELLED_PAID,
         ClaimStatus.CLOSED_IN_COURT
     );
+    private static final Collection<ClaimStatus> DELETABLE_STATUSES = List.of(
+        ClaimStatus.DRAFT,
+        ClaimStatus.PAID,
+        ClaimStatus.CANCELLED
+    );
 
     private final ClaimRepository claimRepository;
     private final ClaimQueryRepository queryRepository;
@@ -335,12 +340,12 @@ public class ClaimService {
     }
 
     @Transactional
-    public void deleteDraft(CurrentClaimUser user, UUID claimId) {
-        log.debug("Удаление черновика претензии: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
+    public void delete(CurrentClaimUser user, UUID claimId) {
+        log.debug("Удаление претензии: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
 
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
-        if (claim.getStatus() != ClaimStatus.DRAFT) {
-            throw ClaimException.conflict("Удалить можно только черновик претензии");
+        if (!DELETABLE_STATUSES.contains(claim.getStatus())) {
+            throw ClaimException.conflict("Удалить претензию можно только в статусе Черновик, Оплачено или Отменено");
         }
         claimRepository.delete(claim);
         outboxWriter.write("CLAIM", claim.getId(), "CLAIM_DELETED", user.organizationId(), user.userId(), Map.of("claimId", claim.getId()));

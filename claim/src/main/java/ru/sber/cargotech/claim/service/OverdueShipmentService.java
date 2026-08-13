@@ -8,6 +8,7 @@ import ru.sber.cargotech.claim.dto.OverdueShipmentResponse;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.ClaimStatus;
+import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.enums.ShipmentStatus;
 import ru.sber.cargotech.claim.repository.ClaimRepository;
 import ru.sber.cargotech.claim.repository.ClaimShipmentRepository;
@@ -35,6 +36,7 @@ public class OverdueShipmentService {
     private final PaymentClient paymentClient;
     private final ContractService contractService;
     private final PartyService partyService;
+    private final Article395RateProvider article395RateProvider;
 
     @Transactional(readOnly = true)
     public List<OverdueShipmentResponse> list(CurrentClaimUser user) {
@@ -59,13 +61,6 @@ public class OverdueShipmentService {
             return null;
         }
 
-        BigDecimal shipmentAmount = money(shipment.getServiceAmount());
-        var paymentState = paymentClient.getPaymentState(null, shipment.getId(), shipmentAmount);
-        BigDecimal remainingDebt = money(paymentState.remainingAmount());
-        if (remainingDebt.signum() <= 0) {
-            return null;
-        }
-
         ClaimEntity latestClaim = claimRepository
             .findFirstByOrganizationIdAndShipmentIdOrderByCreatedAtDesc(
                 user.organizationId(),
@@ -75,6 +70,54 @@ public class OverdueShipmentService {
         if (latestClaim != null && CLOSED_STATUSES.contains(latestClaim.getStatus())) {
             return null;
         }
+
+        BigDecimal shipmentAmount = money(shipment.getServiceAmount());
+        var paymentState = paymentClient.getPaymentState(
+            latestClaim == null ? null : latestClaim.getId(),
+            shipment.getId(),
+            shipmentAmount
+        );
+        PenaltyType penaltyType = contract.getPenaltyType() == null
+            ? PenaltyType.ARTICLE_395
+            : contract.getPenaltyType();
+        BigDecimal penaltyRate = contract.getPenaltyRate() == null
+            ? (penaltyType == PenaltyType.ARTICLE_395
+                ? new BigDecimal("18.00")
+                : BigDecimal.ZERO)
+            : contract.getPenaltyRate();
+        List<PenaltyScheduleCalculator.Allocation> paymentAllocations =
+            paymentState.allocations() == null
+                ? List.of()
+                : paymentState.allocations().stream()
+                    .map(allocation -> new PenaltyScheduleCalculator.Allocation(
+                        allocation.paymentDate(),
+                        allocation.amount()
+                    ))
+                    .toList();
+        BigDecimal accruedPenalty = PenaltyScheduleCalculator.calculate(
+            shipmentAmount,
+            overdueStartDate,
+            today,
+            penaltyType,
+            penaltyRate,
+            paymentAllocations,
+            penaltyType == PenaltyType.ARTICLE_395
+                ? article395RateProvider.periods(overdueStartDate, today)
+                : List.of()
+        );
+        ClaimPaymentAllocationCalculator.AllocationResult allocation =
+            ClaimPaymentAllocationCalculator.allocate(
+                shipmentAmount,
+                accruedPenalty,
+                money(paymentState.paidAmount())
+            );
+        BigDecimal remainingDebtWithPenalty = money(
+            allocation.remainingPrincipal().add(allocation.remainingPenalty())
+        );
+        if (remainingDebtWithPenalty.signum() <= 0) {
+            return null;
+        }
+
         ClaimEntity claim = latestClaim;
         var client = partyService.getEntity(user.organizationId(), shipment.getClientId());
         var expeditor = partyService.getEntity(user.organizationId(), shipment.getExpeditorId());
@@ -83,10 +126,11 @@ public class OverdueShipmentService {
             shipment.getId(),
             shipment.getOrderNumber(),
             client.getName(),
+            client.getInn(),
             expeditor.getName(),
             shipmentAmount,
             money(paymentState.paidAmount()),
-            remainingDebt,
+            remainingDebtWithPenalty,
             shipment.getCurrency(),
             overdueStartDate.minusDays(1),
             overdueStartDate,

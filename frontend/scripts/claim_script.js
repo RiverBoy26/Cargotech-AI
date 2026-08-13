@@ -284,6 +284,10 @@ function updateAvailableActions() {
     'btn_court_package',
     ['SENT', 'AWAITING_RESPONSE'].includes(status) && hasPermission('CLAIM_UPDATE')
   );
+  setButtonState(
+    'btn_delete_claim',
+    ['DRAFT', 'PAID', 'CANCELLED'].includes(status) && hasPermission('CLAIM_DELETE')
+  );
   const canGenerateDocument = status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_GENERATE');
   setButtonState('btn_generate_document', canGenerateDocument, Boolean(currentClaim?.finalVersionId));
   setButtonState(
@@ -843,6 +847,19 @@ async function initClaimCardPage() {
       await claimAction(claimId, 'cancel', reason);
       await reloadClaim(claimId);
     } catch (error) { showError(error); }
+  });
+
+  document.getElementById('btn_delete_claim').addEventListener('click', async () => {
+    if (!window.confirm('Удалить претензию без возможности восстановления?')) return;
+    const button = document.getElementById('btn_delete_claim');
+    button.disabled = true;
+    try {
+      await deleteClaim(claimId);
+      window.location.href = '/pages/lawyer/claims.html';
+    } catch (error) {
+      showError(error);
+      updateAvailableActions();
+    }
   });
 
   document.getElementById('btn_generate_document').addEventListener('click', async () => {

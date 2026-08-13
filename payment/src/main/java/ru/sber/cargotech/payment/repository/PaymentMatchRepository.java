@@ -16,6 +16,18 @@ public interface PaymentMatchRepository
 
     List<PaymentMatch> findAllByPaymentIdOrderByMatchedAtAsc(UUID paymentId);
 
+    @Query("""
+        select distinct match.targetId
+        from PaymentMatch match
+        where match.paymentId = :paymentId
+          and match.targetType = :targetType
+          and match.active = true
+        """)
+    List<UUID> findActiveTargetIdsByPaymentIdAndType(
+        UUID paymentId,
+        PaymentTargetType targetType
+    );
+
     Optional<PaymentMatch> findByIdAndPaymentId(UUID id, UUID paymentId);
 
     @Query("""

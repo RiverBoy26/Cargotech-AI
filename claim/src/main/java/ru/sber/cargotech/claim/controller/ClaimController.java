@@ -97,7 +97,7 @@ public class ClaimController {
     @PreAuthorize("hasAuthority('CLAIM_DELETE')")
     public void delete(@PathVariable UUID claimId) {
         log.info("Вызов endpoint: delete");
-        claimService.deleteDraft(currentUserProvider.getRequiredUser(), claimId);
+        claimService.delete(currentUserProvider.getRequiredUser(), claimId);
     }
 
     @PostMapping("/{claimId}/generate")

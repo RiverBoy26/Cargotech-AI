@@ -225,6 +225,29 @@ async function login(email, password) {
   return data;
 }
 
+async function refreshSession() {
+  const refreshToken = localStorage.getItem(STORAGE.refreshToken);
+  if (!refreshToken) {
+    clearSession();
+    window.location.href = '/pages/authorization/login.html';
+    throw new Error('Сессия истекла. Войдите снова.');
+  }
+
+  try {
+    const data = await apiRequest('/auth/refresh', {
+      method: 'POST',
+      skipAuth: true,
+      body: JSON.stringify({ refreshToken }),
+    });
+    saveSession(data);
+    return data;
+  } catch (error) {
+    clearSession();
+    window.location.href = '/pages/authorization/login.html';
+    throw error;
+  }
+}
+
 async function logout() {
   const refreshToken = localStorage.getItem(STORAGE.refreshToken);
 
@@ -564,6 +587,11 @@ async function createShipment(payload) {
   return apiRequest('/shipments', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+async function deleteClaim(claimId) {
+  await refreshSession();
+  return apiRequest(`/claims/${claimId}`, { method: 'DELETE' });
+}
+
 // --- Payments ---
 
 async function getPayments(params = {}) {
@@ -573,6 +601,11 @@ async function getPayments(params = {}) {
     sort: params.sort ?? 'paymentDate,desc',
   });
   return apiRequest(`/payments?${qs}`);
+}
+
+async function deletePayment(paymentId) {
+  await refreshSession();
+  return apiRequest(`/payments/${paymentId}`, { method: 'DELETE' });
 }
 
 async function getPayment(paymentId) {

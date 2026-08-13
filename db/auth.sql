@@ -294,6 +294,7 @@ JOIN cargotech.auth_permissions p
         'CLAIM_CREATE',
         'CLAIM_READ',
         'CLAIM_UPDATE',
+        'CLAIM_DELETE',
         'CALCULATION_READ',
         'CALCULATION_GENERATE',
         'CALCULATION_DOWNLOAD',
@@ -326,6 +327,7 @@ JOIN cargotech.auth_permissions p
         'PAYMENT_CREATE',
         'PAYMENT_READ',
         'PAYMENT_UPDATE',
+        'PAYMENT_DELETE',
         'PAYMENT_IMPORT',
         'PAYMENT_RECONCILE',
         'PAYMENT_MARK_PAID'

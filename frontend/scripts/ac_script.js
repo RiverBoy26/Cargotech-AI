@@ -70,6 +70,7 @@ function renderOverdueRow(claim) {
   return `
     <div class="overdue_row${claim.claimId ? ' overdue_row_clickable' : ''}" ${claim.claimId ? `data-claim-id="${escapeAccountant(claim.claimId)}"` : ''}>
       <div class="overdue_row_client">${escapeAccountant(claim.debtorName)}</div>
+      <div class="overdue_row_inn">${escapeAccountant(claim.debtorInn)}</div>
       <div class="overdue_row_carrier">${escapeAccountant(claim.creditorName)}</div>
       <div class="overdue_row_trip">${escapeAccountant(claim.shipmentNumber)}</div>
       <div class="overdue_row_amount">${formatMoney(claim.shipmentAmount)}</div>
@@ -86,6 +87,7 @@ function filteredClaims() {
   if (!search) return accountantClaims;
   return accountantClaims.filter((claim) => [
     claim.debtorName,
+    claim.debtorInn,
     claim.creditorName,
     claim.shipmentNumber,
     claim.claimNumber,
@@ -100,8 +102,13 @@ function renderOverdues() {
     : '<div class="empty_row">Задач для проверки нет</div>';
   bindOverdueActions();
   document.querySelectorAll('.overdue_row_clickable').forEach((row) => {
-    row.addEventListener('click', (event) => {
-      if (event.target.closest('button, a, input, select')) return;
+    row.tabIndex = 0;
+    row.addEventListener('dblclick', (event) => {
+      if (event.target.closest('button, a, input, select, .overdue_row_inn')) return;
+      window.location.href = `/pages/accountant/shipment_card.html?claimId=${encodeURIComponent(row.dataset.claimId)}`;
+    });
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.target.closest('button, a, input, select')) return;
       window.location.href = `/pages/accountant/shipment_card.html?claimId=${encodeURIComponent(row.dataset.claimId)}`;
     });
   });
@@ -219,9 +226,10 @@ async function loadOverdues() {
       id: item.claimId,
       status: item.claimStatus,
       debtorName: item.clientName,
+      debtorInn: item.clientInn,
       creditorName: item.expeditorName,
       principalDebt: item.remainingDebt,
-    }));
+    })).sort((a, b) => new Date(b.paymentDeadline) - new Date(a.paymentDeadline));
     renderOverdues();
   } catch (error) {
     list.textContent = `Ошибка: ${error.message}`;
@@ -273,6 +281,9 @@ function renderPaymentRow(payment) {
       <div>${formatMoney(payment.matchedAmount)}</div>
       <div>${formatMoney(payment.availableAmount)}</div>
       <div><span class="payment_status ${status.className}">${escapeAccountant(status.label)}</span></div>
+      <div>
+        <button class="action_btn action_btn_delete" data-payment-delete="${escapeAccountant(payment.id)}">Удалить</button>
+      </div>
     </div>`;
 }
 
@@ -287,6 +298,22 @@ function renderPayments() {
     row.addEventListener('click', open);
     row.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') open();
+    });
+  });
+  document.querySelectorAll('[data-payment-delete]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      if (!window.confirm('Удалить платёж без возможности восстановления?')) return;
+      button.disabled = true;
+      try {
+        await deletePayment(button.dataset.paymentDelete);
+        showToast('Платёж удалён', 'success');
+        await Promise.all([loadPayments(), loadOverdues()]);
+      } catch (error) {
+        showToast(error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
     });
   });
 }

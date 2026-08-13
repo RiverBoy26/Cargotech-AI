@@ -215,6 +215,15 @@ header {
   background: #D9531A;
 }
 
+.action_btn_delete {
+  background: #FFE0E0;
+  color: #C0392B;
+}
+
+.action_btn_delete:hover {
+  background: #FFC9C9;
+}
+
 .action_btn_disabled {
   background: #FCEADF;
   border: 1px solid #F6C9A6;
