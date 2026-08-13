@@ -42,25 +42,22 @@ public class OverdueShipmentService {
     public List<OverdueShipmentResponse> list(CurrentClaimUser user) {
         LocalDate today = LocalDate.now();
         return shipmentRepository
-            .findByOrganizationIdAndStatus(user.organizationId(), ShipmentStatus.COMPLETED)
+            .findByOrganizationId(user.organizationId())
             .stream()
-            .map(shipment -> toOverdue(user, shipment, today))
+            .map(shipment -> toAccountantQueueItem(user, shipment, today))
             .filter(java.util.Objects::nonNull)
-            .sorted(Comparator.comparing(OverdueShipmentResponse::overdueStartDate))
+            .sorted(Comparator.comparing(
+                OverdueShipmentResponse::overdueStartDate,
+                Comparator.nullsLast(Comparator.naturalOrder())
+            ))
             .toList();
     }
 
-    private OverdueShipmentResponse toOverdue(
+    private OverdueShipmentResponse toAccountantQueueItem(
         CurrentClaimUser user,
         ClaimShipment shipment,
         LocalDate today
     ) {
-        var contract = contractService.getEntity(user.organizationId(), shipment.getContractId());
-        LocalDate overdueStartDate = OverdueDateCalculator.overdueStartDate(shipment, contract);
-        if (overdueStartDate == null || overdueStartDate.isAfter(today)) {
-            return null;
-        }
-
         ClaimEntity latestClaim = claimRepository
             .findFirstByOrganizationIdAndShipmentIdOrderByCreatedAtDesc(
                 user.organizationId(),
@@ -68,6 +65,17 @@ public class OverdueShipmentService {
             )
             .orElse(null);
         if (latestClaim != null && CLOSED_STATUSES.contains(latestClaim.getStatus())) {
+            return null;
+        }
+
+        var contract = contractService.getEntity(user.organizationId(), shipment.getContractId());
+        LocalDate overdueStartDate = OverdueDateCalculator.overdueStartDate(shipment, contract);
+        boolean draftAwaitingAccountant = latestClaim != null
+            && latestClaim.getStatus() == ClaimStatus.DRAFT;
+        boolean actuallyOverdue = shipment.getStatus() == ShipmentStatus.COMPLETED
+            && overdueStartDate != null
+            && !overdueStartDate.isAfter(today);
+        if (!draftAwaitingAccountant && !actuallyOverdue) {
             return null;
         }
 
@@ -94,17 +102,19 @@ public class OverdueShipmentService {
                         allocation.amount()
                     ))
                     .toList();
-        BigDecimal accruedPenalty = PenaltyScheduleCalculator.calculate(
-            shipmentAmount,
-            overdueStartDate,
-            today,
-            penaltyType,
-            penaltyRate,
-            paymentAllocations,
-            penaltyType == PenaltyType.ARTICLE_395
-                ? article395RateProvider.periods(overdueStartDate, today)
-                : List.of()
-        );
+        BigDecimal accruedPenalty = actuallyOverdue
+            ? PenaltyScheduleCalculator.calculate(
+                shipmentAmount,
+                overdueStartDate,
+                today,
+                penaltyType,
+                penaltyRate,
+                paymentAllocations,
+                penaltyType == PenaltyType.ARTICLE_395
+                    ? article395RateProvider.periods(overdueStartDate, today)
+                    : List.of()
+            )
+            : BigDecimal.ZERO;
         ClaimPaymentAllocationCalculator.AllocationResult allocation =
             ClaimPaymentAllocationCalculator.allocate(
                 shipmentAmount,
@@ -132,9 +142,9 @@ public class OverdueShipmentService {
             money(paymentState.paidAmount()),
             remainingDebtWithPenalty,
             shipment.getCurrency(),
-            overdueStartDate.minusDays(1),
+            overdueStartDate == null ? null : overdueStartDate.minusDays(1),
             overdueStartDate,
-            OverdueDateCalculator.overdueDays(overdueStartDate, today),
+            actuallyOverdue ? OverdueDateCalculator.overdueDays(overdueStartDate, today) : 0,
             claim == null ? null : claim.getId(),
             claim == null ? null : claim.getClaimNumber(),
             claim == null ? null : claim.getStatus(),

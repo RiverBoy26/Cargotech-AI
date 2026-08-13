@@ -114,8 +114,7 @@ public class ClaimController {
     @PreAuthorize("hasAuthority('OVERDUE_CONFIRM_NON_PAYMENT')")
     public ClaimDetailsResponse submitToLegalReview(
             @PathVariable UUID claimId,
-            @Valid @RequestBody(required = false)
-            StatusChangeRequest request
+            @Valid @RequestBody AccountantClaimSubmissionRequest request
     ) {
         log.info(
                 "Передача претензии на юридическую проверку с подтверждением неуплаты: claimId={}",

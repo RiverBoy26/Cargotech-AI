@@ -68,7 +68,7 @@ async function loadClaims() {
 
   try {
     const page = await getClaims({ size: 100 });
-    lawyerClaims = page.content || [];
+    lawyerClaims = (page.content || []).filter((claim) => claim.status !== 'DRAFT');
 
     if (lawyerClaims.length === 0) {
       listEl.innerHTML = '<div class="claim_row">Претензий пока нет</div>';

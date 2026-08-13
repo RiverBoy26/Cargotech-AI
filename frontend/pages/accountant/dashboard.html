@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Дашборд бухгалтера</title>
-    <link rel="stylesheet" href="../../styles/ac_dashboard.css?v=20260813-inn-selection-1">
+    <link rel="stylesheet" href="../../styles/ac_dashboard.css?v=20260813-overdue-confirmation-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
@@ -46,6 +46,12 @@
                 </div>
             </div>
 
+            <div class="overdue_section_header">
+                <div>
+                    <h2 class="panel_title">Претензии и просрочки</h2>
+                    <p class="panel_subtitle">Черновики новых рейсов и претензии, уже переданные в работу.</p>
+                </div>
+            </div>
             <div class="overdues_table">
                 <div class="overdues_table_head">
                     <div class="overdues_table_head_t">Клиент</div>
@@ -59,7 +65,7 @@
                     <div class="overdues_table_head_t">Статус</div>
                     <div class="overdues_table_head_t">Действие</div>
                 </div>
-                <div class="overdues_list" id="overdues_list"></div>
+                <div class="overdues_list" id="created_claims_list"></div>
             </div>
         </section>
 
@@ -103,15 +109,17 @@
 
             <section class="payment_form" id="payment_create_form">
                 <div class="payment_form_title">Новый платёж</div>
-                <div class="payment_form_hint">Платёж будет создан со статусом «Не сопоставлен» и сможет участвовать в сверке.</div>
+                <div class="payment_form_hint">Выберите рейс: доступные данные подставятся автоматически, а платёж будет сразу сопоставлен с его претензией.</div>
                 <div class="payment_form_grid">
                     <div class="form_field">
                         <label class="form_label" for="payment_number">Номер платежа</label>
                         <input class="form_input" id="payment_number" name="payment_number" autocomplete="off" maxlength="128" placeholder="ПП-101">
                     </div>
-                    <div class="form_field">
-                        <label class="form_label" for="payment_external_id">Внешний ID</label>
-                        <input class="form_input" id="payment_external_id" name="payment_external_id" autocomplete="off" maxlength="255" placeholder="MANUAL-2026-001">
+                    <div class="form_field form_field_wide">
+                        <label class="form_label" for="payment_shipment_id">Рейс *</label>
+                        <select class="form_input form_select" id="payment_shipment_id" name="payment_shipment_id" required>
+                            <option value="">Выберите рейс</option>
+                        </select>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_date">Дата платежа *</label>
@@ -164,7 +172,6 @@
                         <option value="IMPORTED">Не сопоставлен</option>
                         <option value="PARTIALLY_MATCHED">Сопоставлен частично</option>
                         <option value="MATCHED">Сопоставлен</option>
-                        <option value="REJECTED">Отклонён</option>
                     </select>
                     <button class="action_btn" id="reconcile_btn">Запустить сверку</button>
                     <button class="action_btn" id="refresh_payments_btn">Обновить</button>
@@ -226,7 +233,7 @@
         </form>
     </div>
 
-    <script src="../../scripts/api.js?v=20260813-refresh-permissions-1"></script>
-    <script src="../../scripts/ac_script.js?v=20260813-inn-selection-1"></script>
+    <script src="../../scripts/api.js?v=20260813-payment-shipment-1"></script>
+    <script src="../../scripts/ac_script.js?v=20260813-payment-shipment-1"></script>
 </body>
 </html>

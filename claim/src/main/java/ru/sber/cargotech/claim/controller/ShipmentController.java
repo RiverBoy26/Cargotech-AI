@@ -16,12 +16,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import ru.sber.cargotech.claim.dto.PageResponse;
+import ru.sber.cargotech.claim.dto.AccountantClaimSubmissionRequest;
+import ru.sber.cargotech.claim.dto.ClaimDetailsResponse;
 import ru.sber.cargotech.claim.dto.OverdueShipmentResponse;
 import ru.sber.cargotech.claim.dto.ShipmentRequest;
 import ru.sber.cargotech.claim.dto.ShipmentResponse;
 import ru.sber.cargotech.claim.security.CurrentClaimUserProvider;
 import ru.sber.cargotech.claim.service.ShipmentService;
 import ru.sber.cargotech.claim.service.OverdueShipmentService;
+import ru.sber.cargotech.claim.service.AccountantOverdueClaimService;
+import ru.sber.cargotech.claim.service.ShipmentClaimCreationService;
 
 import java.util.List;
 import java.util.UUID;
@@ -33,6 +37,8 @@ import java.util.UUID;
 public class ShipmentController {
     private final ShipmentService shipmentService;
     private final OverdueShipmentService overdueShipmentService;
+    private final AccountantOverdueClaimService accountantOverdueClaimService;
+    private final ShipmentClaimCreationService shipmentClaimCreationService;
     private final CurrentClaimUserProvider currentUserProvider;
 
     @GetMapping
@@ -50,10 +56,25 @@ public class ShipmentController {
     }
 
     @GetMapping("/overdue")
-    @PreAuthorize("hasAuthority('SHIPMENT_READ')")
+    @PreAuthorize("hasAuthority('OVERDUE_READ')")
     public List<OverdueShipmentResponse> overdue() {
         log.info("Вызов endpoint: overdue");
         return overdueShipmentService.list(currentUserProvider.getRequiredUser());
+    }
+
+    @PostMapping("/{shipmentId}/confirm-non-payment")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('OVERDUE_CONFIRM_NON_PAYMENT')")
+    public ClaimDetailsResponse confirmNonPayment(
+        @PathVariable UUID shipmentId,
+        @Valid @RequestBody AccountantClaimSubmissionRequest request
+    ) {
+        log.info("Подтверждение неуплаты и создание претензии по рейсу: shipmentId={}", shipmentId);
+        return accountantOverdueClaimService.confirmNonPayment(
+            currentUserProvider.getRequiredUser(),
+            shipmentId,
+            request
+        );
     }
 
     @PostMapping
@@ -61,7 +82,7 @@ public class ShipmentController {
     @PreAuthorize("hasAuthority('SHIPMENT_CREATE')")
     public ShipmentResponse create(@Valid @RequestBody ShipmentRequest request) {
         log.info("Вызов endpoint: create");
-        return shipmentService.create(currentUserProvider.getRequiredUser(), request);
+        return shipmentClaimCreationService.create(currentUserProvider.getRequiredUser(), request);
     }
 
     @PatchMapping("/{shipmentId}")

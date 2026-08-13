@@ -6,6 +6,7 @@
 .shipment_info span { color: #8a93a0; font-size: 13px; }
 .shipment_draft_card { padding: 22px; background: #fff; border: 1px solid #e0e4e9; border-radius: 10px; }
 .shipment_draft_card h2 { margin: 0 0 18px; font-size: 18px; }
+.shipment_draft_hint { margin: -6px 0 18px; color: #7a8491; line-height: 1.45; }
 .shipment_field { display: grid; gap: 7px; margin-bottom: 16px; color: #687180; font-size: 13px; }
 .shipment_field input, .shipment_field textarea { box-sizing: border-box; width: 100%; padding: 12px 14px; border: 1px solid #f6c9a6; border-radius: 8px; background: #fceadf; font: 14px 'Anonymous Pro', monospace; color: #2e3440; }
 .shipment_field textarea { min-height: 280px; resize: vertical; line-height: 1.45; }

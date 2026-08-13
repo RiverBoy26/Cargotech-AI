@@ -125,9 +125,16 @@ public class PaymentController {
     @DeleteMapping("/{paymentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('PAYMENT_DELETE')")
-    public void deletePayment(@PathVariable UUID paymentId) {
+    public void deletePayment(
+        @PathVariable UUID paymentId,
+        @RequestParam String reason
+    ) {
         log.info("Вызов endpoint: deletePayment");
-        paymentService.delete(paymentId, userProvider.getRequiredUser());
+        paymentService.delete(
+            paymentId,
+            reason,
+            userProvider.getRequiredUser()
+        );
     }
 
     @PostMapping("/reconcile")

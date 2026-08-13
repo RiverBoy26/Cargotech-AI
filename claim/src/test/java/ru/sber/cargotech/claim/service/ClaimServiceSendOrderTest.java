@@ -147,6 +147,13 @@ class ClaimServiceSendOrderTest {
 
         service.synchronizePaymentState(user, claimId);
 
+        InOrder reloadOrder = inOrder(calculationService, claimRepository);
+        reloadOrder.verify(calculationService).recalculate(user, claimId);
+        reloadOrder.verify(claimRepository).findByIdAndOrganizationId(
+                claimId,
+                organizationId
+        );
+
         assertThat(claim.getStatus()).isEqualTo(ClaimStatus.CANCELLED_PAID);
         assertThat(claim.getPaidAt()).isNotNull();
         assertThat(claim.getCancellationReasonCode()).isEqualTo("FULL_PAYMENT_BEFORE_SEND");
@@ -155,5 +162,103 @@ class ClaimServiceSendOrderTest {
         verify(historyRepository).save(historyCaptor.capture());
         assertThat(historyCaptor.getValue().getReason())
                 .isEqualTo("Задолженность полностью погашена");
+    }
+
+    @Test
+    void fullPaymentAfterSendMarksReloadedClaimPaid() {
+        UUID organizationId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+
+        ClaimEntity reloadedClaim = new ClaimEntity();
+        reloadedClaim.setId(claimId);
+        reloadedClaim.setOrganizationId(organizationId);
+        reloadedClaim.setStatus(ClaimStatus.AWAITING_RESPONSE);
+        reloadedClaim.setSentAt(java.time.OffsetDateTime.now().minusDays(1));
+
+        ClaimCalculationResponse calculation = org.mockito.Mockito.mock(
+                ClaimCalculationResponse.class
+        );
+        when(calculation.totalAmount()).thenReturn(java.math.BigDecimal.ZERO);
+        when(calculationService.recalculate(user, claimId)).thenReturn(calculation);
+        when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
+                .thenReturn(Optional.of(reloadedClaim));
+        when(queryRepository.findDetails(organizationId, claimId))
+                .thenReturn(Optional.of(org.mockito.Mockito.mock(
+                        ru.sber.cargotech.claim.dto.ClaimDetailsResponse.class
+                )));
+
+        ClaimService service = new ClaimService(
+                claimRepository,
+                queryRepository,
+                historyRepository,
+                shipmentService,
+                paymentClient,
+                contractService,
+                partyService,
+                calculationService,
+                versionService,
+                outboxWriter
+        );
+
+        service.synchronizePaymentState(user, claimId);
+
+        assertThat(reloadedClaim.getStatus()).isEqualTo(ClaimStatus.PAID);
+        assertThat(reloadedClaim.getPaidAt()).isNotNull();
+        ArgumentCaptor<ClaimStatusHistory> historyCaptor =
+                ArgumentCaptor.forClass(ClaimStatusHistory.class);
+        verify(historyRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getNewStatus()).isEqualTo(ClaimStatus.PAID);
+    }
+
+    @Test
+    void deletedPaymentReopensPaidSentClaimWithReason() {
+        UUID organizationId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+
+        ClaimEntity reloadedClaim = new ClaimEntity();
+        reloadedClaim.setId(claimId);
+        reloadedClaim.setOrganizationId(organizationId);
+        reloadedClaim.setStatus(ClaimStatus.PAID);
+        reloadedClaim.setSentAt(java.time.OffsetDateTime.now().minusDays(2));
+        reloadedClaim.setPaidAt(java.time.OffsetDateTime.now().minusDays(1));
+
+        ClaimCalculationResponse calculation = org.mockito.Mockito.mock(
+                ClaimCalculationResponse.class
+        );
+        when(calculation.totalAmount()).thenReturn(new java.math.BigDecimal("100.00"));
+        when(calculationService.recalculate(user, claimId)).thenReturn(calculation);
+        when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
+                .thenReturn(Optional.of(reloadedClaim));
+        when(queryRepository.findDetails(organizationId, claimId))
+                .thenReturn(Optional.of(org.mockito.Mockito.mock(
+                        ru.sber.cargotech.claim.dto.ClaimDetailsResponse.class
+                )));
+
+        ClaimService service = new ClaimService(
+                claimRepository,
+                queryRepository,
+                historyRepository,
+                shipmentService,
+                paymentClient,
+                contractService,
+                partyService,
+                calculationService,
+                versionService,
+                outboxWriter
+        );
+
+        String reason = "Удалён сопоставленный платёж: ошибочная банковская операция";
+        service.synchronizePaymentState(user, claimId, reason);
+
+        assertThat(reloadedClaim.getStatus()).isEqualTo(ClaimStatus.AWAITING_RESPONSE);
+        assertThat(reloadedClaim.getPaidAt()).isNull();
+        ArgumentCaptor<ClaimStatusHistory> historyCaptor =
+                ArgumentCaptor.forClass(ClaimStatusHistory.class);
+        verify(historyRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getPreviousStatus()).isEqualTo(ClaimStatus.PAID);
+        assertThat(historyCaptor.getValue().getNewStatus()).isEqualTo(ClaimStatus.AWAITING_RESPONSE);
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo(reason);
     }
 }

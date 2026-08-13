@@ -228,13 +228,22 @@ public class ClaimClient {
     }
 
     public void syncPaymentState(UUID claimId) {
+        syncPaymentState(claimId, null);
+    }
+
+    public void syncPaymentState(UUID claimId, String reason) {
         try {
             restClient
                 .post()
-                .uri(
-                    "/internal/api/v1/claims/{claimId}/sync-payment-state",
-                    claimId
-                )
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder.path(
+                        "/internal/api/v1/claims/{claimId}/sync-payment-state"
+                    );
+                    if (reason != null && !reason.isBlank()) {
+                        builder.queryParam("reason", reason);
+                    }
+                    return builder.build(claimId);
+                })
                 .retrieve()
                 .toBodilessEntity();
         } catch (RestClientResponseException exception) {

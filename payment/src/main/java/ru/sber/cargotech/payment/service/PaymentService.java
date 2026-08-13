@@ -34,7 +34,7 @@ public interface PaymentService {
             CurrentPaymentUser user
     );
 
-    void delete(UUID paymentId, CurrentPaymentUser user);
+    void delete(UUID paymentId, String reason, CurrentPaymentUser user);
 
     ClaimPaymentsResponse findByClaim(
             UUID claimId,

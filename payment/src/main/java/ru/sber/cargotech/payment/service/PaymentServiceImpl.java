@@ -440,13 +440,29 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Transactional
-    public void delete(UUID paymentId, CurrentPaymentUser user) {
+    public void delete(
+            UUID paymentId,
+            String reason,
+            CurrentPaymentUser user
+    ) {
         log.debug(
                 "Удаление платежа: paymentId={}, organizationId={}, userId={}",
                 paymentId,
                 user.organizationId(),
                 user.userId()
         );
+
+        String normalizedReason = normalizeOptional(reason);
+        if (normalizedReason == null) {
+            throw PaymentException.unprocessable(
+                "Укажите причину удаления платежа"
+            );
+        }
+        if (normalizedReason.length() > 2000) {
+            throw PaymentException.unprocessable(
+                "Причина удаления платежа не должна превышать 2000 символов"
+            );
+        }
 
         Payment payment = getPayment(paymentId, user.organizationId());
         List<UUID> affectedClaimIds = matchRepository
@@ -462,11 +478,18 @@ public class PaymentServiceImpl implements PaymentService {
                 "PAYMENT_DELETED",
                 user.organizationId(),
                 user.userId(),
-                Map.of("paymentId", paymentId)
+                Map.of(
+                    "paymentId", paymentId,
+                    "reason", normalizedReason
+                )
         );
 
         affectedClaimIds.forEach(
-                claimSynchronizationService::synchronizeAfterCommit
+            claimId -> claimSynchronizationService.synchronizeAfterCommit(
+                claimId,
+                "Удалён сопоставленный платёж %s: %s"
+                    .formatted(paymentId, normalizedReason)
+            )
         );
     }
 

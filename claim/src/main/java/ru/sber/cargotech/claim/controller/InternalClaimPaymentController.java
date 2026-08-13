@@ -116,9 +116,12 @@ public class InternalClaimPaymentController {
     @PreAuthorize(
             "hasAuthority('PAYMENT_READ') or hasAuthority('CLAIM_UPDATE')"
     )
-    public ResponseEntity<Void> syncPaymentState(@PathVariable UUID claimId) {
+    public ResponseEntity<Void> syncPaymentState(
+            @PathVariable UUID claimId,
+            @RequestParam(required = false) String reason
+    ) {
         CurrentClaimUser user = currentUserProvider.getRequiredUser();
-        claimService.synchronizePaymentState(user, claimId);
+        claimService.synchronizePaymentState(user, claimId, reason);
         return ResponseEntity.noContent().build();
     }
 }

@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.client.PaymentClient;
 import ru.sber.cargotech.claim.client.DocumentTextClient;
 import ru.sber.cargotech.claim.dto.ClaimDetailsResponse;
+import ru.sber.cargotech.claim.dto.AccountantClaimSubmissionRequest;
 import ru.sber.cargotech.claim.dto.ClaimListItemResponse;
 import ru.sber.cargotech.claim.dto.ClaimVersionResponse;
 import ru.sber.cargotech.claim.dto.CreateClaimRequest;
@@ -127,6 +128,19 @@ public class ClaimService {
 
     @Transactional
     public ClaimDetailsResponse create(CurrentClaimUser user, CreateClaimRequest request) {
+        return createInternal(user, request, true);
+    }
+
+    @Transactional
+    public ClaimDetailsResponse createDraftForShipment(CurrentClaimUser user, CreateClaimRequest request) {
+        return createInternal(user, request, false);
+    }
+
+    private ClaimDetailsResponse createInternal(
+        CurrentClaimUser user,
+        CreateClaimRequest request,
+        boolean calculateImmediately
+    ) {
         log.debug("Создание претензии: organizationId={}, userId={}, shipmentId={}, claimType={}, assignedLawyerId={}, nonPaymentConfirmed={}", user.organizationId(), user.userId(), request.shipmentId(), request.claimType(), request.assignedLawyerId(), request.nonPaymentConfirmed());
 
         ClaimShipment shipment = shipmentService.getEntity(user.organizationId(), request.shipmentId());
@@ -184,16 +198,20 @@ public class ClaimService {
         claim.setUpdatedBy(user.userId());
         applyNonPaymentConfirmation(claim, user, request.nonPaymentConfirmed(), request.nonPaymentConfirmationComment());
         claim.normalizeTotals();
-        ClaimEntity saved = claimRepository.save(claim);
+        // The response is loaded immediately through ClaimQueryRepository (JDBC).
+        // Flush the JPA insert first so the JDBC query in this transaction can see it.
+        ClaimEntity saved = claimRepository.saveAndFlush(claim);
 
         recordStatus(saved.getId(), null, ClaimStatus.DRAFT, "Создание претензии", user.userId());
         outboxWriter.write("CLAIM", saved.getId(), "CLAIM_CREATED", user.organizationId(), user.userId(), Map.of("claimId", saved.getId()));
 
-        var calculation = calculationService.recalculate(user, saved.getId());
-        if (calculation.remainingDebt() == null || calculation.remainingDebt().signum() <= 0) {
-            throw ClaimException.conflict(
-                "Претензию нельзя создать: по рейсу отсутствует непогашенная задолженность"
-            );
+        if (calculateImmediately) {
+            var calculation = calculationService.recalculate(user, saved.getId());
+            if (calculation.remainingDebt() == null || calculation.remainingDebt().signum() <= 0) {
+                throw ClaimException.conflict(
+                    "Претензию нельзя создать: по рейсу отсутствует непогашенная задолженность"
+                );
+            }
         }
 
         if (request.draftContent() != null && !request.draftContent().isBlank()) {
@@ -355,7 +373,7 @@ public class ClaimService {
     public ClaimDetailsResponse submitToLegalReview(
             CurrentClaimUser user,
             UUID claimId,
-            StatusChangeRequest request
+            AccountantClaimSubmissionRequest request
     ) {
         log.debug(
                 "Подтверждение неуплаты и передача претензии на юридическую проверку: " +
@@ -376,15 +394,34 @@ public class ClaimService {
                             "в статусе DRAFT"
             );
         }
-        if (claim.getFinalVersionId() == null) {
+        if (request == null || request.reason() == null || request.reason().isBlank()) {
+            throw ClaimException.validation("Укажите основание претензии");
+        }
+        if (request.text() == null || request.text().isBlank()) {
+            throw ClaimException.validation("Укажите текст претензии");
+        }
+
+        var calculation = calculationService.recalculate(user, claimId);
+        if (calculation.remainingDebt() == null || calculation.remainingDebt().signum() <= 0) {
             throw ClaimException.conflict(
-                "Перед подтверждением неуплаты необходимо назначить финальную версию текста"
+                "Подтвердить неуплату нельзя: по рейсу отсутствует непогашенная задолженность"
             );
         }
 
-        String reason = request == null
-                ? null
-                : request.reason();
+        String reason = request.reason().trim();
+        claim.setReason(reason);
+        ClaimVersionResponse version = versionService.create(
+            user,
+            claimId,
+            new CreateClaimVersionRequest(
+                ClaimVersionSource.ACCOUNTANT,
+                claim.getFinalVersionId(),
+                request.text().trim(),
+                "Текст подготовлен бухгалтером перед подтверждением неуплаты",
+                true
+            )
+        );
+        claim.setFinalVersionId(version.id());
 
         applyNonPaymentConfirmation(
                 claim,
@@ -705,13 +742,13 @@ public class ClaimService {
     public ClaimDetailsResponse markPaid(CurrentClaimUser user, UUID claimId, StatusChangeRequest request) {
         log.debug("Перевод претензии в PAID: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
 
+        var calculation = calculationService.recalculate(user, claimId);
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
         if (claim.getStatus() == ClaimStatus.CANCELLED
                 || claim.getStatus() == ClaimStatus.CANCELLED_PAID
                 || claim.getStatus() == ClaimStatus.CLOSED_IN_COURT) {
             throw ClaimException.conflict("Нельзя отметить оплату по отменённой или закрытой в суде претензии");
         }
-        var calculation = calculationService.recalculate(user, claimId);
         if (calculation.totalAmount() == null || calculation.totalAmount().signum() > 0) {
             throw ClaimException.conflict("Нельзя отметить претензию оплаченной: задолженность погашена не полностью");
         }
@@ -725,14 +762,48 @@ public class ClaimService {
 
     @Transactional
     public void synchronizePaymentState(CurrentClaimUser user, UUID claimId) {
+        synchronizePaymentState(user, claimId, null);
+    }
+
+    @Transactional
+    public void synchronizePaymentState(
+            CurrentClaimUser user,
+            UUID claimId,
+            String reopenReason
+    ) {
         log.debug("Синхронизация расчёта после фиксации платежа: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
 
-        ClaimEntity claim = getEntity(user.organizationId(), claimId);
         var calculation = calculationService.recalculate(user, claimId);
+        // recalculate() runs in REQUIRES_NEW and increments the claim version.
+        // Load the claim only after that transaction finishes; otherwise this
+        // transaction keeps a stale managed entity and PAID fails with an
+        // optimistic-lock conflict after the debt has already become zero.
+        ClaimEntity claim = getEntity(user.organizationId(), claimId);
 
-        if (calculation.totalAmount() == null
-                || calculation.totalAmount().signum() > 0
-                || CLOSED_STATUSES.contains(claim.getStatus())) {
+        if (calculation.totalAmount() == null) {
+            return;
+        }
+
+        if (calculation.totalAmount().signum() > 0) {
+            if (claim.getStatus() == ClaimStatus.PAID
+                    && claim.getSentAt() != null) {
+                claim.setPaidAt(null);
+                claim.setUpdatedBy(SYSTEM_ACTOR_ID);
+                claimRepository.save(claim);
+                changeStatus(
+                    user,
+                    claimId,
+                    ClaimStatus.AWAITING_RESPONSE,
+                    reopenReason == null || reopenReason.isBlank()
+                        ? "Оплата отменена, задолженность восстановлена"
+                        : reopenReason,
+                    SYSTEM_ACTOR_ID
+                );
+            }
+            return;
+        }
+
+        if (CLOSED_STATUSES.contains(claim.getStatus())) {
             return;
         }
 
@@ -867,7 +938,8 @@ public class ClaimService {
                     || current == ClaimStatus.LEGAL_APPROVED;
             case ESCALATED_TO_COURT -> current == ClaimStatus.SENT || current == ClaimStatus.AWAITING_RESPONSE;
             case CLOSED_IN_COURT -> current == ClaimStatus.ESCALATED_TO_COURT;
-            case AWAITING_RESPONSE -> current == ClaimStatus.SENT;
+            case AWAITING_RESPONSE -> current == ClaimStatus.SENT
+                    || current == ClaimStatus.PAID;
             case DRAFT -> false;
         };
         if (!valid) {

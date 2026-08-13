@@ -586,6 +586,20 @@ async function getOverdueShipments() {
   return apiRequest('/shipments/overdue');
 }
 
+async function submitClaimToLegalReview(claimId, payload) {
+  return apiRequest(`/claims/${claimId}/submit-to-legal-review`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+async function confirmShipmentNonPayment(shipmentId, payload) {
+  return apiRequest(`/shipments/${shipmentId}/confirm-non-payment`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 async function getShipment(shipmentId) {
   return apiRequest(`/shipments/${shipmentId}`);
 }
@@ -610,9 +624,10 @@ async function getPayments(params = {}) {
   return apiRequest(`/payments?${qs}`);
 }
 
-async function deletePayment(paymentId) {
+async function deletePayment(paymentId, reason) {
   await refreshSession();
-  return apiRequest(`/payments/${paymentId}`, { method: 'DELETE' });
+  const qs = buildQuery({ reason });
+  return apiRequest(`/payments/${paymentId}?${qs}`, { method: 'DELETE' });
 }
 
 async function getPayment(paymentId) {
@@ -621,6 +636,13 @@ async function getPayment(paymentId) {
 
 async function createPayment(payload) {
   return apiRequest('/payments', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+async function createPaymentMatch(paymentId, payload) {
+  return apiRequest(`/payments/${paymentId}/matches`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

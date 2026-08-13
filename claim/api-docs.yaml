@@ -298,7 +298,8 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StatusChangeRequest"
+              $ref: "#/components/schemas/AccountantClaimSubmissionRequest"
+        required: true
       responses:
         "200":
           description: OK
@@ -582,6 +583,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ShipmentResponse"
+  /api/v1/shipments/{shipmentId}/confirm-non-payment:
+    post:
+      tags:
+      - shipment-controller
+      operationId: confirmNonPaymentFromShipment
+      parameters:
+      - name: shipmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountantClaimSubmissionRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailsResponse"
   /api/v1/parties/{partyId}:
     get:
       tags:
@@ -1474,6 +1500,20 @@ components:
         createdAt:
           type: string
           format: date-time
+    AccountantClaimSubmissionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        text:
+          type: string
+          minLength: 1
+          maxLength: 100000
+      required:
+      - reason
+      - text
     StatusChangeRequest:
       type: object
       properties:

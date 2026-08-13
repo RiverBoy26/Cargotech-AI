@@ -17,8 +17,12 @@ public class ClaimPaymentSynchronizationService {
     private final ClaimClient claimClient;
 
     public void synchronizeAfterCommit(UUID claimId) {
+        synchronizeAfterCommit(claimId, null);
+    }
+
+    public void synchronizeAfterCommit(UUID claimId, String reason) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
-            synchronize(claimId);
+            synchronize(claimId, reason);
             return;
         }
 
@@ -26,15 +30,15 @@ public class ClaimPaymentSynchronizationService {
             new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    synchronize(claimId);
+                    synchronize(claimId, reason);
                 }
             }
         );
     }
 
-    private void synchronize(UUID claimId) {
+    private void synchronize(UUID claimId, String reason) {
         try {
-            claimClient.syncPaymentState(claimId);
+            claimClient.syncPaymentState(claimId, reason);
         } catch (RuntimeException exception) {
             // The payment is already committed. Keep the operation successful and
             // leave an actionable error for the next reconciliation/retry.

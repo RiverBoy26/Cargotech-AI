@@ -183,6 +183,10 @@ header {
 
 /* таблица */
 
+.overdue_section_header {
+  margin: 22px 0 12px;
+}
+
 .overdues_table {
   background: #FFFFFF;
   border: 2px solid #E6E9ED;
