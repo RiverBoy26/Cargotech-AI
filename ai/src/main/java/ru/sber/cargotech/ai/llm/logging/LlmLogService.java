@@ -13,6 +13,7 @@ import ru.sber.cargotech.ai.security.SensitiveDataMasker;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -209,8 +210,14 @@ public class LlmLogService {
                         entry.finishedAt(), entry.durationMs()
                 );
             } catch (RuntimeException persistenceError) {
-                log.error("Failed to persist LLM audit metadata: requestId={}, exceptionType={}",
-                        entry.requestId(), persistenceError.getClass().getSimpleName());
+                SQLException sqlException = findSqlException(persistenceError);
+                log.error(
+                        "Failed to persist LLM audit metadata: requestId={}, exceptionType={}, sqlState={}, vendorCode={}",
+                        entry.requestId(),
+                        persistenceError.getClass().getSimpleName(),
+                        sqlException == null ? "n/a" : sqlException.getSQLState(),
+                        sqlException == null ? 0 : sqlException.getErrorCode()
+                );
             }
         }
     }
@@ -223,8 +230,14 @@ public class LlmLogService {
                         FROM cargotech.ai_llm_call_logs WHERE claim_id = ?
                         """, (rs, rowNum) -> new UsageTotals(rs.getInt(1), rs.getBigDecimal(2)), caseId);
             } catch (RuntimeException persistenceError) {
-                log.warn("Using in-memory AI limits: claimId={}, exceptionType={}",
-                        caseId, persistenceError.getClass().getSimpleName());
+                SQLException sqlException = findSqlException(persistenceError);
+                log.warn(
+                        "Using in-memory AI limits: claimId={}, exceptionType={}, sqlState={}, vendorCode={}",
+                        caseId,
+                        persistenceError.getClass().getSimpleName(),
+                        sqlException == null ? "n/a" : sqlException.getSQLState(),
+                        sqlException == null ? 0 : sqlException.getErrorCode()
+                );
             }
         }
         int calls = 0;
@@ -236,6 +249,17 @@ public class LlmLogService {
             }
         }
         return new UsageTotals(calls, cost);
+    }
+
+    private SQLException findSqlException(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof SQLException sqlException) {
+                return sqlException;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private BigDecimal calculateCost(GigaChatChatResponse.Usage usage) {

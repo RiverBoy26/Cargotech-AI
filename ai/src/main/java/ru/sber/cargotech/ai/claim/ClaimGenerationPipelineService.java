@@ -71,7 +71,10 @@ public class ClaimGenerationPipelineService {
                 chatResponse,
                 "GigaChat returned empty claim generation response"
         );
-        GenerateClaimResponse generatedClaim = claimResponseParser.parse(rawModelResponse);
+        GenerateClaimResponse generatedClaim = normalizeCitationMetadata(
+                enrichedRequest,
+                claimResponseParser.parse(rawModelResponse)
+        );
         GuardrailResult guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
         logGuardrailResult(
                 "INITIAL",
@@ -104,7 +107,10 @@ public class ClaimGenerationPipelineService {
                     repairResponse,
                     "GigaChat returned empty claim repair response"
             );
-            generatedClaim = claimResponseParser.parse(repairedRaw);
+            generatedClaim = normalizeCitationMetadata(
+                    enrichedRequest,
+                    claimResponseParser.parse(repairedRaw)
+            );
             guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
             logGuardrailResult(
                     "REPAIR",
@@ -358,6 +364,146 @@ public class ClaimGenerationPipelineService {
         }
 
         return "PASSED";
+    }
+
+    GenerateClaimResponse normalizeCitationMetadata(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response
+    ) {
+        if (request == null || response == null) {
+            return response;
+        }
+
+        boolean changed = false;
+        List<GenerateClaimResponse.UsedContractClause> normalizedContract = new ArrayList<>();
+        for (GenerateClaimResponse.UsedContractClause used :
+                response.usedContractClauses() == null
+                        ? List.<GenerateClaimResponse.UsedContractClause>of()
+                        : response.usedContractClauses()) {
+            if (used == null) {
+                continue;
+            }
+
+            GenerateClaimRequest.ContractContextChunk exactByChunk = null;
+            List<GenerateClaimRequest.ContractContextChunk> sameClause = new ArrayList<>();
+
+            for (GenerateClaimRequest.ContractContextChunk allowed :
+                    request.contractContext() == null
+                            ? List.<GenerateClaimRequest.ContractContextChunk>of()
+                            : request.contractContext()) {
+                if (allowed == null) {
+                    continue;
+                }
+                if (!isBlank(used.chunkId()) && used.chunkId().equals(allowed.chunkId())) {
+                    exactByChunk = allowed;
+                }
+                if (!isBlank(used.clauseNumber())
+                        && normalize(used.clauseNumber()).equals(normalize(allowed.clauseNumber()))) {
+                    sameClause.add(allowed);
+                }
+            }
+
+            GenerateClaimRequest.ContractContextChunk canonical = null;
+
+            // If the model returned a valid chunk id, the backend source wins.
+            if (exactByChunk != null
+                    && (isBlank(used.clauseNumber())
+                    || normalize(used.clauseNumber()).equals(normalize(exactByChunk.clauseNumber())))) {
+                canonical = exactByChunk;
+            } else if (sameClause.size() == 1) {
+                // Most common LLM metadata error: the visible clause number is
+                // correct, but it copied the chunk_id from a neighbouring chunk.
+                // We can repair that deterministically without a second LLM call.
+                canonical = sameClause.get(0);
+            }
+
+            if (canonical != null) {
+                GenerateClaimResponse.UsedContractClause normalized =
+                        new GenerateClaimResponse.UsedContractClause(
+                                canonical.clauseNumber(),
+                                canonical.chunkId(),
+                                used.reason()
+                        );
+                normalizedContract.add(normalized);
+                if (!normalized.equals(used)) {
+                    changed = true;
+                }
+            } else {
+                // Ambiguous/unknown citations remain untouched so the guardrail
+                // can still block genuinely unsafe metadata.
+                normalizedContract.add(used);
+            }
+        }
+
+        List<GenerateClaimResponse.UsedLawArticle> normalizedLaw = new ArrayList<>();
+        for (GenerateClaimResponse.UsedLawArticle used :
+                response.usedLawArticles() == null
+                        ? List.<GenerateClaimResponse.UsedLawArticle>of()
+                        : response.usedLawArticles()) {
+            if (used == null) {
+                continue;
+            }
+
+            GenerateClaimRequest.LegalContextItem exactByChunk = null;
+            List<GenerateClaimRequest.LegalContextItem> sameLaw = new ArrayList<>();
+
+            for (GenerateClaimRequest.LegalContextItem allowed :
+                    request.legalContext() == null
+                            ? List.<GenerateClaimRequest.LegalContextItem>of()
+                            : request.legalContext()) {
+                if (allowed == null) {
+                    continue;
+                }
+                if (!isBlank(used.chunkId()) && used.chunkId().equals(allowed.chunkId())) {
+                    exactByChunk = allowed;
+                }
+                if (normalize(used.lawCode()).equals(normalize(allowed.lawCode()))
+                        && normalize(used.article()).equals(normalize(allowed.article()))) {
+                    sameLaw.add(allowed);
+                }
+            }
+
+            GenerateClaimRequest.LegalContextItem canonical = null;
+            if (exactByChunk != null
+                    && normalize(used.lawCode()).equals(normalize(exactByChunk.lawCode()))
+                    && normalize(used.article()).equals(normalize(exactByChunk.article()))) {
+                canonical = exactByChunk;
+            } else if (sameLaw.size() == 1) {
+                canonical = sameLaw.get(0);
+            }
+
+            if (canonical != null) {
+                GenerateClaimResponse.UsedLawArticle normalized =
+                        new GenerateClaimResponse.UsedLawArticle(
+                                canonical.chunkId(),
+                                canonical.lawCode(),
+                                canonical.article(),
+                                used.reason()
+                        );
+                normalizedLaw.add(normalized);
+                if (!normalized.equals(used)) {
+                    changed = true;
+                }
+            } else {
+                normalizedLaw.add(used);
+            }
+        }
+
+        if (!changed) {
+            return response;
+        }
+
+        return new GenerateClaimResponse(
+                response.claimType(),
+                response.claimText(),
+                response.summaryForLawyer(),
+                List.copyOf(normalizedContract),
+                List.copyOf(normalizedLaw),
+                response.backendCalculationUsed(),
+                response.attachments(),
+                response.warnings(),
+                response.manualReviewRequired()
+        );
     }
 
     List<GenerateClaimRequest.ContractContextChunk> mergeContractContext(
