@@ -123,6 +123,12 @@ public class ClaimCalculationService {
         BigDecimal totalAmount = money(remainingDebt.add(penaltyAmount));
         log.debug("Расчёт выполнен: claimId={}, principalDebt={}, paidAmount={}, remainingDebt={}, overdueStartDate={}, overdueDays={}, penaltyType={}, penaltyRate={}, penaltyAmount={}, totalAmount={}", claim.getId(), principalDebt, paidAmount, remainingDebt, overdueStartDate, overdueDays, penaltyType, penaltyRate, penaltyAmount, totalAmount);
 
+        // Serialize version allocation per claim. MAX(version) + 1 is safe only
+        // while the parent claim row is locked in this transaction.
+        ClaimEntity lockedClaim = claimRepository
+            .findByIdAndOrganizationIdForUpdate(claim.getId(), user.organizationId())
+            .orElseThrow(() -> ClaimException.notFound("Претензия не найдена"));
+
         int nextVersion = calculationRepository.findLastCalculationVersion(claim.getId()) + 1;
         ClaimCalculation calculation = new ClaimCalculation();
         calculation.setClaimId(claim.getId());
@@ -167,11 +173,11 @@ public class ClaimCalculationService {
         ClaimCalculation saved = calculationRepository.save(calculation);
         log.debug("Расчёт сохранён: claimId={}, calculationId={}, version={}", claim.getId(), saved.getId(), saved.getCalculationVersion());
 
-        claim.setPrincipalDebt(remainingDebt);
-        claim.setPenaltyAmount(penaltyAmount);
-        claim.setUpdatedBy(user.userId());
-        claim.normalizeTotals();
-        claimRepository.save(claim);
+        lockedClaim.setPrincipalDebt(remainingDebt);
+        lockedClaim.setPenaltyAmount(penaltyAmount);
+        lockedClaim.setUpdatedBy(user.userId());
+        lockedClaim.normalizeTotals();
+        claimRepository.save(lockedClaim);
 
         outboxWriter.write(
             "CLAIM",

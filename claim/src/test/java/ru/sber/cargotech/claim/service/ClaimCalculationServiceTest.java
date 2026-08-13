@@ -66,6 +66,8 @@ class ClaimCalculationServiceTest {
 
         when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
             .thenReturn(Optional.of(claim));
+        when(claimRepository.findByIdAndOrganizationIdForUpdate(claimId, organizationId))
+            .thenReturn(Optional.of(claim));
         when(shipmentService.getEntity(organizationId, shipmentId))
             .thenReturn(shipment);
         when(contractService.getEntity(organizationId, contractId))

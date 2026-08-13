@@ -73,8 +73,11 @@ public class ClaimVersionService {
     ) {
         log.debug("Создание версии: claimId={}, userId={}, source={}, baseVersionId={}, finalVersion={}", claimId, user.userId(), request.source(), request.baseVersionId(), request.finalVersion());
 
-        ClaimEntity claim = getClaim(user, claimId);
+        ClaimEntity claim = claimRepository
+            .findByIdAndOrganizationIdForUpdate(claimId, user.organizationId())
+            .orElseThrow(() -> ClaimException.notFound("Претензия не найдена"));
         ensureClaimTextEditable(claim);
+
         ClaimVersion version = new ClaimVersion();
         version.setClaimId(claim.getId());
         version.setVersionNumber(versionRepository.findLastVersionNumber(claim.getId()) + 1);

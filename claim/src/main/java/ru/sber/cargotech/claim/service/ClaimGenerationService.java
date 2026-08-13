@@ -46,7 +46,9 @@ public class ClaimGenerationService {
         this.contractClauseRepository = contractClauseRepository;
     }
 
-    @Transactional
+    // Deliberately NOT transactional as a whole:
+    // recalculation must commit before the external AI call, and no database
+    // transaction/row lock should be held during a 20-60 second provider request.
     public GenerateClaimResponse generate(CurrentClaimUser user, UUID claimId) {
         // A document must always be based on today's payment and overdue state.
         calculationService.recalculate(user, claimId);
