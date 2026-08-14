@@ -57,8 +57,7 @@ function renderActionButton(claim) {
       >Открыть карточку</button>`;
   }
   if (claim.status === 'DRAFT') {
-    return `<button class="action_btn action_btn_confirm" data-claim-action="open-claim" data-id="${escapeAccountant(claim.id)}"
-      >Открыть карточку</button>`;
+    return '<span class="action_btn_done">—</span>';
   }
   if (!['PAID', 'CANCELLED', 'CANCELLED_PAID', 'CLOSED_IN_COURT'].includes(claim.status)) {
     const withdrawButton = ['PENDING_LEGAL_REVIEW', 'LEGAL_APPROVED'].includes(claim.status)
@@ -188,9 +187,6 @@ function bindOverdueActions() {
       try {
         if (action === 'open-shipment') {
           window.location.href = `/pages/accountant/shipment_card.html?shipmentId=${encodeURIComponent(button.dataset.shipmentId)}`;
-          return;
-        } else if (action === 'open-claim') {
-          window.location.href = `/pages/accountant/shipment_card.html?claimId=${encodeURIComponent(id)}`;
           return;
         } else if (action === 'preflight') {
           const result = await preflightClaimPayment(id, 'Ручная проверка бухгалтером');

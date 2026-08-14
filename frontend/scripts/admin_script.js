@@ -581,7 +581,9 @@ document.getElementById('add_party_btn').addEventListener('click', () => {
 
 document.getElementById('cancel_party_btn').addEventListener('click', resetPartyForm);
 
-document.getElementById('save_party_btn').addEventListener('click', async () => {
+document.getElementById('save_party_btn').addEventListener('click', async (event) => {
+  const saveButton = event.currentTarget;
+  if (saveButton.disabled) return;
   const payload = {
     type: document.getElementById('party_type').value,
     name: document.getElementById('party_name').value.trim(),
@@ -598,12 +600,17 @@ document.getElementById('save_party_btn').addEventListener('click', async () => 
     errorElement.textContent = 'Тип и наименование контрагента обязательны';
     return;
   }
+  saveButton.disabled = true;
+  saveButton.textContent = 'Создание...';
   try {
     await createParty(payload);
     resetPartyForm();
     await loadParties();
   } catch (error) {
     errorElement.textContent = error.message;
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = 'Создать';
   }
 });
 

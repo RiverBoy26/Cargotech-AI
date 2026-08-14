@@ -284,8 +284,64 @@ header {
   border: 1px solid #dde1e6;
   border-radius: 8px;
   background: #fff;
+}
+
+.contract_source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #f6c9a6;
+  border-radius: 8px;
+  background: #fff7f1;
+}
+
+.contract_source[hidden] {
+  display: none;
+}
+
+.contract_source_info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.contract_source_type {
+  color: #7b3517;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.contract_source_title {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.contract_source_meta {
+  color: #5f6875;
+  font-size: 12px;
+}
+
+.contract_source_download {
+  flex: 0 0 auto;
+  padding: 9px 14px;
+}
+
+.sources_text {
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f5f5f5;
   font: 12px/1.45 'Anonymous Pro', monospace;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sources_empty {
+  margin: 0;
+  color: #5f6875;
+  font-size: 12px;
 }
 
 .version_diff {

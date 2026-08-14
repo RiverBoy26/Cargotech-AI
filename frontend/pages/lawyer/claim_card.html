@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Карточка претензии</title>
-    <link rel="stylesheet" href="../../styles/claim_card.css?v=20260813-delete-claim-1">
+    <link rel="stylesheet" href="../../styles/claim_card.css?v=20260814-contract-source-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
@@ -91,7 +91,19 @@
                             <ul class="checklist" id="send_checklist"><li>Загрузка проверок…</li></ul>
                             <details>
                                 <summary>Использованные источники</summary>
-                                <pre class="sources_view" id="used_sources">Источники ещё не зафиксированы</pre>
+                                <div class="sources_view" id="used_sources_container" aria-live="polite">
+                                    <div class="contract_source" id="contract_source" hidden>
+                                        <div class="contract_source_info">
+                                            <span class="contract_source_type">Договор</span>
+                                            <strong class="contract_source_title" id="contract_source_title"></strong>
+                                            <span class="contract_source_meta" id="contract_source_meta"></span>
+                                        </div>
+                                        <button class="action_btn contract_source_download" id="btn_download_contract_source"
+                                                type="button" hidden>Скачать договор</button>
+                                    </div>
+                                    <pre class="sources_text" id="used_sources" hidden></pre>
+                                    <p class="sources_empty" id="used_sources_empty">Источники ещё не зафиксированы</p>
+                                </div>
                             </details>
                             <button class="action_btn" id="btn_validation_override" hidden>Подтвердить после ручной проверки</button>
                         </section>
@@ -200,6 +212,6 @@
     </dialog>
 
     <script src="../../scripts/api.js?v=20260813-refresh-permissions-1"></script>
-    <script src="../../scripts/claim_script.js?v=20260814-delete-claim-cascade-1"></script>
+    <script src="../../scripts/claim_script.js?v=20260814-click-lock-1"></script>
 </body>
 </html>

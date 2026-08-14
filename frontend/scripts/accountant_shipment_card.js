@@ -53,6 +53,7 @@ async function initAccountantShipmentCard() {
   const message = document.getElementById('draft_message');
   const saveButton = document.getElementById('save_draft_btn');
   const confirmButton = document.getElementById('confirm_non_payment_btn');
+  let confirmationInProgress = false;
 
   if (!claimId && !shipmentId) {
     message.textContent = 'Не указан идентификатор рейса или претензии';
@@ -110,7 +111,10 @@ async function initAccountantShipmentCard() {
     });
 
     confirmButton.addEventListener('click', async () => {
+      if (confirmationInProgress) return;
+      confirmationInProgress = true;
       confirmButton.disabled = true;
+      confirmButton.textContent = 'Подтверждение...';
       saveButton.disabled = true;
       message.textContent = '';
       try {
@@ -124,7 +128,9 @@ async function initAccountantShipmentCard() {
       } catch (error) {
         message.textContent = `Ошибка: ${error.message}`;
       } finally {
+        confirmationInProgress = false;
         confirmButton.disabled = false;
+        confirmButton.textContent = 'Подтвердить неуплату';
         saveButton.disabled = false;
       }
     });

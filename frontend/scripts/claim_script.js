@@ -5,6 +5,7 @@ let selectedDocumentId = null;
 let currentClaimContext = {};
 let currentSendChecklist = null;
 let templatePreviewRequestId = 0;
+let documentGenerationInProgress = false;
 
 function finalClaimVersion() {
   return currentVersions.find((item) => item.id === currentClaim?.finalVersionId) || null;
@@ -324,7 +325,9 @@ function updateAvailableActions() {
   setButtonState(
     'btn_generate_document',
     canGenerateDocument,
-    Boolean(currentClaim?.finalVersionId) && !finalVersionDocumentExists()
+    Boolean(currentClaim?.finalVersionId)
+      && !finalVersionDocumentExists()
+      && !documentGenerationInProgress
   );
   const generateButton = document.getElementById('btn_generate_document');
   if (generateButton) {
@@ -377,16 +380,7 @@ function fillClaimCard(claim) {
     claim.documentValidationErrors
       || (claim.manualReviewRequired ? claim.manualReviewReason : 'Ошибок нет')
   );
-  const sources = document.getElementById('used_sources');
-  if (sources) {
-    try {
-      sources.textContent = claim.usedSources
-        ? JSON.stringify(JSON.parse(claim.usedSources), null, 2)
-        : 'Источники ещё не зафиксированы';
-    } catch (_) {
-      sources.textContent = claim.usedSources || 'Источники ещё не зафиксированы';
-    }
-  }
+  renderUsedSources(claim, null);
   const stripe = document.getElementById('claim_card_stripe');
   if (stripe) stripe.className = `claim_card_stripe ${status.className}`;
   updateAvailableActions();
@@ -418,6 +412,8 @@ async function loadClaimContext(claim) {
     assignedLawyer,
   };
 
+  renderUsedSources(claim, contract);
+
   setText(
     'info_payment_term',
     contract?.paymentDays != null ? `${contract.paymentDays} дней` : '—'
@@ -439,6 +435,44 @@ async function loadClaimContext(claim) {
   }
 
   setRecipientEmail(debtor?.email);
+}
+
+function renderUsedSources(claim, contract) {
+  const contractSource = document.getElementById('contract_source');
+  const contractTitle = document.getElementById('contract_source_title');
+  const contractMeta = document.getElementById('contract_source_meta');
+  const contractDownload = document.getElementById('btn_download_contract_source');
+  const sourcesText = document.getElementById('used_sources');
+  const sourcesEmpty = document.getElementById('used_sources_empty');
+  const hasContractDocument = Boolean(contract?.documentId);
+  const rawSources = claim?.usedSources?.trim() || '';
+
+  if (contractSource) contractSource.hidden = !hasContractDocument;
+  if (hasContractDocument) {
+    contractTitle.textContent = contract.number ? `Договор № ${contract.number}` : 'Договор без номера';
+    contractMeta.textContent = contract.signedAt
+      ? `Дата договора: ${formatDate(contract.signedAt)}`
+      : 'Дата договора не указана';
+    contractDownload.dataset.documentId = contract.documentId;
+    contractDownload.hidden = !hasPermission('DOCUMENT_DOWNLOAD');
+  } else if (contractDownload) {
+    delete contractDownload.dataset.documentId;
+    contractDownload.hidden = true;
+  }
+
+  if (sourcesText) {
+    if (rawSources) {
+      try {
+        sourcesText.textContent = JSON.stringify(JSON.parse(rawSources), null, 2);
+      } catch (_) {
+        sourcesText.textContent = rawSources;
+      }
+    } else {
+      sourcesText.textContent = '';
+    }
+    sourcesText.hidden = !rawSources;
+  }
+  if (sourcesEmpty) sourcesEmpty.hidden = hasContractDocument || Boolean(rawSources);
 }
 
 async function loadVersions(claimId) {
@@ -731,7 +765,10 @@ async function generateSelectedClaimDocument(claimId) {
     data,
   });
 
-  await loadDocuments(claimId);
+  await Promise.all([
+    loadDocuments(claimId),
+    loadSendChecklist(claimId),
+  ]);
 
   return generated;
 }
@@ -754,6 +791,21 @@ async function initClaimCardPage() {
 
   document.getElementById('back_link').addEventListener('click', () => {
     window.location.href = '/pages/lawyer/claims.html';
+  });
+
+  document.getElementById('btn_download_contract_source').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const documentId = button.dataset.documentId;
+    if (!documentId) return;
+
+    button.disabled = true;
+    try {
+      await downloadDocument(documentId);
+    } catch (error) {
+      showError(error);
+    } finally {
+      button.disabled = false;
+    }
   });
 
   document.getElementById('version_select').addEventListener('change', (event) => {
@@ -906,9 +958,20 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_generate_document').addEventListener('click', async () => {
+    if (documentGenerationInProgress) return;
+    const button = document.getElementById('btn_generate_document');
+    documentGenerationInProgress = true;
+    button.textContent = 'Формирование...';
+    updateAvailableActions();
     try {
       await generateSelectedClaimDocument(claimId);
-    } catch (error) { showError(error); }
+    } catch (error) {
+      showError(error);
+    } finally {
+      documentGenerationInProgress = false;
+      button.textContent = 'Сформировать документ';
+      updateAvailableActions();
+    }
   });
   document.getElementById('document_format').addEventListener('change', updateAvailableActions);
 

@@ -376,7 +376,9 @@ document.getElementById('cancel_organization_btn').addEventListener('click', () 
   clearOrganizationForm();
 });
 
-document.getElementById('save_organization_btn').addEventListener('click', async () => {
+document.getElementById('save_organization_btn').addEventListener('click', async (event) => {
+  const saveButton = event.currentTarget;
+  if (saveButton.disabled) return;
   const payload = {
     name: document.getElementById('organization_name').value.trim(),
     inn: document.getElementById('organization_inn').value.trim(),
@@ -392,6 +394,8 @@ document.getElementById('save_organization_btn').addEventListener('click', async
     showToast('Название и ИНН обязательны', 'error');
     return;
   }
+  saveButton.disabled = true;
+  saveButton.textContent = 'Создание...';
   try {
     await createOrganization(payload);
     organizationForm.classList.remove('add_user_form_visible');
@@ -400,6 +404,9 @@ document.getElementById('save_organization_btn').addEventListener('click', async
     await loadAllUsers();
   } catch (error) {
     showToast(error.message, 'error');
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = 'Создать';
   }
 });
 
