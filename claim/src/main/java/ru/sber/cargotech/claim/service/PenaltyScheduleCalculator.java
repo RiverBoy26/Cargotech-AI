@@ -8,12 +8,11 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.SortedSet;
-import java.util.TreeSet;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 final class PenaltyScheduleCalculator {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
-    private static final BigDecimal DAYS_IN_YEAR = new BigDecimal("365");
 
     private PenaltyScheduleCalculator() {
     }
@@ -52,35 +51,29 @@ final class PenaltyScheduleCalculator {
                 || calculationDate == null
                 || !calculationDate.isAfter(overdueStartDate)
                 || penaltyType == null
-                || penaltyType == PenaltyType.NONE
-                || penaltyRate == null
-                || penaltyRate.signum() <= 0) {
+                || penaltyType == PenaltyType.NONE) {
             return money(BigDecimal.ZERO);
         }
 
-        TreeMap<LocalDate, BigDecimal> paymentsByDate = new TreeMap<>();
-        if (allocations != null) {
-            allocations.stream()
-                    .filter(allocation -> allocation != null
-                            && allocation.paymentDate() != null
-                            && allocation.amount() != null
-                            && allocation.amount().signum() > 0)
-                    .forEach(allocation -> paymentsByDate.merge(
-                            allocation.paymentDate(),
-                            allocation.amount(),
-                            BigDecimal::add
-                    ));
-        }
+        TreeMap<LocalDate, BigDecimal> paymentsByDate = normalizePayments(allocations);
 
-        if (penaltyType == PenaltyType.ARTICLE_395 && ratePeriods != null && !ratePeriods.isEmpty()) {
+        if (penaltyType == PenaltyType.ARTICLE_395) {
+            if (ratePeriods == null || ratePeriods.isEmpty()) {
+                throw new IllegalStateException(
+                        "Article 395 calculation requires complete Bank of Russia key-rate periods"
+                );
+            }
             return calculateArticle395ByRatePeriods(
                     principalDebt,
                     overdueStartDate,
                     calculationDate,
-                    penaltyRate,
                     paymentsByDate,
                     ratePeriods
             );
+        }
+
+        if (penaltyRate == null || penaltyRate.signum() <= 0) {
+            return money(BigDecimal.ZERO);
         }
 
         BigDecimal outstandingDebt = principalDebt;
@@ -122,11 +115,27 @@ final class PenaltyScheduleCalculator {
         return money(accruedPenalty);
     }
 
+    private static TreeMap<LocalDate, BigDecimal> normalizePayments(List<Allocation> allocations) {
+        TreeMap<LocalDate, BigDecimal> paymentsByDate = new TreeMap<>();
+        if (allocations != null) {
+            allocations.stream()
+                    .filter(allocation -> allocation != null
+                            && allocation.paymentDate() != null
+                            && allocation.amount() != null
+                            && allocation.amount().signum() > 0)
+                    .forEach(allocation -> paymentsByDate.merge(
+                            allocation.paymentDate(),
+                            allocation.amount(),
+                            BigDecimal::add
+                    ));
+        }
+        return paymentsByDate;
+    }
+
     private static BigDecimal calculateArticle395ByRatePeriods(
             BigDecimal principalDebt,
             LocalDate overdueStartDate,
             LocalDate calculationDate,
-            BigDecimal fallbackRate,
             TreeMap<LocalDate, BigDecimal> paymentsByDate,
             List<RatePeriod> ratePeriods
     ) {
@@ -153,6 +162,11 @@ final class PenaltyScheduleCalculator {
                 }
             }
         });
+        LocalDate nextYear = LocalDate.of(overdueStartDate.getYear() + 1, 1, 1);
+        while (nextYear.isBefore(calculationDate)) {
+            boundaries.add(nextYear);
+            nextYear = nextYear.plusYears(1);
+        }
 
         List<LocalDate> ordered = new java.util.ArrayList<>(boundaries);
         BigDecimal accrued = BigDecimal.ZERO;
@@ -165,11 +179,11 @@ final class PenaltyScheduleCalculator {
                         .max(BigDecimal.ZERO);
             }
             long days = ChronoUnit.DAYS.between(from, to);
-            accrued = accrued.add(calculatePeriod(
+            accrued = accrued.add(calculateArticle395Period(
                     outstandingDebt,
                     days,
-                    PenaltyType.ARTICLE_395,
-                    rateAt(from, ratePeriods, fallbackRate)
+                    rateAt(from, ratePeriods),
+                    from.lengthOfYear()
             ));
         }
         return money(accrued);
@@ -177,16 +191,18 @@ final class PenaltyScheduleCalculator {
 
     private static BigDecimal rateAt(
             LocalDate date,
-            List<RatePeriod> periods,
-            BigDecimal fallbackRate
+            List<RatePeriod> periods
     ) {
         return periods.stream()
                 .filter(period -> period.from() != null && !date.isBefore(period.from()))
                 .filter(period -> period.to() == null || !date.isAfter(period.to()))
                 .map(RatePeriod::rate)
                 .filter(java.util.Objects::nonNull)
+                .filter(rate -> rate.signum() > 0)
                 .findFirst()
-                .orElse(fallbackRate);
+                .orElseThrow(() -> new IllegalStateException(
+                        "Missing Bank of Russia key rate for Article 395 on " + date
+                ));
     }
 
     private static BigDecimal calculatePeriod(
@@ -204,19 +220,29 @@ final class PenaltyScheduleCalculator {
                 12,
                 RoundingMode.HALF_UP
         );
-        BigDecimal penalty = debt
+        return debt
                 .multiply(percent)
                 .multiply(BigDecimal.valueOf(days));
+    }
 
-        if (penaltyType == PenaltyType.ARTICLE_395) {
-            penalty = penalty.divide(
-                    DAYS_IN_YEAR,
-                    12,
-                    RoundingMode.HALF_UP
-            );
+    private static BigDecimal calculateArticle395Period(
+            BigDecimal debt,
+            long days,
+            BigDecimal annualRate,
+            int daysInYear
+    ) {
+        if (debt.signum() <= 0 || days <= 0) {
+            return BigDecimal.ZERO;
         }
-
-        return penalty;
+        BigDecimal percent = annualRate.divide(
+                ONE_HUNDRED,
+                12,
+                RoundingMode.HALF_UP
+        );
+        return debt
+                .multiply(percent)
+                .multiply(BigDecimal.valueOf(days))
+                .divide(BigDecimal.valueOf(daysInYear), 12, RoundingMode.HALF_UP);
     }
 
     private static BigDecimal money(BigDecimal value) {
@@ -226,6 +252,9 @@ final class PenaltyScheduleCalculator {
     record Allocation(LocalDate paymentDate, BigDecimal amount) {
     }
 
-    record RatePeriod(LocalDate from, LocalDate to, BigDecimal rate) {
+    record RatePeriod(LocalDate from, LocalDate to, BigDecimal rate, String source) {
+        RatePeriod(LocalDate from, LocalDate to, BigDecimal rate) {
+            this(from, to, rate, null);
+        }
     }
 }

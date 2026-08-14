@@ -86,9 +86,7 @@ public class ClaimAiRequestMapper {
                 new AiGenerateClaimRequest.BackendCalculation(
                         calculation.getRemainingDebt(),
                         mapPenaltyType(calculation),
-                        calculation.getPenaltyRate() == null
-                                ? null
-                                : calculation.getPenaltyRate().toPlainString(),
+                        penaltyRateText(calculation),
                         calculation.getOverdueDays(),
                         calculation.getPenaltyAmount(),
                         calculation.getTotalAmount(),
@@ -162,6 +160,16 @@ public class ClaimAiRequestMapper {
                         : "Представитель кредитора")
                 : claim.getSignerPosition();
         return new AiGenerateClaimRequest.SignatoryFacts(name, position, claim.getSignerAuthority());
+    }
+
+
+    private String penaltyRateText(ClaimCalculation calculation) {
+        if (calculation.getPenaltyType() == ru.sber.cargotech.claim.enums.PenaltyType.ARTICLE_395) {
+            return "ключевая ставка Банка России по периодам";
+        }
+        return calculation.getPenaltyRate() == null
+                ? null
+                : calculation.getPenaltyRate().stripTrailingZeros().toPlainString();
     }
 
     private AiGenerateClaimRequest.PenaltyType mapPenaltyType(ClaimCalculation calculation) {

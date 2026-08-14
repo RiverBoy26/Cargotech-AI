@@ -102,7 +102,7 @@ public class CalculationExportService {
             row = writeRow(sheet, row, "Дата расчёта", calculation.calculationDate());
             row = writeRow(sheet, row, "Дней просрочки", calculation.overdueDays());
             row = writeRow(sheet, row, "Вид неустойки", calculation.penaltyType());
-            row = writeRow(sheet, row, "Ставка, %", calculation.penaltyRate());
+            row = writeRow(sheet, row, "Ставка", penaltyRateDisplay(calculation));
             row = writeRow(sheet, row, "Неустойка", calculation.penaltyAmount());
             row = writeRow(sheet, row, "Итого к оплате", calculation.totalAmount());
             writeRow(sheet, row, "Формула", calculation.formula());
@@ -110,6 +110,15 @@ public class CalculationExportService {
             workbook.write(output);
             return output.toByteArray();
         }
+    }
+
+    private String penaltyRateDisplay(ClaimCalculationResponse calculation) {
+        if (calculation.penaltyType() == ru.sber.cargotech.claim.enums.PenaltyType.ARTICLE_395) {
+            return "ключевая ставка Банка России по периодам (см. формулу)";
+        }
+        return calculation.penaltyRate() == null
+                ? "—"
+                : calculation.penaltyRate().stripTrailingZeros().toPlainString() + "%";
     }
 
     private int writeRow(Sheet sheet, int index, String label, Object value) {
@@ -134,7 +143,7 @@ public class CalculationExportService {
         lines.add("Дата расчёта: " + text(calculation.calculationDate()));
         lines.add("Дней просрочки: " + text(calculation.overdueDays()));
         lines.add("Вид неустойки: " + text(calculation.penaltyType()));
-        lines.add("Ставка: " + text(calculation.penaltyRate()) + "%");
+        lines.add("Ставка: " + penaltyRateDisplay(calculation));
         lines.add("Неустойка: " + money(calculation.penaltyAmount()));
         lines.add("Итого к оплате: " + money(calculation.totalAmount()));
         lines.add("");

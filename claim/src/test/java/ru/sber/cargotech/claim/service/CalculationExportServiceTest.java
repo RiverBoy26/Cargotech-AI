@@ -62,10 +62,10 @@ class CalculationExportServiceTest {
             LocalDate.of(2026, 8, 15),
             14,
             PenaltyType.ARTICLE_395,
-            new BigDecimal("18.00"),
-            new BigDecimal("552.33"),
-            new BigDecimal("80552.33"),
-            "80000 × 18% × 14 / 365",
+            new BigDecimal("14.00"),
+            new BigDecimal("429.59"),
+            new BigDecimal("80429.59"),
+            "Остаток долга × ключевая ставка Банка России по периодам × дни / 365(366) (2026-08-01—2026-08-14: 14%)",
             user.userId(),
             OffsetDateTime.now()
         );
@@ -93,7 +93,8 @@ class CalculationExportServiceTest {
                 .contains(REASON)
                 .contains("Банковские реквизиты")
                 .contains("р/с 40702810900000000001")
-                .contains("БИК 044525225");
+                .contains("БИК 044525225")
+                .contains("ключевая ставка Банка России по периодам");
         }
     }
 
@@ -109,7 +110,8 @@ class CalculationExportServiceTest {
                 .contains("Основание претензии: " + REASON)
                 .contains("Банковские реквизиты:")
                 .contains("р/с 40702810900000000001")
-                .contains("БИК 044525225");
+                .contains("БИК 044525225")
+                .contains("ключевая ставка Банка России по периодам");
         }
     }
 }

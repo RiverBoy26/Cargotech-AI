@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PenaltyScheduleCalculatorTest {
 
@@ -90,4 +91,55 @@ class PenaltyScheduleCalculatorTest {
 
         assertEquals(new BigDecimal("150.00"), penalty);
     }
+    @Test
+    void article395NeverUsesFallbackWhenRatePeriodsAreMissing() {
+        assertThrows(IllegalStateException.class, () -> PenaltyScheduleCalculator.calculate(
+                new BigDecimal("36500.00"),
+                LocalDate.of(2026, 8, 1),
+                LocalDate.of(2026, 8, 11),
+                PenaltyType.ARTICLE_395,
+                new BigDecimal("99.0"),
+                List.of(),
+                List.of()
+        ));
+    }
+
+    @Test
+    void article395Uses366DaysForLeapYearSegments() {
+        BigDecimal penalty = PenaltyScheduleCalculator.calculate(
+                new BigDecimal("36600.00"),
+                LocalDate.of(2024, 1, 1),
+                LocalDate.of(2024, 1, 11),
+                PenaltyType.ARTICLE_395,
+                null,
+                List.of(),
+                List.of(new PenaltyScheduleCalculator.RatePeriod(
+                        LocalDate.of(2024, 1, 1),
+                        LocalDate.of(2024, 1, 10),
+                        new BigDecimal("10.0")
+                ))
+        );
+
+        assertEquals(new BigDecimal("100.00"), penalty);
+    }
+
+    @Test
+    void article395SplitsDenominatorAcrossCalendarYears() {
+        BigDecimal penalty = PenaltyScheduleCalculator.calculate(
+                new BigDecimal("36600.00"),
+                LocalDate.of(2024, 12, 30),
+                LocalDate.of(2025, 1, 2),
+                PenaltyType.ARTICLE_395,
+                null,
+                List.of(),
+                List.of(new PenaltyScheduleCalculator.RatePeriod(
+                        LocalDate.of(2024, 12, 30),
+                        LocalDate.of(2025, 1, 1),
+                        new BigDecimal("10.0")
+                ))
+        );
+
+        assertEquals(new BigDecimal("30.03"), penalty);
+    }
+
 }
