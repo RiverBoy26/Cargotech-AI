@@ -1,4 +1,4 @@
-.shipment_back { display: inline-block; margin-bottom: 22px; color: #3559a6; text-decoration: none; }
+.shipment_back { display: inline-block; margin-bottom: 22px; color: #2E3440; text-decoration: none; }
 .shipment_card_header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
 .shipment_subtitle { margin: 6px 0 0; color: #7a8491; }
 .shipment_info_grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }

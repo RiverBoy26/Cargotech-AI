@@ -77,8 +77,12 @@ function mapUserRow(user) {
   const role = user.roles?.[0] || '—';
   return {
     id: user.id,
-    displayName: formatUserFullName(user),
+    fullName: formatUserFullName(user),
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+    middleName: user.middleName || '',
     email: user.email,
+    organizationId: user.organizationId,
     role: ROLE_LABELS[role] || role,
     roleClass: ROLE_CLASS[role] || '',
     status: user.active ? 'Активен' : 'Заблокирован',
@@ -100,7 +104,7 @@ function renderActionButton(user) {
 function renderUserRow(user) {
   return `
     <div class="user_row" data-id="${user.id}">
-      <div class="user_row_name">${escapeAdmin(user.displayName)}</div>
+      <div class="user_row_name">${escapeAdmin(user.fullName)}</div>
       <div class="user_row_email">${user.email}</div>
       <div class="user_row_role_cell">
         <span class="role-pill ${user.roleClass}">${user.role}</span>
@@ -147,10 +151,149 @@ async function loadUsers() {
 
     listEl.innerHTML = users.map(renderUserRow).join('');
     bindUserActions();
+    bindUserRowClicks();
   } catch (err) {
     listEl.innerHTML = `<div class="user_row">Ошибка: ${err.message}</div>`;
   }
 }
+
+const modal = document.getElementById('user_modal_overlay');
+const modalLoading = document.getElementById('modal_loading');
+const modalError = document.getElementById('modal_error');
+const modalFieldGrid = document.querySelector('.modal_field_grid');
+
+let currentModalUser = null;
+
+function showModal() {
+  modal.classList.add('modal_overlay_visible');
+}
+
+function hideModal() {
+  modal.classList.remove('modal_overlay_visible');
+  modalLoading.style.display = 'none';
+  modalError.textContent = '';
+  modalFieldGrid.style.display = 'grid';
+  setModalEditMode(false);
+  currentModalUser = null;
+}
+
+function setModalEditMode(isEditing) {
+  ['firstname', 'lastname', 'middlename', 'email'].forEach((field) => {
+    document.getElementById(`modal_user_${field}_view`).style.display = isEditing ? 'none' : 'block';
+    document.getElementById(`modal_user_${field}_input`).style.display = isEditing ? 'block' : 'none';
+  });
+  document.getElementById('modal_edit_btn').style.display = isEditing ? 'none' : 'inline-block';
+  document.getElementById('modal_save_btn').style.display = isEditing ? 'inline-block' : 'none';
+  document.getElementById('modal_cancel_edit_btn').style.display = isEditing ? 'inline-block' : 'none';
+  document.getElementById('modal_edit_message').textContent = '';
+}
+
+function fillModal(user) {
+  currentModalUser = user;
+  document.getElementById('modal_user_name').textContent = user.fullName;
+
+  document.getElementById('modal_user_firstname_view').textContent = user.firstName || '—';
+  document.getElementById('modal_user_firstname_input').value = user.firstName;
+  document.getElementById('modal_user_lastname_view').textContent = user.lastName || '—';
+  document.getElementById('modal_user_lastname_input').value = user.lastName;
+  document.getElementById('modal_user_middlename_view').textContent = user.middleName || '—';
+  document.getElementById('modal_user_middlename_input').value = user.middleName;
+  document.getElementById('modal_user_email_view').textContent = user.email;
+  document.getElementById('modal_user_email_input').value = user.email;
+
+  document.getElementById('modal_user_role').textContent = user.role;
+  document.getElementById('modal_user_status').textContent = user.status;
+  document.getElementById('modal_user_expeditor').textContent = user.organizationId || '—';
+
+  const blockBtn = document.getElementById('modal_block_btn');
+  const isSelf = String(user.id) === String(getStoredUser()?.userId);
+  blockBtn.style.display = isSelf ? 'none' : 'inline-block';
+  blockBtn.textContent = user.active ? 'Заблокировать' : 'Разблокировать';
+
+  setModalEditMode(false);
+}
+
+async function saveUserEdits() {
+  if (!currentModalUser) return;
+  const message = document.getElementById('modal_edit_message');
+  const saveBtn = document.getElementById('modal_save_btn');
+
+  const payload = {
+    firstName: document.getElementById('modal_user_firstname_input').value.trim(),
+    lastName: document.getElementById('modal_user_lastname_input').value.trim(),
+    middleName: document.getElementById('modal_user_middlename_input').value.trim(),
+    email: document.getElementById('modal_user_email_input').value.trim(),
+  };
+
+  if (!payload.firstName || !payload.lastName || !payload.email) {
+    message.textContent = 'Имя, фамилия и email обязательны.';
+    return;
+  }
+
+  saveBtn.disabled = true;
+  message.textContent = '';
+  try {
+    const updated = await updateUser(currentModalUser.id, payload);
+    fillModal(mapUserRow(updated));
+    showToast('Данные пользователя обновлены', 'success');
+    await loadAllUsers();
+  } catch (error) {
+    message.textContent = error.message || 'Не удалось сохранить изменения';
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function toggleUserBlock() {
+  if (!currentModalUser) return;
+  const blockBtn = document.getElementById('modal_block_btn');
+  blockBtn.disabled = true;
+  try {
+    const action = currentModalUser.active ? blockUser : unblockUser;
+    await action(currentModalUser.id);
+    const refreshed = await getUser(currentModalUser.id);
+    fillModal(mapUserRow(refreshed));
+    showToast(currentModalUser.active ? 'Пользователь заблокирован' : 'Пользователь разблокирован', 'success');
+    await loadAllUsers();
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    blockBtn.disabled = false;
+  }
+}
+
+function bindUserRowClicks() {
+  document.querySelectorAll('.user_row').forEach((row) => {
+    row.addEventListener('click', async () => {
+      const userId = row.dataset.id;
+      showModal();
+
+      modalLoading.style.display = 'block';
+      modalFieldGrid.style.display = 'none';
+      modalError.textContent = '';
+
+      try {
+        const user = await getUser(userId);
+        fillModal(mapUserRow(user));
+        modalLoading.style.display = 'none';
+        modalFieldGrid.style.display = 'grid';
+      } catch (err) {
+        modalLoading.style.display = 'none';
+        modalError.textContent = err.message || 'Не удалось загрузить данные';
+      }
+    });
+  });
+}
+
+document.getElementById('modal_close_btn').addEventListener('click', hideModal);
+document.getElementById('modal_close_footer_btn').addEventListener('click', hideModal);
+document.getElementById('modal_edit_btn').addEventListener('click', () => setModalEditMode(true));
+document.getElementById('modal_cancel_edit_btn').addEventListener('click', () => fillModal(currentModalUser));
+document.getElementById('modal_save_btn').addEventListener('click', saveUserEdits);
+document.getElementById('modal_block_btn').addEventListener('click', toggleUserBlock);
+modal.addEventListener('click', (event) => {
+  if (event.target === modal) hideModal();
+});
 
 async function loadParties() {
   const list = document.getElementById('parties_list');

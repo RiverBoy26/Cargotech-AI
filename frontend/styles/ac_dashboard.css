@@ -691,6 +691,29 @@ header {
   font-size: 13px;
 }
 
+.action_btn_delete {
+  background: #ffe0e0;
+  color: #c0392b;
+  border: 1px solid #DDE1E6;
+}
+
+.action_btn_delete:hover {
+  background: #ffc9c9;
+}
+
+#payment_import_file::file-selector-button {
+  font-family: inherit;
+  font-size: 12px;
+  background: #F26522;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  margin-right: 20px;
+}
+
+#payment_import_file::file-selector-button:hover { background: #D9531A; }
+
 @media (max-width: 1000px) {
   .payment_form_grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

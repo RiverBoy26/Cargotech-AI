@@ -364,6 +364,13 @@ async function getRoles() {
   return apiRequest('/roles');
 }
 
+async function updateUser(userId, payload) {
+  return apiRequest(`/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 // --- Organizations ---
 
 async function getOrganizations(params = {}) {

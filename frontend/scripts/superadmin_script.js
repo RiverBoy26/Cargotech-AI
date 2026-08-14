@@ -22,6 +22,9 @@ function mapUserRow(user) {
   return {
     id: user.id,
     fullName: formatUserFullName(user),
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+    middleName: user.middleName || '',
     email: user.email,
     organizationId: user.organizationId,
     role: ROLE_LABELS[role] || role,
@@ -224,6 +227,8 @@ const modalLoading = document.getElementById('modal_loading');
 const modalError = document.getElementById('modal_error');
 const modalFieldGrid = document.querySelector('.modal_field_grid');
 
+let currentModalUser = null;
+
 function showModal() {
   modal.classList.add('modal_overlay_visible');
 }
@@ -233,15 +238,93 @@ function hideModal() {
   modalLoading.style.display = 'none';
   modalError.textContent = '';
   modalFieldGrid.style.display = 'grid';
+  setModalEditMode(false);
+  currentModalUser = null;
+}
+
+function setModalEditMode(isEditing) {
+  ['firstname', 'lastname', 'middlename', 'email'].forEach((field) => {
+    document.getElementById(`modal_user_${field}_view`).style.display = isEditing ? 'none' : 'block';
+    document.getElementById(`modal_user_${field}_input`).style.display = isEditing ? 'block' : 'none';
+  });
+  document.getElementById('modal_edit_btn').style.display = isEditing ? 'none' : 'inline-block';
+  document.getElementById('modal_save_btn').style.display = isEditing ? 'inline-block' : 'none';
+  document.getElementById('modal_cancel_edit_btn').style.display = isEditing ? 'inline-block' : 'none';
+  document.getElementById('modal_edit_message').textContent = '';
 }
 
 function fillModal(user) {
+  currentModalUser = user;
   document.getElementById('modal_user_name').textContent = user.fullName;
-  document.getElementById('modal_user_email').textContent = user.email;
+
+  document.getElementById('modal_user_firstname_view').textContent = user.firstName || '—';
+  document.getElementById('modal_user_firstname_input').value = user.firstName;
+  document.getElementById('modal_user_lastname_view').textContent = user.lastName || '—';
+  document.getElementById('modal_user_lastname_input').value = user.lastName;
+  document.getElementById('modal_user_middlename_view').textContent = user.middleName || '—';
+  document.getElementById('modal_user_middlename_input').value = user.middleName;
+  document.getElementById('modal_user_email_view').textContent = user.email;
+  document.getElementById('modal_user_email_input').value = user.email;
+
   document.getElementById('modal_user_role').textContent = user.role;
   document.getElementById('modal_user_status').textContent = user.status;
-  document.getElementById('modal_user_expeditor').textContent =
-    user.organizationId || '—';
+  document.getElementById('modal_user_expeditor').textContent = user.organizationId || '—';
+
+  const blockBtn = document.getElementById('modal_block_btn');
+  const isSelf = String(user.id) === String(getStoredUser()?.userId);
+  blockBtn.style.display = isSelf ? 'none' : 'inline-block';
+  blockBtn.textContent = user.active ? 'Заблокировать' : 'Разблокировать';
+
+  setModalEditMode(false);
+}
+
+async function saveUserEdits() {
+  if (!currentModalUser) return;
+  const message = document.getElementById('modal_edit_message');
+  const saveBtn = document.getElementById('modal_save_btn');
+
+  const payload = {
+    firstName: document.getElementById('modal_user_firstname_input').value.trim(),
+    lastName: document.getElementById('modal_user_lastname_input').value.trim(),
+    middleName: document.getElementById('modal_user_middlename_input').value.trim(),
+    email: document.getElementById('modal_user_email_input').value.trim(),
+  };
+
+  if (!payload.firstName || !payload.lastName || !payload.email) {
+    message.textContent = 'Имя, фамилия и email обязательны.';
+    return;
+  }
+
+  saveBtn.disabled = true;
+  message.textContent = '';
+  try {
+    const updated = await updateUser(currentModalUser.id, payload);
+    fillModal(mapUserRow(updated));
+    showToast('Данные пользователя обновлены', 'success');
+    await loadAllUsers();
+  } catch (error) {
+    message.textContent = error.message || 'Не удалось сохранить изменения';
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function toggleUserBlock() {
+  if (!currentModalUser) return;
+  const blockBtn = document.getElementById('modal_block_btn');
+  blockBtn.disabled = true;
+  try {
+    const action = currentModalUser.active ? blockUser : unblockUser;
+    await action(currentModalUser.id);
+    const refreshed = await getUser(currentModalUser.id);
+    fillModal(mapUserRow(refreshed));
+    showToast(currentModalUser.active ? 'Пользователь заблокирован' : 'Пользователь разблокирован', 'success');
+    await loadAllUsers();
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    blockBtn.disabled = false;
+  }
 }
 
 function bindUserRowClicks() {
@@ -269,6 +352,10 @@ function bindUserRowClicks() {
 
 document.getElementById('modal_close_btn').addEventListener('click', hideModal);
 document.getElementById('modal_close_footer_btn').addEventListener('click', hideModal);
+document.getElementById('modal_edit_btn').addEventListener('click', () => setModalEditMode(true));
+document.getElementById('modal_cancel_edit_btn').addEventListener('click', () => fillModal(currentModalUser));
+document.getElementById('modal_save_btn').addEventListener('click', saveUserEdits);
+document.getElementById('modal_block_btn').addEventListener('click', toggleUserBlock);
 modal.addEventListener('click', (event) => {
   if (event.target === modal) hideModal();
 });

@@ -484,7 +484,7 @@ header {
 /* история изменений */
 
 .history_list {
-  background: #c4c4c4;
+  background: #DDE1E6;
   border-radius: 8px;
   max-height: 220px;
   overflow-y: auto;
@@ -604,6 +604,10 @@ header {
 .claim_edit_grid .action_dialog_textarea { min-height: 72px; }
 .claim_edit_grid .claim_edit_wide { grid-column: 1 / -1; }
 .claim_edit_grid input[readonly] { background: #eceff2; color: #5f6875; }
+
+#btn_validation_override {
+    margin-top: 10px;
+}
 
 @media (max-width: 760px) {
   main { padding: 16px; }
