@@ -49,7 +49,6 @@ class ClaimServiceAccountantSubmissionTest {
     void savesAccountantTextAndReturnsPendingLegalReviewStatus() {
         UUID organizationId = UUID.randomUUID();
         UUID claimId = UUID.randomUUID();
-        UUID versionId = UUID.randomUUID();
         CurrentClaimUser user = new CurrentClaimUser(
             UUID.randomUUID(), organizationId, "Анна", "Смирнова", null, List.of("ACCOUNTANT")
         );
@@ -64,7 +63,6 @@ class ClaimServiceAccountantSubmissionTest {
         when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
             .thenReturn(Optional.of(claim));
         when(claimRepository.save(any(ClaimEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(version.id()).thenReturn(versionId);
         when(versionService.create(any(), any(), any())).thenReturn(version);
         when(calculation.remainingDebt()).thenReturn(new java.math.BigDecimal("100.00"));
         when(calculationService.recalculate(user, claimId)).thenReturn(calculation);
@@ -94,7 +92,7 @@ class ClaimServiceAccountantSubmissionTest {
         assertThat(claim.getReason()).isEqualTo("Неисполнение обязанности по оплате");
         assertThat(claim.isNonPaymentConfirmed()).isTrue();
         assertThat(claim.getNonPaymentConfirmedBy()).isEqualTo(user.userId());
-        assertThat(claim.getFinalVersionId()).isEqualTo(versionId);
+        assertThat(claim.getFinalVersionId()).isNull();
 
         ArgumentCaptor<CreateClaimVersionRequest> versionCaptor =
             ArgumentCaptor.forClass(CreateClaimVersionRequest.class);
@@ -103,7 +101,7 @@ class ClaimServiceAccountantSubmissionTest {
         assertThat(versionCaptor.getValue().source()).isEqualTo(ClaimVersionSource.ACCOUNTANT);
         assertThat(versionCaptor.getValue().content())
             .isEqualTo("Просим оплатить задолженность по завершённому рейсу.");
-        assertThat(versionCaptor.getValue().finalVersion()).isTrue();
+        assertThat(versionCaptor.getValue().finalVersion()).isFalse();
 
         InOrder operationOrder = inOrder(calculationService, claimRepository, versionService);
         operationOrder.verify(calculationService).recalculate(user, claimId);

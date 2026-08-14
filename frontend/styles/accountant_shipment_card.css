@@ -12,5 +12,4 @@
 .shipment_field textarea { min-height: 280px; resize: vertical; line-height: 1.45; }
 .shipment_field input:disabled, .shipment_field textarea:disabled { background: #edf0f3; border-color: #d7dce2; }
 .shipment_actions { display: flex; justify-content: flex-end; gap: 10px; }
-.shipment_link_button { display: inline-flex; align-items: center; text-decoration: none; }
 @media (max-width: 800px) { .shipment_info_grid { grid-template-columns: 1fr; } }

@@ -14,6 +14,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.ClaimCalculationResponse;
+import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimRepository;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
@@ -56,8 +57,16 @@ public class CalculationExportService {
 
         try {
             return format.equals("xlsx")
-                ? new ExportedCalculation(baseName + ".xlsx", XLSX_CONTENT_TYPE, renderXlsx(claim.getClaimNumber(), calculation))
-                : new ExportedCalculation(baseName + ".pdf", MediaTypeNames.PDF, renderPdf(claim.getClaimNumber(), calculation));
+                ? new ExportedCalculation(
+                    baseName + ".xlsx",
+                    XLSX_CONTENT_TYPE,
+                    renderXlsx(claim, calculation)
+                )
+                : new ExportedCalculation(
+                    baseName + ".pdf",
+                    MediaTypeNames.PDF,
+                    renderPdf(claim, calculation)
+                );
         } catch (ClaimException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -65,7 +74,7 @@ public class CalculationExportService {
         }
     }
 
-    private byte[] renderXlsx(String claimNumber, ClaimCalculationResponse calculation) throws Exception {
+    private byte[] renderXlsx(ClaimEntity claim, ClaimCalculationResponse calculation) throws Exception {
         try (XSSFWorkbook workbook = new XSSFWorkbook();
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Расчёт задолженности");
@@ -79,10 +88,12 @@ public class CalculationExportService {
             titleStyle.setFont(titleFont);
 
             Row title = sheet.createRow(0);
-            title.createCell(0).setCellValue("Расчёт задолженности по претензии " + claimNumber);
+            title.createCell(0).setCellValue("Расчёт задолженности по претензии " + claim.getClaimNumber());
             title.getCell(0).setCellStyle(titleStyle);
 
             int row = 2;
+            row = writeRow(sheet, row, "Основание претензии", claim.getReason());
+            row = writeRow(sheet, row, "Банковские реквизиты", claim.getBankDetails());
             row = writeRow(sheet, row, "Версия расчёта", calculation.calculationVersion());
             row = writeRow(sheet, row, "Сумма перевозки", calculation.principalDebt());
             row = writeRow(sheet, row, "Учтено платежей", calculation.paidAmount());
@@ -108,45 +119,57 @@ public class CalculationExportService {
         return index + 1;
     }
 
-    private byte[] renderPdf(String claimNumber, ClaimCalculationResponse calculation) throws Exception {
-        List<String> lines = List.of(
-            "РАСЧЁТ ЗАДОЛЖЕННОСТИ",
-            "Претензия: " + claimNumber,
-            "",
-            "Сумма перевозки: " + calculation.principalDebt() + " руб.",
-            "Учтено платежей: " + calculation.paidAmount() + " руб.",
-            "Остаток основного долга: " + calculation.remainingDebt() + " руб.",
-            "Дата начала просрочки: " + text(calculation.overdueStartDate()),
-            "Дата расчёта: " + text(calculation.calculationDate()),
-            "Дней просрочки: " + text(calculation.overdueDays()),
-            "Вид неустойки: " + text(calculation.penaltyType()),
-            "Ставка: " + text(calculation.penaltyRate()) + "%",
-            "Неустойка: " + calculation.penaltyAmount() + " руб.",
-            "Итого к оплате: " + calculation.totalAmount() + " руб.",
-            "",
-            "Формула: " + text(calculation.formula())
-        );
+    private byte[] renderPdf(ClaimEntity claim, ClaimCalculationResponse calculation) throws Exception {
+        List<String> lines = new ArrayList<>();
+        lines.add("РАСЧЁТ ЗАДОЛЖЕННОСТИ");
+        lines.add("Претензия: " + text(claim.getClaimNumber()));
+        lines.add("Основание претензии: " + text(claim.getReason()));
+        lines.add("Банковские реквизиты:");
+        addTextLines(lines, claim.getBankDetails());
+        lines.add("");
+        lines.add("Сумма перевозки: " + money(calculation.principalDebt()));
+        lines.add("Учтено платежей: " + money(calculation.paidAmount()));
+        lines.add("Остаток основного долга: " + money(calculation.remainingDebt()));
+        lines.add("Дата начала просрочки: " + text(calculation.overdueStartDate()));
+        lines.add("Дата расчёта: " + text(calculation.calculationDate()));
+        lines.add("Дней просрочки: " + text(calculation.overdueDays()));
+        lines.add("Вид неустойки: " + text(calculation.penaltyType()));
+        lines.add("Ставка: " + text(calculation.penaltyRate()) + "%");
+        lines.add("Неустойка: " + money(calculation.penaltyAmount()));
+        lines.add("Итого к оплате: " + money(calculation.totalAmount()));
+        lines.add("");
+        lines.add("Формула: " + text(calculation.formula()));
 
         try (PDDocument document = new PDDocument();
              InputStream fontInput = Files.newInputStream(resolveFontPath());
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             PDType0Font font = PDType0Font.load(document, fontInput);
-            PDPage page = new PDPage(PDRectangle.A4);
-            document.addPage(page);
-            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
-                content.beginText();
-                content.setFont(font, 11f);
-                content.setLeading(18f);
-                content.newLineAtOffset(52f, page.getMediaBox().getHeight() - 52f);
-                for (String line : wrap(lines, font, 11f, page.getMediaBox().getWidth() - 104f)) {
-                    content.showText(line);
-                    content.newLine();
+            List<String> wrappedLines = wrap(lines, font, 11f, PDRectangle.A4.getWidth() - 104f);
+            int linesPerPage = (int) ((PDRectangle.A4.getHeight() - 104f) / 18f);
+            for (int start = 0; start < wrappedLines.size(); start += linesPerPage) {
+                PDPage page = new PDPage(PDRectangle.A4);
+                document.addPage(page);
+                try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                    content.beginText();
+                    content.setFont(font, 11f);
+                    content.setLeading(18f);
+                    content.newLineAtOffset(52f, page.getMediaBox().getHeight() - 52f);
+                    int end = Math.min(start + linesPerPage, wrappedLines.size());
+                    for (String line : wrappedLines.subList(start, end)) {
+                        content.showText(line);
+                        content.newLine();
+                    }
+                    content.endText();
                 }
-                content.endText();
             }
             document.save(output);
             return output.toByteArray();
         }
+    }
+
+    private void addTextLines(List<String> target, String value) {
+        String[] lines = text(value).split("\\R", -1);
+        target.addAll(List.of(lines));
     }
 
     private List<String> wrap(List<String> lines, PDType0Font font, float size, float width) throws Exception {
@@ -190,7 +213,12 @@ public class CalculationExportService {
     }
 
     private String text(Object value) {
-        return value == null ? "—" : value.toString();
+        if (value == null || value.toString().isBlank()) return "—";
+        return value.toString();
+    }
+
+    private String money(Object value) {
+        return text(value) + " руб.";
     }
 
     public record ExportedCalculation(String filename, String contentType, byte[] content) {

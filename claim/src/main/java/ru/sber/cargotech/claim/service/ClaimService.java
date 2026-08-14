@@ -430,7 +430,7 @@ public class ClaimService {
 
         String reason = request.reason().trim();
         claim.setReason(reason);
-        ClaimVersionResponse version = versionService.create(
+        versionService.create(
             user,
             claimId,
             new CreateClaimVersionRequest(
@@ -438,10 +438,9 @@ public class ClaimService {
                 claim.getFinalVersionId(),
                 request.text().trim(),
                 "Текст подготовлен бухгалтером перед подтверждением неуплаты",
-                true
+                false
             )
         );
-        claim.setFinalVersionId(version.id());
 
         applyNonPaymentConfirmation(
                 claim,
@@ -537,7 +536,6 @@ public class ClaimService {
         if (claim.getFinalVersionId() == null) {
             throw ClaimException.conflict("Нельзя утвердить претензию без финальной версии текста");
         }
-        ensureValidationAllowsSend(claim);
         claim.setApprovedAt(OffsetDateTime.now());
         claim.setApprovedBy(user.userId());
         claim.setUpdatedBy(user.userId());
@@ -627,9 +625,6 @@ public class ClaimService {
         checks.put("attachments", storedDocumentsReady);
         checks.put("paymentConfirmed", claim.isNonPaymentConfirmed());
         checks.put("finalVersion", claim.getFinalVersionId() != null);
-        checks.put("validation", claim.getDocumentValidationStatus() == DocumentValidationStatus.PASSED
-            || claim.getDocumentValidationStatus() == DocumentValidationStatus.OVERRIDDEN);
-
         List<String> warnings = new ArrayList<>();
         checks.forEach((name, passed) -> {
             if (!passed) {
@@ -1064,15 +1059,6 @@ public class ClaimService {
         return reason.replaceFirst("(?i)^SYSTEM:\\s*", "");
     }
 
-    private void ensureValidationAllowsSend(ClaimEntity claim) {
-        if (claim.getDocumentValidationStatus() != DocumentValidationStatus.PASSED
-            && claim.getDocumentValidationStatus() != DocumentValidationStatus.OVERRIDDEN) {
-            throw ClaimException.conflict(
-                "Документ не прошёл проверку: завершите проверку, исправьте ошибки или подтвердите её вручную"
-            );
-        }
-    }
-
     private void clearValidationOverride(ClaimEntity claim) {
         claim.setValidationOverriddenAt(null);
         claim.setValidationOverriddenBy(null);
@@ -1089,7 +1075,6 @@ public class ClaimService {
             case "attachments" -> "нет финального документа для приложения";
             case "paymentConfirmed" -> "бухгалтер не подтвердил отсутствие оплаты";
             case "finalVersion" -> "не выбрана финальная версия";
-            case "validation" -> "проверка документа завершилась ошибкой";
             default -> "не выполнена проверка " + check;
         };
     }

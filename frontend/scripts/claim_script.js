@@ -87,26 +87,23 @@ function requestClaimEdit() {
   const form = document.getElementById('claim_edit_dialog_form');
   const cancelButton = document.getElementById('claim_edit_dialog_cancel');
   const error = document.getElementById('claim_edit_dialog_error');
-  const finalVersion = currentVersions.find((item) => item.id === currentClaim?.finalVersionId);
-  const fields = {
+  const readOnlyFields = {
     claimNumber: 'edit_claim_number',
-    reason: 'edit_reason',
     recipientName: 'edit_recipient_name',
     recipientEmail: 'edit_recipient_email',
     recipientAddress: 'edit_recipient_address',
-    bankDetails: 'edit_bank_details',
     responseDeadlineDays: 'edit_response_deadline_days',
     signerFullName: 'edit_signer_full_name',
-    signerPosition: 'edit_signer_position',
-    signerAuthority: 'edit_signer_authority',
   };
-  Object.entries(fields).forEach(([name, id]) => {
+  const editableFields = {
+    reason: 'edit_reason',
+    bankDetails: 'edit_bank_details',
+  };
+  Object.entries({ ...readOnlyFields, ...editableFields }).forEach(([name, id]) => {
     document.getElementById(id).value = currentClaim?.[name] ?? '';
   });
   document.getElementById('edit_principal_debt').value = formatMoney(currentClaim?.principalDebt);
   document.getElementById('edit_penalty_amount').value = formatMoney(currentClaim?.penaltyAmount);
-  document.getElementById('edit_claim_text').value =
-    finalVersion?.content || document.getElementById('claim_text_editor').value || '';
   error.textContent = '';
 
   return new Promise((resolve) => {
@@ -120,13 +117,12 @@ function requestClaimEdit() {
     const submit = (event) => {
       event.preventDefault();
       if (!form.reportValidity()) return;
-      const payload = Object.fromEntries(Object.entries(fields).map(([name, id]) => {
+      const payload = Object.fromEntries(Object.entries(editableFields).map(([name, id]) => {
         const value = document.getElementById(id).value.trim();
-        return [name, name === 'responseDeadlineDays' && value ? Number(value) : (value || null)];
+        return [name, value || null];
       }));
-      payload.text = document.getElementById('edit_claim_text').value.trim() || null;
-      if (!payload.claimNumber || !payload.reason) {
-        error.textContent = 'Номер и основание претензии обязательны';
+      if (!payload.reason) {
+        error.textContent = 'Основание претензии обязательно';
         return;
       }
       finish(payload);
@@ -144,7 +140,7 @@ function requestClaimEdit() {
             cancel(event);
         }
     });
-    document.getElementById('edit_claim_number').focus();
+    document.getElementById('edit_reason').focus();
   });
 }
 
@@ -350,11 +346,6 @@ function updateAvailableActions() {
     status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_SEND'),
     Boolean(selectedDocumentId) && Boolean(currentSendChecklist?.readyToSend)
   );
-  setButtonState(
-    'btn_validation_override',
-    editable && hasPermission('CLAIM_UPDATE')
-      && ['FAILED', 'PENDING'].includes(currentClaim?.documentValidationStatus)
-  );
   setButtonState('btn_save_version', editable && hasPermission('CLAIM_UPDATE'));
   setButtonState('btn_mark_final', editable && hasPermission('CLAIM_UPDATE'));
   updateClaimTextPanelState();
@@ -373,18 +364,7 @@ function fillClaimCard(claim) {
   setText('info_completion_date', '—');
   setText('info_overdue_date', '—');
   setText('info_lawyer_name', '—');
-  const validationLabels = {
-    PENDING: 'Ожидает проверки',
-    PASSED: 'Проверка пройдена',
-    FAILED: 'Найдены ошибки',
-    OVERRIDDEN: 'Подтверждено юристом',
-  };
-  setText('validation_status', validationLabels[claim.documentValidationStatus] || 'Ожидает проверки');
-  setText(
-    'validation_errors',
-    claim.documentValidationErrors
-      || (claim.manualReviewRequired ? claim.manualReviewReason : 'Ошибок нет')
-  );
+  renderAutocheckWarning(claim);
   renderUsedSources(claim, null);
   const stripe = document.getElementById('claim_card_stripe');
   if (stripe) stripe.className = `claim_card_stripe ${status.className}`;
@@ -480,6 +460,74 @@ function renderUsedSources(claim, contract) {
   if (sourcesEmpty) sourcesEmpty.hidden = hasContractDocument || Boolean(rawSources);
 }
 
+function renderAutocheckWarning(claim) {
+  const warning = document.getElementById('autocheck_warning');
+  const warningText = document.getElementById('autocheck_warning_text');
+  if (!warning || !warningText) return;
+
+  const failed = claim?.documentValidationStatus === 'FAILED';
+  warning.hidden = !failed;
+  warningText.textContent = failed
+    ? formatAutocheckMessages(
+        claim.documentValidationErrors
+          || claim.manualReviewReason
+      )
+    : '';
+}
+
+const AUTOCHECK_MESSAGE_TRANSLATIONS = new Map([
+  ['legal_context is empty', 'Не найдены правовые источники для проверки текста претензии.'],
+  ['legal_context is required for claim generation', 'Для проверки претензии не хватает правовых источников.'],
+  ['template_context is empty', 'Не найден шаблон для проверки структуры претензии.'],
+  ['contract_context is empty', 'Не удалось получить текст договора для проверки претензии.'],
+  ['rag search returned no chunks', 'Поиск не нашёл источники, необходимые для полной проверки претензии.'],
+  [
+    'claim_text incorrectly uses contract.claim_response_days as a payment deadline',
+    'В тексте срок ответа на претензию ошибочно указан как срок оплаты задолженности. Проверьте формулировку о сроках.',
+  ],
+  ['model did not cite contract clauses', 'В тексте не указаны использованные пункты договора.'],
+  [
+    'model must cite at least one numbered contract clause from contract_context',
+    'В тексте должна быть ссылка хотя бы на один пронумерованный пункт договора.',
+  ],
+  [
+    'model must cite at least one applicable law article from legal_context',
+    'В тексте должна быть ссылка хотя бы на одну применимую норму закона.',
+  ],
+]);
+
+function formatAutocheckMessages(rawMessages) {
+  const fallback = 'Автопроверка обнаружила несоответствие в тексте. Проверьте содержание претензии перед утверждением.';
+  const messages = String(rawMessages || '')
+    .split(/\r?\n/)
+    .map(message => message.trim())
+    .filter(Boolean)
+    .map(humanizeAutocheckMessage);
+  const uniqueMessages = [...new Set(messages.length ? messages : [fallback])];
+  return uniqueMessages.map(message => `• ${message}`).join('\n');
+}
+
+function humanizeAutocheckMessage(message) {
+  const normalized = message.toLowerCase();
+  const exactTranslation = AUTOCHECK_MESSAGE_TRANSLATIONS.get(normalized);
+  if (exactTranslation) return exactTranslation;
+
+  const unknownInn = message.match(/^claim_text contains unknown INN:\s*(.+)$/i);
+  if (unknownInn) return `В тексте указан ИНН, которого нет в данных претензии: ${unknownInn[1]}.`;
+
+  const unknownAmount = message.match(/^claim_text contains amount not present in backend_calculation:\s*(.+)$/i);
+  if (unknownAmount) return `В тексте указана сумма, которая не совпадает с расчётом: ${unknownAmount[1]}.`;
+
+  const missingContractClause = message.match(/^claim_text does not cite used contract clause:\s*(.+)$/i);
+  if (missingContractClause) return `В тексте отсутствует ссылка на использованный пункт договора: ${missingContractClause[1]}.`;
+
+  const missingLawArticle = message.match(/^claim_text does not cite used law article:\s*(.+)$/i);
+  if (missingLawArticle) return `В тексте отсутствует ссылка на использованную норму закона: ${missingLawArticle[1]}.`;
+
+  if (/[А-Яа-яЁё]/.test(message)) return message;
+  return 'Автопроверка обнаружила несоответствие в тексте. Проверьте содержание претензии перед утверждением.';
+}
+
 async function loadVersions(claimId) {
   const select = document.getElementById('version_select');
   try {
@@ -564,7 +612,6 @@ const CHECK_ORDER = [
     'finalVersion',
     'legalBasis',
     'attachments',
-    'validation',
 ];
 
 const CHECK_LABELS = {
@@ -580,11 +627,9 @@ const CHECK_LABELS = {
 
 async function loadSendChecklist(claimId) {
   const list = document.getElementById('send_checklist');
-  const HIDDEN_CHECKS = ['validation'];
   try {
     currentSendChecklist = await getClaimSendChecklist(claimId);
     list.innerHTML = CHECK_ORDER.filter(name => name in (currentSendChecklist.checks || {})).map(name => [name, currentSendChecklist.checks[name]])
-      .filter(([name]) => !HIDDEN_CHECKS.includes(name))
       .map(([name, passed]) =>
         `<li class="${passed ? 'check_passed' : 'check_failed'}">${passed ? '✓' : '✕'} ${escapeHtml(CHECK_LABELS[name] || name)}</li>`
       ).join('');
@@ -927,7 +972,7 @@ async function initClaimCardPage() {
     try {
       await updateClaim(claimId, payload);
       await reloadClaim(claimId);
-      showToast('Претензия и новая версия текста сохранены', 'success');
+      showToast('Основание и банковские реквизиты сохранены', 'success');
     } catch (error) { showError(error); }
   });
 
@@ -936,20 +981,6 @@ async function initClaimCardPage() {
       await requestNonPaymentConfirmation(claimId);
       await reloadClaim(claimId);
       showToast('Запрос передан бухгалтеру', 'success');
-    } catch (error) { showError(error); }
-  });
-
-  document.getElementById('btn_validation_override').addEventListener('click', async () => {
-    const reason = await requestClaimActionText({
-      title: 'Ручное подтверждение',
-      label: 'Что проверено и почему документ можно отправить',
-      required: true,
-    });
-    if (reason == null) return;
-    try {
-      await overrideClaimValidation(claimId, reason);
-      await reloadClaim(claimId);
-      showToast('Ручная проверка зафиксирована', 'success');
     } catch (error) { showError(error); }
   });
 

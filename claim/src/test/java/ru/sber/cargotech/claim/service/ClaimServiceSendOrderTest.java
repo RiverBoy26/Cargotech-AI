@@ -45,6 +45,61 @@ class ClaimServiceSendOrderTest {
     @Mock private ClaimOutboxWriter outboxWriter;
 
     @Test
+    void failedAutoValidationDoesNotBlockApprovalOrSendChecklist() {
+        UUID organizationId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+
+        ClaimEntity claim = new ClaimEntity();
+        claim.setId(claimId);
+        claim.setOrganizationId(organizationId);
+        claim.setStatus(ClaimStatus.PENDING_LEGAL_REVIEW);
+        claim.setPrincipalDebt(new java.math.BigDecimal("100.00"));
+        claim.setPenaltyAmount(java.math.BigDecimal.ZERO);
+        claim.setCreditorId(UUID.randomUUID());
+        claim.setDebtorId(UUID.randomUUID());
+        claim.setContractId(UUID.randomUUID());
+        claim.setNonPaymentConfirmed(true);
+        claim.setFinalVersionId(UUID.randomUUID());
+        claim.setDocumentValidationStatus(DocumentValidationStatus.FAILED);
+        var details = org.mockito.Mockito.mock(
+            ru.sber.cargotech.claim.dto.ClaimDetailsResponse.class
+        );
+
+        when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
+            .thenReturn(Optional.of(claim));
+        when(claimRepository.save(org.mockito.ArgumentMatchers.any(ClaimEntity.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryRepository.findDetails(organizationId, claimId)).thenReturn(Optional.of(details));
+
+        ClaimService service = new ClaimService(
+            claimRepository,
+            queryRepository,
+            historyRepository,
+            shipmentService,
+            paymentClient,
+            contractService,
+            partyService,
+            calculationService,
+            versionService,
+            outboxWriter
+        );
+
+        var approved = service.approve(
+            user,
+            claimId,
+            new StatusChangeRequest("Проверено юристом", null)
+        );
+        var checklist = service.sendChecklist(user, claimId);
+
+        assertThat(approved).isSameAs(details);
+        assertThat(claim.getStatus()).isEqualTo(ClaimStatus.LEGAL_APPROVED);
+        assertThat(checklist.readyToSend()).isTrue();
+        assertThat(checklist.checks()).doesNotContainKey("validation");
+        assertThat(checklist.documentValidationStatus()).isEqualTo(DocumentValidationStatus.FAILED);
+    }
+
+    @Test
     void validatesClaimAndRecalculatesBeforePaymentPreflight() {
         UUID organizationId = UUID.randomUUID();
         UUID claimId = UUID.randomUUID();

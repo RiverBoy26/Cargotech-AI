@@ -83,11 +83,7 @@
                         </div>
 
                         <section class="workflow_panel validation_panel" id="validation_panel">
-                            <div class="validation_header">
-                                <h2 class="workflow_title">Проверка перед отправкой</h2>
-                                <span class="validation_badge" id="validation_status">Ожидает проверки</span>
-                            </div>
-                            <p class="validation_message" id="validation_errors"></p>
+                            <h2 class="workflow_title">Проверка перед отправкой</h2>
                             <ul class="checklist" id="send_checklist"><li>Загрузка проверок…</li></ul>
                             <details>
                                 <summary>Использованные источники</summary>
@@ -105,7 +101,6 @@
                                     <p class="sources_empty" id="used_sources_empty">Источники ещё не зафиксированы</p>
                                 </div>
                             </details>
-                            <button class="action_btn" id="btn_validation_override" hidden>Подтвердить после ручной проверки</button>
                         </section>
 
                         <section class="workflow_panel" id="claim_text_panel">
@@ -121,6 +116,10 @@
                             </div>
                             <textarea class="workflow_textarea" id="claim_text_editor" name="claim_text_editor" autocomplete="off"
                                       placeholder="Сгенерированный или отредактированный текст претензии"></textarea>
+                            <div class="autocheck_warning" id="autocheck_warning" role="alert" hidden>
+                                <strong>Автопроверка выявила возможные ошибки</strong>
+                                <p id="autocheck_warning_text"></p>
+                            </div>
                             <div class="version_diff" id="version_diff">Выберите версию для сравнения.</div>
                             <div class="workflow_controls">
                                 <button class="action_btn" id="btn_save_version">Сохранить версию</button>
@@ -189,19 +188,16 @@
         <form class="action_dialog_form" id="claim_edit_dialog_form" method="dialog">
             <h2 class="action_dialog_title" id="claim_edit_dialog_title">Редактирование претензии</h2>
             <div class="claim_edit_grid">
-                <label>Номер претензии<input class="workflow_input" id="edit_claim_number" name="claim_number" autocomplete="off" required></label>
-                <label>Срок ответа, дней<input class="workflow_input" id="edit_response_deadline_days" name="claim_response_deadline_days" autocomplete="off" type="number" min="0"></label>
+                <label>Номер претензии<input class="workflow_input" id="edit_claim_number" name="claim_number" autocomplete="off" readonly></label>
+                <label>Срок ответа, дней<input class="workflow_input" id="edit_response_deadline_days" name="claim_response_deadline_days" autocomplete="off" type="number" min="0" readonly></label>
                 <label class="claim_edit_wide">Основание<textarea class="workflow_textarea action_dialog_textarea" id="edit_reason" name="claim_reason" autocomplete="off" required></textarea></label>
-                <label>Получатель<input class="workflow_input" id="edit_recipient_name" name="claim_recipient_name" autocomplete="off"></label>
-                <label>Email получателя<input class="workflow_input" id="edit_recipient_email" name="claim_recipient_email_edit" autocomplete="off" type="email"></label>
-                <label class="claim_edit_wide">Адрес получателя<textarea class="workflow_textarea action_dialog_textarea" id="edit_recipient_address" name="claim_recipient_address" autocomplete="off"></textarea></label>
+                <label>Получатель<input class="workflow_input" id="edit_recipient_name" name="claim_recipient_name" autocomplete="off" readonly></label>
+                <label>Email получателя<input class="workflow_input" id="edit_recipient_email" name="claim_recipient_email_edit" autocomplete="off" type="email" readonly></label>
+                <label class="claim_edit_wide">Адрес получателя<textarea class="workflow_textarea action_dialog_textarea" id="edit_recipient_address" name="claim_recipient_address" autocomplete="off" readonly></textarea></label>
                 <label class="claim_edit_wide">Банковские реквизиты<textarea class="workflow_textarea action_dialog_textarea" id="edit_bank_details" name="claim_bank_details" autocomplete="off"></textarea></label>
-                <label>Подписант, ФИО<input class="workflow_input" id="edit_signer_full_name" name="claim_signer_full_name" autocomplete="off"></label>
-                <label>Должность<input class="workflow_input" id="edit_signer_position" name="claim_signer_position" autocomplete="off"></label>
-                <label class="claim_edit_wide">Основание полномочий<input class="workflow_input" id="edit_signer_authority" name="claim_signer_authority" autocomplete="off"></label>
+                <label>Подписант, ФИО<input class="workflow_input" id="edit_signer_full_name" name="claim_signer_full_name" autocomplete="off" readonly></label>
                 <label>Сумма долга (только чтение)<input class="workflow_input" id="edit_principal_debt" name="claim_principal_debt_readonly" autocomplete="off" readonly></label>
                 <label>Неустойка (только чтение)<input class="workflow_input" id="edit_penalty_amount" name="claim_penalty_amount_readonly" autocomplete="off" readonly></label>
-                <label class="claim_edit_wide">Текст претензии<textarea class="workflow_textarea" id="edit_claim_text" name="claim_text" autocomplete="off"></textarea></label>
             </div>
             <p class="action_dialog_error" id="claim_edit_dialog_error" role="alert"></p>
             <div class="action_dialog_buttons">
@@ -212,6 +208,6 @@
     </dialog>
 
     <script src="../../scripts/api.js?v=20260813-refresh-permissions-1"></script>
-    <script src="../../scripts/claim_script.js?v=20260814-click-lock-1"></script>
+    <script src="../../scripts/claim_script.js?v=20260815-edit-dialog-without-text-3"></script>
 </body>
 </html>

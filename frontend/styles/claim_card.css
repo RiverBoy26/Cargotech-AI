@@ -243,28 +243,6 @@ header {
   margin-bottom: 18px;
 }
 
-.validation_header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.validation_badge {
-  padding: 6px 10px;
-  border: 1px solid #f6c9a6;
-  border-radius: 999px;
-  background: #fceadf;
-  color: #7b3517;
-  font-size: 12px;
-}
-
-.validation_message {
-  margin: 4px 0 12px;
-  color: #5f6875;
-  white-space: pre-wrap;
-}
-
 .checklist {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -481,6 +459,25 @@ header {
   min-height: 90px;
 }
 
+.autocheck_warning {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #f0a35e;
+  border-radius: 8px;
+  background: #fff4e5;
+  color: #8a3f12;
+}
+
+.autocheck_warning strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.autocheck_warning p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .document_item {
   display: flex;
   justify-content: space-between;
@@ -659,10 +656,11 @@ header {
 
 .claim_edit_grid .action_dialog_textarea { min-height: 72px; }
 .claim_edit_grid .claim_edit_wide { grid-column: 1 / -1; }
-.claim_edit_grid input[readonly] { background: #eceff2; color: #5f6875; }
-
-#btn_validation_override {
-    margin-top: 10px;
+.claim_edit_grid input[readonly],
+.claim_edit_grid textarea[readonly] {
+  background: #eceff2;
+  color: #5f6875;
+  cursor: default;
 }
 
 @media (max-width: 760px) {
