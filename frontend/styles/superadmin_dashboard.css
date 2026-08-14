@@ -399,6 +399,7 @@ header {
 .modal_footer {
   display: flex;
   justify-content: flex-end;
+  gap: 7px;
   padding: 16px 24px 20px;
   border-top: 1px solid #b9b9b9;
 }

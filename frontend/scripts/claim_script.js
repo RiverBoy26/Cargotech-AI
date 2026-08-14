@@ -139,6 +139,11 @@ function requestClaimEdit() {
     dialog.addEventListener('cancel', cancel);
     cancelButton.addEventListener('click', cancel);
     dialog.showModal();
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) {
+            cancel(event);
+        }
+    });
     document.getElementById('edit_claim_number').focus();
   });
 }
@@ -547,25 +552,42 @@ async function renderVersionDiff(claimId, versionId) {
   }
 }
 
+const CHECK_ORDER = [
+    
+    'partyDetails',
+    'paymentConfirmed',
+    'debt',
+    
+    'penaltyCalculation',
+    'contractReferences',
+    
+    'finalVersion',
+    'legalBasis',
+    'attachments',
+    'validation',
+];
+
 const CHECK_LABELS = {
   debt: 'Есть непогашенный долг',
   penaltyCalculation: 'Неустойка рассчитана',
   partyDetails: 'Реквизиты сторон заполнены',
   contractReferences: 'Договор и пункты указаны',
   legalBasis: 'Правовое основание проверено',
-  attachments: 'Есть финальная версия и вложения',
+  attachments: 'Сформирован документ претензии с расчетами',
   paymentConfirmed: 'Бухгалтер подтвердил неуплату',
   finalVersion: 'Финальная версия назначена',
-  validation: 'Автопроверка пройдена или подтверждена вручную',
 };
 
 async function loadSendChecklist(claimId) {
   const list = document.getElementById('send_checklist');
+  const HIDDEN_CHECKS = ['validation'];
   try {
     currentSendChecklist = await getClaimSendChecklist(claimId);
-    list.innerHTML = Object.entries(currentSendChecklist.checks || {}).map(([name, passed]) =>
-      `<li class="${passed ? 'check_passed' : 'check_failed'}">${passed ? '✓' : '✕'} ${escapeHtml(CHECK_LABELS[name] || name)}</li>`
-    ).join('');
+    list.innerHTML = CHECK_ORDER.filter(name => name in (currentSendChecklist.checks || {})).map(name => [name, currentSendChecklist.checks[name]])
+      .filter(([name]) => !HIDDEN_CHECKS.includes(name))
+      .map(([name, passed]) =>
+        `<li class="${passed ? 'check_passed' : 'check_failed'}">${passed ? '✓' : '✕'} ${escapeHtml(CHECK_LABELS[name] || name)}</li>`
+      ).join('');
   } catch (error) {
     currentSendChecklist = null;
     list.innerHTML = `<li class="check_failed">Ошибка проверки: ${escapeHtml(error.message)}</li>`;

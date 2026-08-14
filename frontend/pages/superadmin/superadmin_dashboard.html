@@ -65,7 +65,6 @@
                             <option value="LAWYER">Юрист</option>
                             <option value="ACCOUNTANT">Бухгалтер</option>
                             <option value="EXPEDITOR_ADMIN">Администратор экспедитора</option>
-                            <option value="SUPER_ADMIN">Суперадмин</option>
                         </select>
                     </div>
                     <!-- Суперадмин добавляет пользователя к любому экспедитору.
@@ -158,9 +157,25 @@
             </div>
             <div class="modal_body">
                 <div class="modal_field_grid">
-                    <div class="modal_field">
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Имя</div>
+                        <div class="modal_field_value" id="modal_user_firstname_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_firstname_input" name="modal_user_firstname" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Фамилия</div>
+                        <div class="modal_field_value" id="modal_user_lastname_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_lastname_input" name="modal_user_lastname" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Отчество</div>
+                        <div class="modal_field_value" id="modal_user_middlename_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_middlename_input" name="modal_user_middlename" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
                         <div class="modal_field_label">Email</div>
-                        <div class="modal_field_value" id="modal_user_email">—</div>
+                        <div class="modal_field_value" id="modal_user_email_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_email_input" name="modal_user_email" autocomplete="off" type="email">
                     </div>
                     <div class="modal_field">
                         <div class="modal_field_label">Роль</div>
@@ -175,10 +190,15 @@
                         <div class="modal_field_value" id="modal_user_expeditor">—</div>
                     </div>
                 </div>
+                <p class="form_message form_error" id="modal_edit_message" role="alert"></p>
                 <div class="modal_loading" id="modal_loading">Загрузка...</div>
                 <div class="modal_error" id="modal_error"></div>
             </div>
             <div class="modal_footer">
+                <button class="secondary_btn" id="modal_block_btn"></button>
+                <button class="secondary_btn" id="modal_edit_btn">Редактировать</button>
+                <button class="primary_btn" id="modal_save_btn" style="display:none;">Сохранить</button>
+                <button class="secondary_btn" id="modal_cancel_edit_btn" style="display:none;">Отмена</button>
                 <button class="secondary_btn" id="modal_close_footer_btn">Закрыть</button>
             </div>
         </div>
