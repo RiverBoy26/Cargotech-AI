@@ -121,10 +121,10 @@ public class OverdueShipmentService {
                 accruedPenalty,
                 money(paymentState.paidAmount())
             );
-        BigDecimal remainingDebtWithPenalty = money(
-            allocation.remainingPrincipal().add(allocation.remainingPenalty())
-        );
-        if (remainingDebtWithPenalty.signum() <= 0) {
+        BigDecimal remainingPrincipalDebt = money(allocation.remainingPrincipal());
+        BigDecimal remainingPenalty = money(allocation.remainingPenalty());
+        BigDecimal totalAmount = money(remainingPrincipalDebt.add(remainingPenalty));
+        if (totalAmount.signum() <= 0) {
             return null;
         }
 
@@ -140,7 +140,10 @@ public class OverdueShipmentService {
             expeditor.getName(),
             shipmentAmount,
             money(paymentState.paidAmount()),
-            remainingDebtWithPenalty,
+            totalAmount,
+            remainingPrincipalDebt,
+            remainingPenalty,
+            totalAmount,
             shipment.getCurrency(),
             overdueStartDate == null ? null : overdueStartDate.minusDays(1),
             overdueStartDate,

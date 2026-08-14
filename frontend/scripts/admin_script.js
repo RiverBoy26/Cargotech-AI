@@ -746,8 +746,6 @@ function resetShipmentForm() {
   document.getElementById('shipment_payment_start_event_date').value = '';
   document.getElementById('shipment_service_amount').value = '';
   document.getElementById('shipment_currency').value = 'RUB';
-  const externalIdInput = document.getElementById('shipment_external_id');
-  if (externalIdInput) externalIdInput.value = '';
   document.getElementById('shipment_form_error').textContent = '';
 }
 
@@ -805,7 +803,6 @@ document.getElementById('save_shipment_btn').addEventListener('click', async () 
   setOptional(payload, 'unloadingDate', unloadingDate);
   setOptional(payload, 'actSignedAt', document.getElementById('shipment_act_signed_at').value);
   setOptional(payload, 'paymentStartEventDate', document.getElementById('shipment_payment_start_event_date').value);
-  setOptional(payload, 'externalId', document.getElementById('shipment_external_id')?.value.trim() || '');
 
   saveButton.disabled = true;
   saveButton.textContent = 'Создание...';

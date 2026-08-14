@@ -365,7 +365,22 @@ public class ClaimService {
         if (!DELETABLE_STATUSES.contains(claim.getStatus())) {
             throw ClaimException.conflict("Удалить претензию можно только в статусе Черновик, Оплачено или Отменено");
         }
+        UUID shipmentId = claim.getShipmentId();
+        shipmentService.getEntity(user.organizationId(), shipmentId);
+        if (claimRepository.existsByOrganizationIdAndShipmentIdAndIdNot(
+            user.organizationId(),
+            shipmentId,
+            claimId
+        )) {
+            throw ClaimException.conflict(
+                "Нельзя удалить рейс: с ним связана другая претензия"
+            );
+        }
+
+        paymentClient.deleteForClaimAndShipment(claimId, shipmentId);
         claimRepository.delete(claim);
+        claimRepository.flush();
+        shipmentService.delete(user, shipmentId);
         outboxWriter.write("CLAIM", claim.getId(), "CLAIM_DELETED", user.organizationId(), user.userId(), Map.of("claimId", claim.getId()));
     }
 
@@ -383,17 +398,6 @@ public class ClaimService {
                 user.userId()
         );
 
-        ClaimEntity claim = getEntity(
-                user.organizationId(),
-                claimId
-        );
-
-        if (claim.getStatus() != ClaimStatus.DRAFT) {
-            throw ClaimException.conflict(
-                    "Передать на юридическую проверку можно только претензию " +
-                            "в статусе DRAFT"
-            );
-        }
         if (request == null || request.reason() == null || request.reason().isBlank()) {
             throw ClaimException.validation("Укажите основание претензии");
         }
@@ -405,6 +409,22 @@ public class ClaimService {
         if (calculation.remainingDebt() == null || calculation.remainingDebt().signum() <= 0) {
             throw ClaimException.conflict(
                 "Подтвердить неуплату нельзя: по рейсу отсутствует непогашенная задолженность"
+            );
+        }
+
+        // Recalculation runs in REQUIRES_NEW and updates the claim's monetary
+        // fields, which increments its optimistic-lock version. Load the claim
+        // only after that transaction commits so this persistence context does
+        // not retain a stale entity version.
+        ClaimEntity claim = getEntity(
+                user.organizationId(),
+                claimId
+        );
+
+        if (claim.getStatus() != ClaimStatus.DRAFT) {
+            throw ClaimException.conflict(
+                    "Передать на юридическую проверку можно только претензию " +
+                            "в статусе DRAFT"
             );
         }
 

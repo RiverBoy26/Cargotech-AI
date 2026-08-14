@@ -3,6 +3,7 @@ package ru.sber.cargotech.claim.service;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.sber.cargotech.claim.client.PaymentClient;
@@ -27,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -102,5 +104,14 @@ class ClaimServiceAccountantSubmissionTest {
         assertThat(versionCaptor.getValue().content())
             .isEqualTo("Просим оплатить задолженность по завершённому рейсу.");
         assertThat(versionCaptor.getValue().finalVersion()).isTrue();
+
+        InOrder operationOrder = inOrder(calculationService, claimRepository, versionService);
+        operationOrder.verify(calculationService).recalculate(user, claimId);
+        operationOrder.verify(claimRepository).findByIdAndOrganizationId(claimId, organizationId);
+        operationOrder.verify(versionService).create(
+            org.mockito.ArgumentMatchers.eq(user),
+            org.mockito.ArgumentMatchers.eq(claimId),
+            any(CreateClaimVersionRequest.class)
+        );
     }
 }

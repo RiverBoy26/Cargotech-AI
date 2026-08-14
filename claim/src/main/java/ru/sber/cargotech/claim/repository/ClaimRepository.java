@@ -14,6 +14,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ClaimRepository extends JpaRepository<ClaimEntity, UUID> {
+    boolean existsByOrganizationIdAndShipmentIdAndIdNot(
+        UUID organizationId,
+        UUID shipmentId,
+        UUID id
+    );
     Optional<ClaimEntity> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -37,6 +37,20 @@ function todayLocalIso() {
   return new Date(now.getTime() - offset).toISOString().slice(0, 10);
 }
 
+function claimPayableAmount(claim) {
+  if (claim?.totalAmount !== null && claim?.totalAmount !== undefined) {
+    const explicitTotal = Number(claim.totalAmount);
+    if (Number.isFinite(explicitTotal)) return explicitTotal;
+  }
+
+  if (claim?.remainingDebt !== null && claim?.remainingDebt !== undefined) {
+    const legacyTotal = Number(claim.remainingDebt);
+    if (Number.isFinite(legacyTotal)) return legacyTotal;
+  }
+
+  return Number(claim?.principalDebt || 0) + Number(claim?.penaltyAmount || 0);
+}
+
 function renderActionButton(claim) {
   if (!claim.claimId) {
     return `<button class="action_btn action_btn_confirm" data-claim-action="open-shipment" data-shipment-id="${escapeAccountant(claim.shipmentId)}"
@@ -70,7 +84,7 @@ function renderOverdueRow(claim) {
       <div class="overdue_row_trip">${escapeAccountant(claim.shipmentNumber)}</div>
       <div class="overdue_row_amount">${formatMoney(claim.shipmentAmount)}</div>
       <div class="overdue_row_amount">${formatMoney(claim.paidAmount)}</div>
-      <div class="overdue_row_amount">${formatMoney(claim.principalDebt)}</div>
+      <div class="overdue_row_amount">${formatMoney(claimPayableAmount(claim))}</div>
       <div class="overdue_row_days">+${escapeAccountant(claim.overdueDays ?? 0)} дн.</div>
       <div class="overdue_row_status_cell"><span class="status-pill ${status.className}">${escapeAccountant(status.text)}</span></div>
       <div class="overdue_row_action_cell">${renderActionButton(claim)}</div>
@@ -113,7 +127,7 @@ function renderOverdues() {
 async function choosePaymentForClaim(claimId) {
   if (!paymentsLoaded) await loadPayments();
   const claim = accountantClaims.find((item) => item.id === claimId);
-  const debt = Number(claim?.principalDebt || 0);
+  const debt = claimPayableAmount(claim);
   const eligiblePayments = accountantPayments.filter((payment) =>
     payment.status !== 'REJECTED'
     && Number(payment.availableAmount || 0) >= debt
@@ -220,7 +234,9 @@ async function loadOverdues() {
       debtorName: item.clientName,
       debtorInn: item.clientInn,
       creditorName: item.expeditorName,
-      principalDebt: item.remainingDebt,
+      principalDebt: item.remainingPrincipalDebt ?? item.remainingDebt,
+      penaltyAmount: item.penaltyAmount ?? 0,
+      totalAmount: item.totalAmount ?? item.remainingDebt,
     })).sort((a, b) => new Date(b.paymentDeadline) - new Date(a.paymentDeadline));
     renderOverdues();
   } catch (error) {
@@ -232,7 +248,7 @@ function paymentShipmentClaims() {
   return accountantClaims.filter((claim) =>
     claim.shipmentId
     && claim.claimId
-    && Number(claim.principalDebt || 0) > 0
+    && claimPayableAmount(claim) > 0
     && !['PAID', 'CANCELLED', 'CANCELLED_PAID', 'CLOSED_IN_COURT'].includes(claim.status)
   );
 }
@@ -243,11 +259,18 @@ function renderPaymentShipmentOptions() {
 
   const selectedShipmentId = select.value;
   const options = paymentShipmentClaims().map((claim) => {
-    const debt = Number(claim.principalDebt || 0).toLocaleString('ru-RU', {
+    const total = claimPayableAmount(claim).toLocaleString('ru-RU', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    const label = `${claim.shipmentNumber || 'Без номера'} — ${claim.debtorName || 'Клиент'} — долг ${debt} ${claim.currency || 'RUB'}`;
+    const penalty = Number(claim.penaltyAmount || 0).toLocaleString('ru-RU', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const penaltyPart = Number(claim.penaltyAmount || 0) > 0
+      ? `, включая неустойку ${penalty}`
+      : '';
+    const label = `${claim.shipmentNumber || 'Без номера'} — ${claim.debtorName || 'Клиент'} — к оплате ${total}${penaltyPart} ${claim.currency || 'RUB'}`;
     return `<option value="${escapeAccountant(claim.shipmentId)}">${escapeAccountant(label)}</option>`;
   });
 
@@ -263,7 +286,7 @@ function fillPaymentFromShipment() {
   if (!claim) return;
 
   const amountInput = document.getElementById('payment_amount');
-  const debt = Number(claim.principalDebt || 0);
+  const debt = claimPayableAmount(claim);
   amountInput.value = debt > 0 ? debt.toFixed(2) : '';
   amountInput.max = debt > 0 ? debt.toFixed(2) : '';
   document.getElementById('payment_currency').value = claim.currency || 'RUB';
@@ -482,8 +505,8 @@ async function submitPayment() {
     message.textContent = 'Сумма должна быть положительным числом.';
     return;
   }
-  if (amount > Number(selectedClaim.principalDebt || 0)) {
-    message.textContent = 'Сумма платежа не может превышать текущий остаток задолженности по рейсу.';
+  if (amount > claimPayableAmount(selectedClaim)) {
+    message.textContent = 'Сумма платежа не может превышать итоговую сумму долга с учётом неустойки.';
     return;
   }
 

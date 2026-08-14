@@ -6,6 +6,38 @@ let currentClaimContext = {};
 let currentSendChecklist = null;
 let templatePreviewRequestId = 0;
 
+function finalClaimVersion() {
+  return currentVersions.find((item) => item.id === currentClaim?.finalVersionId) || null;
+}
+
+function documentClaimVersionNumber(documentItem) {
+  const storedVersion = documentItem.description?.match(/Версия претензии:\s*(\d+)/i)?.[1];
+  if (storedVersion) return Number(storedVersion);
+
+  const documentCreatedAt = new Date(documentItem.createdAt || 0).getTime();
+  return [...currentVersions]
+    .filter((version) => new Date(version.createdAt || 0).getTime() <= documentCreatedAt)
+    .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))[0]
+    ?.versionNumber || null;
+}
+
+function selectedClaimDocumentFormat() {
+  return document.getElementById('document_format')?.value || 'CLAIM_PDF';
+}
+
+function claimDocumentFormatLabel(documentType) {
+  return documentType === 'CLAIM_PDF' ? 'PDF' : 'DOCX';
+}
+
+function finalVersionDocumentExists(outputType = selectedClaimDocumentFormat()) {
+  const finalVersion = finalClaimVersion();
+  if (!finalVersion) return false;
+  return currentDocuments.some((item) =>
+    item.documentType === outputType
+      && documentClaimVersionNumber(item) === finalVersion.versionNumber
+  );
+}
+
 const LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX = 'cargotech.claim.lastOpenedVersion.';
 
 function requestClaimActionText({ title, label, value = '', required = false }) {
@@ -289,7 +321,17 @@ function updateAvailableActions() {
     ['DRAFT', 'PAID', 'CANCELLED'].includes(status) && hasPermission('CLAIM_DELETE')
   );
   const canGenerateDocument = status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_GENERATE');
-  setButtonState('btn_generate_document', canGenerateDocument, Boolean(currentClaim?.finalVersionId));
+  setButtonState(
+    'btn_generate_document',
+    canGenerateDocument,
+    Boolean(currentClaim?.finalVersionId) && !finalVersionDocumentExists()
+  );
+  const generateButton = document.getElementById('btn_generate_document');
+  if (generateButton) {
+    generateButton.title = finalVersionDocumentExists()
+      ? `Документ ${claimDocumentFormatLabel(selectedClaimDocumentFormat())} для текущей финальной версии уже сформирован.`
+      : '';
+  }
   setButtonState(
     'btn_download_claim',
     approved && hasPermission('DOCUMENT_DOWNLOAD'),
@@ -544,31 +586,28 @@ async function loadDocuments(claimId) {
     );
     selectedDocumentId = claimDocuments[0]?.id || null;
     const typeLabels = {
-      CLAIM_PDF: 'Претензия PDF',
-      CLAIM_DOCX: 'Претензия DOCX',
-      CALCULATION_PDF: 'Расчёт задолженности PDF',
-      CALCULATION_XLSX: 'Расчёт задолженности XLSX',
+      CLAIM_PDF: 'Претензия',
+      CLAIM_DOCX: 'Претензия',
+      CALCULATION_PDF: 'Расчёт задолженности',
+      CALCULATION_XLSX: 'Расчёт задолженности',
     };
-    const getClaimVersionNumber = (document) => {
-      const storedVersion = document.description?.match(/Версия претензии:\s*(\d+)/i)?.[1];
-      if (storedVersion) return storedVersion;
-
-      const documentCreatedAt = new Date(document.createdAt || 0).getTime();
-      return [...currentVersions]
-        .filter((version) => new Date(version.createdAt || 0).getTime() <= documentCreatedAt)
-        .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))[0]
-        ?.versionNumber || null;
+    const formatLabels = {
+      CLAIM_PDF: 'PDF',
+      CLAIM_DOCX: 'DOCX',
+      CALCULATION_PDF: 'PDF',
+      CALCULATION_XLSX: 'XLSX',
     };
     list.innerHTML = displayedDocuments.map((document) => {
-      const versionNumber = getClaimVersionNumber(document);
+      const versionNumber = documentClaimVersionNumber(document);
       const versionLabel = versionNumber ? `Версия претензии №${versionNumber}` : 'Версия претензии не определена';
+      const formatLabel = formatLabels[document.documentType] || document.documentType;
       return `
       <div class="document_item">
         ${['CLAIM_PDF', 'CLAIM_DOCX'].includes(document.documentType) ? `<label>
           <input type="radio" name="document_to_send" value="${document.id}"
                  ${document.id === selectedDocumentId ? 'checked' : ''}>
-          ${escapeHtml(document.documentNumber || typeLabels[document.documentType])} · ${escapeHtml(versionLabel)}
-        </label>` : `<span>${escapeHtml(typeLabels[document.documentType] || document.documentType)} · ${escapeHtml(versionLabel)}</span>`}
+          ${escapeHtml(document.documentNumber || typeLabels[document.documentType])} · ${escapeHtml(versionLabel)} · ${escapeHtml(formatLabel)}
+        </label>` : `<span>${escapeHtml(typeLabels[document.documentType] || document.documentType)} · ${escapeHtml(versionLabel)} · ${escapeHtml(formatLabel)}</span>`}
         <button class="action_btn document_download" data-id="${document.id}">Скачать</button>
       </div>`;
     }).join('');
@@ -669,10 +708,13 @@ async function generateSelectedClaimDocument(claimId) {
   const templateVersionId = templateId
     ? template.selectedOptions[0]?.dataset.versionId || null
     : null;
-  const finalVersion = currentVersions.find((item) => item.id === currentClaim.finalVersionId);
+  const finalVersion = finalClaimVersion();
 
   if (!finalVersion) {
     throw new Error('Назначьте финальную версию текста');
+  }
+  if (finalVersionDocumentExists()) {
+    throw new Error(`Документ ${claimDocumentFormatLabel(selectedClaimDocumentFormat())} для этой версии претензии уже сформирован.`);
   }
 
   const data = await buildClaimTemplateData(claimId, finalVersion.content);
@@ -680,6 +722,7 @@ async function generateSelectedClaimDocument(claimId) {
     templateId,
     templateVersionId,
     claimId,
+    claimVersionId: finalVersion.id,
     outputType: document.getElementById('document_format').value,
     documentNumber: currentClaim.claimNumber,
     documentDate: new Date().toISOString().slice(0, 10),
@@ -850,7 +893,7 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_delete_claim').addEventListener('click', async () => {
-    if (!window.confirm('Удалить претензию без возможности восстановления?')) return;
+    if (!window.confirm('Удалить претензию, связанный рейс и все его платежи без возможности восстановления?')) return;
     const button = document.getElementById('btn_delete_claim');
     button.disabled = true;
     try {
@@ -867,6 +910,7 @@ async function initClaimCardPage() {
       await generateSelectedClaimDocument(claimId);
     } catch (error) { showError(error); }
   });
+  document.getElementById('document_format').addEventListener('change', updateAvailableActions);
 
   for (const format of ['pdf', 'xlsx']) {
     document.getElementById(`btn_download_calculation_${format}`).addEventListener('click', async () => {

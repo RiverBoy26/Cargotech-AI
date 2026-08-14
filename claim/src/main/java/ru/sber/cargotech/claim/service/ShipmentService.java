@@ -75,6 +75,20 @@ public class ShipmentService {
         return toResponse(user.organizationId(), saved);
     }
 
+    @Transactional
+    public void delete(CurrentClaimUser user, UUID id) {
+        ClaimShipment shipment = getEntity(user.organizationId(), id);
+        shipmentRepository.delete(shipment);
+        outboxWriter.write(
+            "SHIPMENT",
+            shipment.getId(),
+            "SHIPMENT_DELETED",
+            user.organizationId(),
+            user.userId(),
+            Map.of("shipmentId", shipment.getId())
+        );
+    }
+
     public ClaimShipment getEntity(UUID organizationId, UUID id) {
         return shipmentRepository.findByIdAndOrganizationId(id, organizationId)
             .orElseThrow(() -> ClaimException.notFound("Рейс не найден"));

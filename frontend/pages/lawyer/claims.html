@@ -34,56 +34,13 @@
                 <option value="">Все статусы</option>
                 <option value="PENDING_LEGAL_REVIEW">На проверке</option>
                 <option value="LEGAL_APPROVED">Утверждено</option>
-                <option value="SENT">Отправлено</option>
-                <option value="AWAITING_RESPONSE">Ожидание ответа</option>
+                <option value="AWAITING_RESPONSE">Ожидание</option>
                 <option value="PAID">Оплачено</option>
-                <option value="ESCALATED_TO_COURT">Передано в суд</option>
+                <option value="ESCALATED_TO_COURT">Эскалация</option>
                 <option value="CANCELLED">Отменено</option>
                 <option value="CANCELLED_PAID">Оплачено до отправки</option>
-                <option value="CLOSED_IN_COURT">Закрыто судом</option>
+                <option value="CLOSED_IN_COURT">Закрыто</option>
             </select>
-            <button class="primary_btn" id="create_claim_btn">+ Создать претензию</button>
-        </div>
-        <div class="add_claim_form" id="add_claim_form">
-            <div class="add_claim_form_title">Новая претензия</div>
-            <div class="add_claim_form_fields">
-
-                <div class="form_field">
-                    <label class="form_label" for="claim_shipment_id">Рейс *</label>
-                    <select class="form_input form_select" id="claim_shipment_id" required>
-                        <option value="">— выберите рейс —</option>
-                    </select>
-                </div>
-
-                <div class="form_field">
-                    <label class="form_label" for="claim_type">Тип претензии *</label>
-                    <select class="form_input form_select" id="claim_type" required>
-                        <option value="">— выберите тип —</option>
-                        <option value="PAYMENT_DELAY">Задержка оплаты</option>
-                    </select>
-                </div>
-
-                <div class="form_field">
-                    <label class="form_label" for="claim_number">Номер претензии</label>
-                    <input class="form_input" id="claim_number" name="claim_number" autocomplete="off" type="text"
-                        placeholder="CT-2026-001 (необязательно)">
-                </div>
-
-                <div class="form_field form_field_wide">
-                    <label class="form_label" for="claim_reason">Основание претензии *</label>
-                    <input class="form_input" id="claim_reason" name="claim_reason" autocomplete="off" type="text" required
-                        placeholder="Не оплачены транспортно-экспедиционные услуги по рейсу AA-1111">
-                </div>
-
-            </div>
-
-            <div class="add_claim_form_footer">
-                <div class="add_claim_form_actions">
-                    <p class="form_error" id="claim_form_error"></p>
-                    <button class="secondary_btn" id="cancel_claim_btn">Отмена</button>
-                    <button class="primary_btn" id="save_claim_btn">Создать</button>
-                </div>
-            </div>
         </div>
         <div class="claims_table">
             <div class="claims_table_head">
@@ -99,5 +56,5 @@
         </div>
     </main>
     <script src="../../scripts/api.js?v=20260804-user-name-fields-2"></script>
-    <script src="../../scripts/script.js?v=20260813-accountant-draft-flow-1"></script>
+    <script src="../../scripts/script.js?v=20260814-lawyer-dashboard-statuses-1"></script>
 </body>

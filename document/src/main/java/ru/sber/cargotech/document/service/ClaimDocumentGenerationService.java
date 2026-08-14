@@ -20,6 +20,7 @@ import ru.sber.cargotech.document.repository.DocumentLinkRepository;
 import ru.sber.cargotech.document.security.CurrentDocumentUser;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -70,6 +71,20 @@ public class ClaimDocumentGenerationService {
             && outputType != GeneratedDocumentType.CLAIM_PDF) {
             throw DocumentException.badRequest(
                 "Поддерживается генерация только CLAIM_DOCX и CLAIM_PDF"
+            );
+        }
+
+        if (generationLogRepository
+            .existsByOrganizationIdAndClaimIdAndClaimVersionIdAndOutputTypeAndStatusIn(
+                user.organizationId(),
+                request.claimId(),
+                request.claimVersionId(),
+                outputType,
+                List.of(GenerationStatus.PROCESSING, GenerationStatus.COMPLETED)
+            )) {
+            throw DocumentException.conflict(
+                "Документ " + formatName(outputType) +
+                    " для этой версии претензии уже сформирован"
             );
         }
 
@@ -217,6 +232,7 @@ public class ClaimDocumentGenerationService {
         DocumentGenerationLog log = new DocumentGenerationLog();
         log.setOrganizationId(user.organizationId());
         log.setClaimId(request.claimId());
+        log.setClaimVersionId(request.claimVersionId());
         log.setOutputType(outputType);
         log.setSourceVersionId(templateVersionId);
         log.setRequestSnapshot(safeSnapshot(request));
@@ -245,6 +261,7 @@ public class ClaimDocumentGenerationService {
         snapshot.put("templateVersionId", request.templateVersionId());
         snapshot.put("templateCode", request.templateCode());
         snapshot.put("claimId", request.claimId());
+        snapshot.put("claimVersionId", request.claimVersionId());
         snapshot.put("outputType", request.outputType());
         snapshot.put("documentNumber", request.documentNumber());
         snapshot.put("rawClaimText", request.claimText() != null);
@@ -276,6 +293,10 @@ public class ClaimDocumentGenerationService {
         return outputType == GeneratedDocumentType.CLAIM_PDF
             ? DocumentType.CLAIM_PDF
             : DocumentType.CLAIM_DOCX;
+    }
+
+    private String formatName(GeneratedDocumentType outputType) {
+        return outputType == GeneratedDocumentType.CLAIM_PDF ? "PDF" : "DOCX";
     }
 
     private String safeError(RuntimeException exception) {

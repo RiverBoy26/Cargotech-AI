@@ -10,6 +10,8 @@ import ru.sber.cargotech.payment.dto.PaymentStateResponse;
 import ru.sber.cargotech.payment.enums.PaymentCheckStatus;
 import ru.sber.cargotech.payment.enums.PaymentTargetType;
 import ru.sber.cargotech.payment.repository.PaymentMatchRepository;
+import ru.sber.cargotech.payment.security.CurrentPaymentUserProvider;
+import ru.sber.cargotech.payment.service.PaymentCascadeDeletionService;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -21,6 +23,27 @@ import java.util.UUID;
 public class InternalPaymentStateController {
 
     private final PaymentMatchRepository matchRepository;
+    private final PaymentCascadeDeletionService cascadeDeletionService;
+    private final CurrentPaymentUserProvider currentUserProvider;
+
+    @DeleteMapping("/by-claim/{claimId}/shipment/{shipmentId}")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority('CLAIM_DELETE')")
+    public void deleteForClaimAndShipment(
+        @PathVariable UUID claimId,
+        @PathVariable UUID shipmentId
+    ) {
+        log.info(
+            "Каскадное удаление платежей: claimId={}, shipmentId={}",
+            claimId,
+            shipmentId
+        );
+        cascadeDeletionService.deleteForClaimAndShipment(
+            currentUserProvider.getRequiredUser(),
+            claimId,
+            shipmentId
+        );
+    }
 
     @PostMapping("/payment-state")
     @PreAuthorize("hasAuthority('PAYMENT_READ')")

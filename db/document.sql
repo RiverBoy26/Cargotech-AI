@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS cargotech.document_generation_logs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id uuid NOT NULL,
     claim_id uuid NOT NULL,
+    claim_version_id uuid,
     document_id uuid
         REFERENCES cargotech.document_documents(id),
     output_type varchar(64) NOT NULL,
@@ -192,6 +193,18 @@ CREATE INDEX IF NOT EXISTS idx_document_generation_claim
         claim_id,
         generated_at DESC
     );
+
+DROP INDEX IF EXISTS cargotech.uq_document_generation_claim_version;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_document_generation_claim_version_format
+    ON cargotech.document_generation_logs(
+        organization_id,
+        claim_id,
+        claim_version_id,
+        output_type
+    )
+    WHERE claim_version_id IS NOT NULL
+      AND status IN ('PROCESSING', 'COMPLETED');
 
 CREATE TABLE IF NOT EXISTS cargotech.document_email_deliveries (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

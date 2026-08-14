@@ -66,6 +66,25 @@ public class PaymentClient {
                 .body(PaymentPreflightResponse.class);
     }
 
+    public void deleteForClaimAndShipment(UUID claimId, UUID shipmentId) {
+        try {
+            restClient
+                .delete()
+                .uri(
+                    "/internal/api/v1/payments/by-claim/{claimId}/shipment/{shipmentId}",
+                    claimId,
+                    shipmentId
+                )
+                .retrieve()
+                .toBodilessEntity();
+        } catch (org.springframework.web.client.RestClientResponseException exception) {
+            throw ClaimException.conflict(
+                "Не удалось удалить связанные платежи: HTTP "
+                    + exception.getStatusCode().value()
+            );
+        }
+    }
+
     private static String currentBearerToken() {
         Authentication authentication = SecurityContextHolder
                 .getContext()
