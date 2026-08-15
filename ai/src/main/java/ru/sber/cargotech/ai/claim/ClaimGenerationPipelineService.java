@@ -225,7 +225,7 @@ public class ClaimGenerationPipelineService {
                 2. Сохрани только факты из исходного входного JSON и RAG-контекста.
                 3. Дословно перенеси все обязательные номера, даты, маршрут, адрес, временное окно и суммы.
                 4. Для PAYMENT_DELAY обязательно укажи claim_number и claim_date, номер и дату договора, а также дату срока оплаты, если они есть во входе.
-                5. Для PAYMENT_DELAY при claim_response_days > 0 укажи точный срок ответа в календарных днях с даты получения претензии.
+                5. Для PAYMENT_DELAY при claim_response_days > 0 укажи точный срок ответа с даты получения претензии и используй единицу строго из claim_response_day_type: CALENDAR_DAYS = календарных, WORKING_DAYS = рабочих, BANKING_DAYS = банковских дней.
                 6. Для PAYMENT_DELAY при заполненном signatory заверши текст точными position, name и authority, если оно передано.
                 7. Если act_date есть, а act_number отсутствует, пиши «акт от <дата>» без символа № и пустого номера.
                 8. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
@@ -235,7 +235,8 @@ public class ClaimGenerationPipelineService {
                 12. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
                 13. Для PAYMENT_DELAY attachments должен быть строго []; не добавляй раздел «Приложения», банковские реквизиты и фразы об их отсутствии.
                 14. Если contract_context содержит нумерованные пункты, относящиеся к использованным условиям, процитируй их в claim_text и укажи те же chunk_id/clause_number в used_contract_clauses.
-                15. shipment.order_number — только номер. Не добавляй к нему «от <дата>»: отдельной даты заказа/заявки во входе нет.
+                15. В PAYMENT_DELAY shipment.order_number называй только номером рейса: «рейс № <order_number>» / «в рамках рейса № <order_number>». Не называй его заказом или заявкой и не добавляй к нему «от <дата>».
+                15.1. Если backend_calculation.overdue_start_date и overdue_end_date заполнены, укажи точный период начисления от overdue_start_date до overdue_end_date. overdue_end_date — последний день начисления; не заменяй его claim_date.
                 16. payment_confirmed_by_accountant подтверждает только статус оплаты. Не приписывай бухгалтеру подтверждение выставления/получения документов или наступления срока платежа.
                 17. Если backend_calculation.penalty_type = LEGAL_INTEREST, называй начисление процентами по ст. 395 ГК РФ / процентами за пользование чужими денежными средствами. Не называй его неустойкой, штрафом или пеней.
                 18. contract.claim_response_days — срок письменного ответа, а не новый срок оплаты. Требование погасить задолженность и срок ответа сформулируй раздельно.

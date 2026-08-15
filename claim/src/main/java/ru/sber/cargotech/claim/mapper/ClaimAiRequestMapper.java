@@ -81,7 +81,7 @@ public class ClaimAiRequestMapper {
                                 resolvePaymentStatus(calculation),
                                 claim.isNonPaymentConfirmed()
                         ),
-                        asString(LocalDate.now()),
+                        asString(resolveClaimDate(calculation)),
                         mapSignatory(claim, currentUser)
                 ),
                 new AiGenerateClaimRequest.BackendCalculation(
@@ -94,7 +94,7 @@ public class ClaimAiRequestMapper {
                         shipment.getCurrency(),
                         calculation.getFormula(),
                         asString(calculation.getOverdueStartDate()),
-                        asString(LocalDate.now()),
+                        asString(resolveOverdueEndDate(calculation)),
                         calculation.getPrincipalDebt(),
                         calculation.getPaidAmount()
                 ),
@@ -184,6 +184,25 @@ public class ClaimAiRequestMapper {
     private LocalDate resolvePaymentDueDate(ClaimCalculation calculation) {
         LocalDate overdueStartDate = calculation.getOverdueStartDate();
         return overdueStartDate == null ? null : overdueStartDate.minusDays(1);
+    }
+
+    private LocalDate resolveClaimDate(ClaimCalculation calculation) {
+        return calculation != null && calculation.getCalculationDate() != null
+                ? calculation.getCalculationDate()
+                : LocalDate.now();
+    }
+
+    private LocalDate resolveOverdueEndDate(ClaimCalculation calculation) {
+        if (calculation == null
+                || calculation.getCalculationDate() == null
+                || calculation.getOverdueDays() == null
+                || calculation.getOverdueDays() <= 0) {
+            return null;
+        }
+        // ClaimCalculationService counts overdue days as the half-open interval
+        // [overdue_start_date, calculation_date), so the last accrued day is
+        // always the calendar day immediately before calculation_date.
+        return calculation.getCalculationDate().minusDays(1);
     }
 
     private AiGenerateClaimRequest.PaymentStatus resolvePaymentStatus(ClaimCalculation calculation) {

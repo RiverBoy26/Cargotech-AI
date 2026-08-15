@@ -313,13 +313,22 @@ public class ClaimFactConsistencyValidator {
         // There is no order/application date in GenerateClaimRequest.
         // A model must not turn order_number into "заказ № ... от <invented date>".
         if (shipment != null && hasText(shipment.orderNumber())) {
+            String quotedOrderNumber = Pattern.quote(shipment.orderNumber());
             String orderDatePattern = "(?isu)(?:заказ|заявк)\\p{L}*[^.!?\\n]{0,100}"
-                    + "(?:№\\s*)?" + Pattern.quote(shipment.orderNumber())
+                    + "(?:№\\s*)?" + quotedOrderNumber
                     + "[^.!?\\n]{0,60}\\sот\\s+\\d{1,2}\\s+"
                     + "(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)"
                     + "\\s+\\d{4}";
             if (Pattern.compile(orderDatePattern).matcher(text).find()) {
                 errors.add("claim_text invents an order/application date absent from case_facts.shipment");
+            }
+
+            String wrongRideLabelPattern = "(?isu)(?:"
+                    + "(?:заказ|заявк)\\p{L}*[^.!?\\n]{0,100}(?:№\\s*)?" + quotedOrderNumber
+                    + "|" + quotedOrderNumber + "[^.!?\\n]{0,100}(?:заказ|заявк)\\p{L}*"
+                    + ")";
+            if (Pattern.compile(wrongRideLabelPattern).matcher(text).find()) {
+                errors.add("claim_text labels shipment.order_number as an order/application; PAYMENT_DELAY must call it a ride number");
             }
         }
 

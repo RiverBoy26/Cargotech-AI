@@ -1252,17 +1252,124 @@ class RuleBasedGuardrailServiceTest {
         );
     }
 
+    private GenerateClaimResponse paymentResponseWithOverdueDays(String text, int overdueDays) {
+        GenerateClaimResponse base = validPaymentResponse(text);
+        return new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                base.summaryForLawyer(),
+                base.usedContractClauses(),
+                base.usedLawArticles(),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        base.backendCalculationUsed().principalDebt(),
+                        base.backendCalculationUsed().penaltyType(),
+                        base.backendCalculationUsed().penaltyAmount(),
+                        base.backendCalculationUsed().totalAmount(),
+                        overdueDays,
+                        base.backendCalculationUsed().currency()
+                ),
+                base.attachments(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+    }
+
     private String validText() {
         return """
                 От: ООО Экспедитор, ИНН 7800000000.
                 Кому: ООО Клиент, ИНН 7700000000.
                 Претензия по п. 4.2 Договора №45/2026 от 10.01.2026.
-                Перевозка по маршруту Санкт-Петербург — Москва, заказ ORD-157.
+                Перевозка по маршруту Санкт-Петербург — Москва в рамках рейса № ORD-157.
                 Услуги подтверждены актом №157 от 01.05.2026, ТТН-157 и счётом INV-157.
                 Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
                 неустойка — 2 400 руб., итого к оплате — 242 400 руб.
                 Правовое основание: ст. 309 ГК РФ.
                 """;
+    }
+
+    @Test
+    void blocksPaymentDelayWhenRideNumberIsCalledAnOrder() {
+        String text = validText().replace(
+                "в рамках рейса № ORD-157",
+                "по заказу № ORD-157"
+        );
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("must call it a ride number"));
+    }
+
+    @Test
+    void acceptsPaymentDelayWhenOrderNumberIsPresentedAsRideNumber() {
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(validText()));
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).noneMatch(error -> error.contains("ride number"));
+    }
+
+    @Test
+    void blocksWhenAccrualPeriodUsesCalculationDateInsteadOfLastAccruedDay() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                new GenerateClaimRequest.BackendCalculation(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        "0,1% в день",
+                        29,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        "RUB",
+                        "backend",
+                        "17.07.2026",
+                        "14.08.2026"
+                ),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+        String text = validText()
+                + "\nНеустойка рассчитана за период с 17 июля 2026 года по 15 августа 2026 года.";
+
+        GuardrailResult result = service.check(request, paymentResponseWithOverdueDays(text, 29));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("overdue_end_date: 14.08.2026"));
+    }
+
+    @Test
+    void acceptsAccrualPeriodEndingOnLastAccruedDay() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                new GenerateClaimRequest.BackendCalculation(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        "0,1% в день",
+                        29,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        "RUB",
+                        "backend",
+                        "17.07.2026",
+                        "14.08.2026"
+                ),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+        String text = validText()
+                + "\nНеустойка рассчитана за период с 17 июля 2026 года по 14 августа 2026 года.";
+
+        GuardrailResult result = service.check(request, paymentResponseWithOverdueDays(text, 29));
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
     }
 
     @Test

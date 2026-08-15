@@ -74,6 +74,7 @@ class ClaimAiRequestMapperTest {
         calculation.setTotalAmount(new BigDecimal("100000.00"));
         calculation.setOverdueDays(11);
         calculation.setOverdueStartDate(LocalDate.of(2026, 7, 26));
+        calculation.setCalculationDate(LocalDate.of(2026, 8, 6));
         calculation.setFormula("100000 + 0");
 
         CurrentClaimUser user = new CurrentClaimUser(
@@ -94,6 +95,9 @@ class ClaimAiRequestMapperTest {
         assertThat(result.caseFacts().contract().claimResponseDayType())
                 .isEqualTo(AiGenerateClaimRequest.TermDayType.WORKING_DAYS);
         assertThat(result.caseFacts().payment().paymentDueDate()).isEqualTo("2026-07-25");
+        assertThat(result.caseFacts().claimDate()).isEqualTo("2026-08-06");
+        assertThat(result.backendCalculation().overdueStartDate()).isEqualTo("2026-07-26");
+        assertThat(result.backendCalculation().overdueEndDate()).isEqualTo("2026-08-05");
         assertThat(result.caseFacts().signatory().name()).isEqualTo("Дмитриев Павел Алексеевич");
         assertThat(result.caseFacts().signatory().position()).isEqualTo("Юрист");
         assertThat(result.caseFacts().shipment().actNumber()).isNull();
@@ -161,6 +165,7 @@ class ClaimAiRequestMapperTest {
         calculation.setTotalAmount(new BigDecimal("92520"));
         calculation.setOverdueDays(28);
         calculation.setOverdueStartDate(LocalDate.of(2026, 7, 17));
+        calculation.setCalculationDate(LocalDate.of(2026, 8, 14));
         calculation.setFormula("90000 × 0,1% × 28");
 
         AiGenerateClaimRequest result = mapper.map(
