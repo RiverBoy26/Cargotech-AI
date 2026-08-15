@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import ru.sber.cargotech.ai.config.GigaChatProperties;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
@@ -21,6 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -118,6 +120,84 @@ class GigaChatClientOutboundMaskingIntegrationTest {
                 anyList(),
                 any(),
                 any()
+        );
+    }
+
+    @Test
+    void honorsPerCallReadTimeout() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/slow-chat", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            byte[] response = """
+                    {
+                      "choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}],
+                      "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
+                    }
+                    """.getBytes(StandardCharsets.UTF_8);
+            try {
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, response.length);
+                exchange.getResponseBody().write(response);
+            } catch (IOException ignored) {
+                // Expected when the client aborts the timed-out request.
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+
+        GigaChatProperties properties = new GigaChatProperties();
+        properties.setChatUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/slow-chat");
+        properties.setChatModel("GigaChat-2-Pro");
+        properties.setTemperature(0.1);
+        properties.setMaxTokens(1000);
+
+        GigaChatAuthService authService = mock(GigaChatAuthService.class);
+        when(authService.getAccessToken()).thenReturn("test-token");
+
+        LlmLogService logService = mock(LlmLogService.class);
+        when(logService.newRequestId()).thenReturn("req-timeout-test");
+        when(logService.now()).thenReturn(Instant.parse("2026-08-15T02:00:00Z"));
+
+        GigaChatClient client = new GigaChatClient(
+                properties,
+                authService,
+                RestClient.builder(),
+                logService,
+                new ReversiblePromptMasker()
+        );
+
+        long started = System.nanoTime();
+        assertThatThrownBy(() -> client.sendChatWithTrace(
+                List.of(
+                        new GigaChatMessage("system", "Сформируй претензию."),
+                        new GigaChatMessage("user", "Тест таймаута")
+                ),
+                "claim-timeout-test",
+                UUID.fromString("f1d15888-d170-493d-a463-51ceaf64c6a3"),
+                "GENERATE_CLAIM_PAYMENT_DELAY",
+                100L
+        )).isInstanceOf(ResourceAccessException.class);
+
+        long elapsedMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        assertThat(elapsedMs).isLessThan(2_000L);
+        verify(logService).logError(
+                eq("req-timeout-test"),
+                eq("claim-timeout-test"),
+                any(),
+                eq("GENERATE_CLAIM_PAYMENT_DELAY"),
+                eq("GigaChat"),
+                eq("GigaChat-2-Pro"),
+                anyList(),
+                isNull(),
+                any(ResourceAccessException.class),
+                any(),
+                eq(true)
         );
     }
 

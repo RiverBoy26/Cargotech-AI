@@ -178,4 +178,66 @@ class ClaimGenerationPipelineContractContextTest {
         );
     }
 
+    @Test
+    void repairBudgetLeavesMarginBelowSixtySeconds() {
+        ClaimGenerationPipelineService service = new ClaimGenerationPipelineService(
+                null, null, null, null, null, null
+        );
+
+        assertThat(service.initialTimeoutMillis(0)).isEqualTo(50_000);
+        assertThat(service.initialTimeoutMillis(10_000)).isEqualTo(42_000);
+        assertThat(service.initialTimeoutMillis(53_000)).isZero();
+
+        assertThat(service.repairTimeoutMillis(20_000)).isEqualTo(27_000);
+        assertThat(service.repairTimeoutMillis(30_000)).isEqualTo(22_000);
+        assertThat(service.repairTimeoutMillis(33_000)).isZero();
+    }
+
+    @Test
+    void deterministicCitationRepairDoesNotRewriteDraftForUnrelatedGuardrailError() {
+        ClaimGenerationPipelineService service = new ClaimGenerationPipelineService(
+                null, null, null, null, null, null
+        );
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                new GenerateClaimRequest.CaseFacts(
+                        "claim-1",
+                        GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
+                        null,
+                        null,
+                        new GenerateClaimRequest.ContractFacts("АН-ТЭ/2026-013", "2026-03-31"),
+                        null,
+                        null,
+                        "2026-08-15"
+                ),
+                null,
+                List.of(new GenerateClaimRequest.ContractContextChunk(
+                        "pay-8-2", "8.2", "Оплата", "PAYMENT_TERMS", "45 календарных дней"
+                )),
+                List.of(),
+                null,
+                List.of()
+        );
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
+                "Оплата должна быть произведена согласно п. 8.2.",
+                "summary",
+                List.of(new GenerateClaimResponse.UsedContractClause(
+                        "8.2", "pay-8-2", "срок оплаты"
+                )),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                true
+        );
+
+        GenerateClaimResponse result = service.repairContractCitations(
+                request,
+                response,
+                List.of("Model changed total_amount")
+        );
+
+        assertThat(result).isSameAs(response);
+    }
+
 }

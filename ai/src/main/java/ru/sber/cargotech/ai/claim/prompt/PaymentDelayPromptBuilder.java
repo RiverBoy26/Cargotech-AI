@@ -2,10 +2,13 @@ package ru.sber.cargotech.ai.claim.prompt;
 
 import org.springframework.stereotype.Service;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimRequest;
+import ru.sber.cargotech.ai.claim.dto.GenerateClaimResponse;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class PaymentDelayPromptBuilder {
@@ -23,6 +26,89 @@ public class PaymentDelayPromptBuilder {
                 new GigaChatMessage("system", buildSystemPrompt()),
                 new GigaChatMessage("user", buildUserPrompt(request))
         );
+    }
+
+    public List<GigaChatMessage> buildRepair(
+            GenerateClaimRequest request,
+            GenerateClaimResponse blockedResponse,
+            List<String> errors
+    ) {
+        validate(request);
+
+        GenerateClaimRequest repairInput = new GenerateClaimRequest(
+                request.caseFacts(),
+                request.backendCalculation(),
+                repairContractContext(request, blockedResponse),
+                request.legalContext(),
+                null,
+                List.of()
+        );
+
+        String errorList = errors == null || errors.isEmpty()
+                ? "- guardrail rejected the response"
+                : "- " + String.join("\n- ", errors);
+
+        return List.of(
+                new GigaChatMessage("system", """
+                        Ты исправляешь ранее созданный JSON претензии PAYMENT_DELAY.
+                        AUTHORITATIVE_INPUT ниже является единственным источником фактов, сумм, дат, договора и права.
+                        Не пересчитывай backend_calculation и не добавляй отсутствующие факты или источники.
+                        Верни полный GenerateClaimResponse строго как валидный JSON без markdown и пояснений.
+                        """),
+                new GigaChatMessage("user", """
+                        Исправь BLOCKED_RESPONSE так, чтобы устранить все ошибки guardrail.
+
+                        GUARDRAIL_ERRORS:
+                        %s
+
+                        AUTHORITATIVE_INPUT:
+                        %s
+
+                        BLOCKED_RESPONSE:
+                        %s
+
+                        Критические правила ремонта:
+                        1. Все суммы, overdue_days, penalty_type и currency скопируй без изменения из backend_calculation.
+                        2. Все даты в claim_text пиши по-русски; overdue_end_date — последний день начисления, не claim_date.
+                        3. shipment.order_number в PAYMENT_DELAY называй только «рейс № ...» или «в рамках рейса № ...».
+                        4. Для каждого используемого нумерованного пункта договора укажи тот же clause_number/chunk_id в used_contract_clauses и процитируй его рядом с соответствующим условием как «п. X Договора № <номер> от <дата>».
+                        5. PAYMENT_TERMS используй только для оплаты, PENALTY — только для договорной неустойки, CLAIM_PROCEDURE — только для срока ответа. Не группируй разные clause_type.
+                        6. Каждую used_law_articles норму реально процитируй в claim_text; не добавляй норм вне legal_context.
+                        7. При LEGAL_INTEREST используй проценты по ст. 395 ГК РФ, не называй их неустойкой/штрафом/пеней.
+                        8. claim_response_days — только срок письменного ответа с даты получения претензии, не срок оплаты.
+                        9. attachments для PAYMENT_DELAY = []; не добавляй приложения, банковские реквизиты, суд или иск.
+                        10. Блок требований должен содержать total_amount и его состав: principal_debt + положительную penalty_amount.
+                        11. manual_review_required = true.
+                        """.formatted(errorList, toCompactJson(repairInput), toCompactJson(blockedResponse)))
+        );
+    }
+
+    private List<GenerateClaimRequest.ContractContextChunk> repairContractContext(
+            GenerateClaimRequest request,
+            GenerateClaimResponse blockedResponse
+    ) {
+        Set<String> selectedChunkIds = new HashSet<>();
+        if (blockedResponse != null && blockedResponse.usedContractClauses() != null) {
+            blockedResponse.usedContractClauses().stream()
+                    .filter(java.util.Objects::nonNull)
+                    .map(GenerateClaimResponse.UsedContractClause::chunkId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .forEach(selectedChunkIds::add);
+        }
+
+        Set<String> relevantTypes = new HashSet<>(Set.of("PAYMENT_TERMS", "CLAIM_PROCEDURE"));
+        if (request.backendCalculation() != null
+                && request.backendCalculation().penaltyType() == GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY) {
+            relevantTypes.add("PENALTY");
+        }
+
+        return request.contractContext() == null
+                ? List.of()
+                : request.contractContext().stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(chunk -> selectedChunkIds.contains(chunk.chunkId())
+                        || relevantTypes.contains(chunk.clauseType()))
+                .toList();
     }
 
     private String buildSystemPrompt() {
@@ -186,11 +272,22 @@ public class PaymentDelayPromptBuilder {
                 """.replace("{INPUT_JSON}", inputJson);
     }
 
-    private String toJson(GenerateClaimRequest request) {
+    private String toCompactJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Failed to serialize compact repair payload",
+                    e
+            );
+        }
+    }
+
+    private String toJson(Object value) {
         try {
             return objectMapper
                     .writerWithDefaultPrettyPrinter()
-                    .writeValueAsString(request);
+                    .writeValueAsString(value);
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Failed to serialize GenerateClaimRequest for prompt",

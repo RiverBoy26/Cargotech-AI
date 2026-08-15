@@ -3,6 +3,7 @@ package ru.sber.cargotech.ai.claim;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimPipelineRequest;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimPipelineResponse;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimRequest;
@@ -18,15 +19,45 @@ import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatResponse;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
 import ru.sber.cargotech.ai.rag.RagSearchService;
 
+import java.net.SocketTimeoutException;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 public class ClaimGenerationPipelineService {
 
     private static final Logger log = LoggerFactory.getLogger(ClaimGenerationPipelineService.class);
+
+    // Acceptance target is <= 60 seconds end-to-end. Keep an internal safety margin
+    // for claim-service/gateway serialization and network overhead.
+    static final long PIPELINE_BUDGET_MS = 55_000L;
+    static final long INITIAL_LLM_TIMEOUT_MS = 50_000L;
+    static final long REPAIR_LLM_MAX_TIMEOUT_MS = 27_000L;
+    static final long REPAIR_MIN_TIMEOUT_MS = 20_000L;
+    static final long FINALIZATION_RESERVE_MS = 3_000L;
+
+    private static final Pattern PAYMENT_TERM_MEANING = Pattern.compile(
+            "(?iu)(?:срок\\p{L}*\\s+оплат\\p{L}*|оплат\\p{L}*[^\\n]{0,100}(?:должн\\p{L}*|производ\\p{L}*|осуществл\\p{L}*|не\\s+позднее)|не\\s+позднее[^\\n]{0,80}оплат\\p{L}*)"
+    );
+    private static final Pattern CLAIM_RESPONSE_MEANING = Pattern.compile(
+            "(?iu)(?:письменн\\p{L}*\\s+ответ\\p{L}*|ответ\\p{L}*[^\\n]{0,80}претензи\\p{L}*|претензи\\p{L}*[^\\n]{0,80}ответ\\p{L}*)"
+    );
+    private static final Pattern CONTRACT_PENALTY_MEANING = Pattern.compile(
+            "(?iu)(?:неустойк\\p{L}*|пен(?:я|и|ей|ю))"
+    );
+    private static final String[] RU_MONTHS = {
+            "января", "февраля", "марта", "апреля", "мая", "июня",
+            "июля", "августа", "сентября", "октября", "ноября", "декабря"
+    };
 
     private final RagSearchService ragSearchService;
     private final PaymentDelayPromptBuilder paymentDelayPromptBuilder;
@@ -59,6 +90,7 @@ public class ClaimGenerationPipelineService {
             GenerateClaimPipelineRequest request,
             UUID actorUserId
     ) {
+        long pipelineStartedNanos = System.nanoTime();
         validateRequest(request);
 
         List<String> ragWarnings = new ArrayList<>();
@@ -68,11 +100,16 @@ public class ClaimGenerationPipelineService {
         GenerateClaimRequest enrichedRequest = enrichment.request();
         List<GigaChatMessage> messages = buildPrompt(enrichedRequest);
 
+        long initialTimeoutMs = initialTimeoutMillis(elapsedMillis(pipelineStartedNanos));
+        if (initialTimeoutMs <= 0) {
+            throw new IllegalStateException("Claim generation latency budget exhausted before initial LLM call");
+        }
         GigaChatClient.ChatCallResult callResult = gigaChatClient.sendChatWithTrace(
                 messages,
                 enrichedRequest.caseFacts().claimId(),
                 actorUserId,
-                operationName(enrichedRequest.caseFacts().claimType())
+                operationName(enrichedRequest.caseFacts().claimType()),
+                initialTimeoutMs
         );
         GigaChatChatResponse chatResponse = callResult.response();
 
@@ -94,51 +131,111 @@ public class ClaimGenerationPipelineService {
         GigaChatChatResponse.Usage totalUsage = chatResponse.usage();
         String requestId = callResult.requestId();
 
-        if (guardrailResult.decision() == GuardrailDecision.BLOCK) {
-            log.warn(
-                    "Claim generation blocked; starting repair: caseId={}, requestId={}, errorCount={}",
-                    enrichedRequest.caseFacts().claimId(),
-                    requestId,
-                    guardrailResult.errors() == null ? 0 : guardrailResult.errors().size()
-            );
-            List<GigaChatMessage> repairMessages = buildRepairMessages(
-                    messages,
-                    rawModelResponse,
+        if (guardrailResult.decision() == GuardrailDecision.BLOCK
+                && enrichedRequest.caseFacts().claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
+            GenerateClaimResponse deterministicRepair = repairContractCitations(
+                    enrichedRequest,
+                    generatedClaim,
                     guardrailResult.errors()
             );
-            GigaChatClient.ChatCallResult repairCall = gigaChatClient.sendChatWithTrace(
-                    repairMessages,
-                    enrichedRequest.caseFacts().claimId(),
-                    actorUserId,
-                    operationName(enrichedRequest.caseFacts().claimType()) + "_REPAIR"
-            );
-            GigaChatChatResponse repairResponse = repairCall.response();
-            String repairedRaw = requireContent(
-                    repairResponse,
-                    "GigaChat returned empty claim repair response"
-            );
-            generatedClaim = normalizeCitationMetadata(
-                    enrichedRequest,
-                    claimResponseParser.parse(repairedRaw)
-            );
-            guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
-            logGuardrailResult(
-                    "REPAIR",
-                    enrichedRequest.caseFacts().claimId(),
-                    repairCall.requestId(),
-                    guardrailResult
-            );
-            totalUsage = mergeUsage(totalUsage, repairResponse.usage());
-            requestId = repairCall.requestId();
+            if (deterministicRepair != generatedClaim) {
+                generatedClaim = deterministicRepair;
+                guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
+                logGuardrailResult(
+                        "DETERMINISTIC_REPAIR",
+                        enrichedRequest.caseFacts().claimId(),
+                        requestId,
+                        guardrailResult
+                );
+            }
         }
 
+        if (guardrailResult.decision() == GuardrailDecision.BLOCK) {
+            long elapsedMs = elapsedMillis(pipelineStartedNanos);
+            long repairTimeoutMs = repairTimeoutMillis(elapsedMs);
+
+            if (repairTimeoutMs <= 0) {
+                log.warn(
+                        "Claim generation blocked; LLM repair skipped to preserve latency budget: caseId={}, requestId={}, elapsedMs={}, budgetMs={}, errorCount={}",
+                        enrichedRequest.caseFacts().claimId(),
+                        requestId,
+                        elapsedMs,
+                        PIPELINE_BUDGET_MS,
+                        guardrailResult.errors() == null ? 0 : guardrailResult.errors().size()
+                );
+            } else {
+                log.warn(
+                        "Claim generation blocked; starting bounded repair: caseId={}, requestId={}, elapsedMs={}, repairTimeoutMs={}, errorCount={}",
+                        enrichedRequest.caseFacts().claimId(),
+                        requestId,
+                        elapsedMs,
+                        repairTimeoutMs,
+                        guardrailResult.errors() == null ? 0 : guardrailResult.errors().size()
+                );
+
+                List<GigaChatMessage> repairMessages = buildRepairMessages(
+                        enrichedRequest,
+                        messages,
+                        rawModelResponse,
+                        generatedClaim,
+                        guardrailResult.errors()
+                );
+
+                try {
+                    GigaChatClient.ChatCallResult repairCall = gigaChatClient.sendChatWithTrace(
+                            repairMessages,
+                            enrichedRequest.caseFacts().claimId(),
+                            actorUserId,
+                            operationName(enrichedRequest.caseFacts().claimType()) + "_REPAIR",
+                            repairTimeoutMs
+                    );
+                    GigaChatChatResponse repairResponse = repairCall.response();
+                    String repairedRaw = requireContent(
+                            repairResponse,
+                            "GigaChat returned empty claim repair response"
+                    );
+                    generatedClaim = normalizeCitationMetadata(
+                            enrichedRequest,
+                            claimResponseParser.parse(repairedRaw)
+                    );
+                    guardrailResult = guardrailService.check(enrichedRequest, generatedClaim);
+                    logGuardrailResult(
+                            "REPAIR",
+                            enrichedRequest.caseFacts().claimId(),
+                            repairCall.requestId(),
+                            guardrailResult
+                    );
+                    totalUsage = mergeUsage(totalUsage, repairResponse.usage());
+                    requestId = repairCall.requestId();
+                } catch (ResourceAccessException timeoutOrIo) {
+                    if (!isTimeout(timeoutOrIo)) {
+                        throw timeoutOrIo;
+                    }
+                    log.warn(
+                            "Claim LLM repair timed out inside latency budget; returning BLOCKED draft: caseId={}, requestId={}, elapsedMs={}, repairTimeoutMs={}, exceptionType={}",
+                            enrichedRequest.caseFacts().claimId(),
+                            requestId,
+                            elapsedMillis(pipelineStartedNanos),
+                            repairTimeoutMs,
+                            timeoutOrIo.getClass().getSimpleName()
+                    );
+                    guardrailResult = appendGuardrailWarning(
+                            guardrailResult,
+                            "LLM repair timed out within the claim generation latency budget"
+                    );
+                }
+            }
+        }
+
+        long totalDurationMs = elapsedMillis(pipelineStartedNanos);
         log.info(
-                "Claim generation final: caseId={}, requestId={}, success={}, status={}, decision={}",
+                "Claim generation final: caseId={}, requestId={}, success={}, status={}, decision={}, durationMs={}",
                 enrichedRequest.caseFacts().claimId(),
                 requestId,
                 guardrailResult.decision() != GuardrailDecision.BLOCK,
                 status(guardrailResult),
-                guardrailResult.decision()
+                guardrailResult.decision(),
+                totalDurationMs
         );
 
         return new GenerateClaimPipelineResponse(
@@ -206,12 +303,18 @@ public class ClaimGenerationPipelineService {
     }
 
     private List<GigaChatMessage> buildRepairMessages(
+            GenerateClaimRequest request,
             List<GigaChatMessage> originalMessages,
-            String blockedResponse,
+            String blockedRawResponse,
+            GenerateClaimResponse blockedResponse,
             List<String> errors
     ) {
+        if (request.caseFacts().claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
+            return paymentDelayPromptBuilder.buildRepair(request, blockedResponse, errors);
+        }
+
         List<GigaChatMessage> messages = new ArrayList<>(originalMessages);
-        messages.add(new GigaChatMessage("assistant", blockedResponse));
+        messages.add(new GigaChatMessage("assistant", blockedRawResponse));
         messages.add(new GigaChatMessage(
                 "user",
                 """
@@ -224,30 +327,237 @@ public class ClaimGenerationPipelineService {
                 1. Верни полный объект GenerateClaimResponse, а не фрагмент и не объяснение.
                 2. Сохрани только факты из исходного входного JSON и RAG-контекста.
                 3. Дословно перенеси все обязательные номера, даты, маршрут, адрес, временное окно и суммы.
-                4. Для PAYMENT_DELAY обязательно укажи claim_number и claim_date, номер и дату договора, а также дату срока оплаты, если они есть во входе.
-                5. Для PAYMENT_DELAY при claim_response_days > 0 укажи точный срок ответа с даты получения претензии и используй единицу строго из claim_response_day_type: CALENDAR_DAYS = календарных, WORKING_DAYS = рабочих, BANKING_DAYS = банковских дней.
-                6. Для PAYMENT_DELAY при заполненном signatory заверши текст точными position, name и authority, если оно передано.
-                7. Если act_date есть, а act_number отсутствует, пиши «акт от <дата>» без символа № и пустого номера.
-                8. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
-                9. Не используй термин «непредставление транспортного средства».
-                10. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
-                11. Если legal_context не пуст, выбери минимум одну применимую норму из него, процитируй ту же статью и закон в claim_text и добавь её в used_law_articles. Естественный порядок слов допустим.
-                12. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
-                13. Для PAYMENT_DELAY attachments должен быть строго []; не добавляй раздел «Приложения», банковские реквизиты и фразы об их отсутствии.
-                14. Если contract_context содержит нумерованные пункты, относящиеся к использованным условиям, процитируй их в claim_text и укажи те же chunk_id/clause_number в used_contract_clauses.
-                15. В PAYMENT_DELAY shipment.order_number называй только номером рейса: «рейс № <order_number>» / «в рамках рейса № <order_number>». Не называй его заказом или заявкой и не добавляй к нему «от <дата>».
-                15.1. Если backend_calculation.overdue_start_date и overdue_end_date заполнены, укажи точный период начисления от overdue_start_date до overdue_end_date. overdue_end_date — последний день начисления; не заменяй его claim_date.
-                16. payment_confirmed_by_accountant подтверждает только статус оплаты. Не приписывай бухгалтеру подтверждение выставления/получения документов или наступления срока платежа.
-                17. Если backend_calculation.penalty_type = LEGAL_INTEREST, называй начисление процентами по ст. 395 ГК РФ / процентами за пользование чужими денежными средствами. Не называй его неустойкой, штрафом или пеней.
-                18. contract.claim_response_days — срок письменного ответа, а не новый срок оплаты. Требование погасить задолженность и срок ответа сформулируй раздельно.
-                18.1. Для PAYMENT_DELAY не упоминай суд, арбитражный суд, иск, судебное взыскание или обращение в суд. Допустима только нейтральная фраза о дальнейших действиях по защите интересов без судебной эскалации.
-                19. В claim_text не должно быть ISO-дат YYYY-MM-DD: преобразуй их в русскую письменную форму «07 августа 2026 года», не меняя саму календарную дату.
-                20. В claim_text не должно быть технических enum/кодов UNPAID, PAID, PARTIALLY_PAID, UNKNOWN, RUB, CONTRACT_PENALTY, NONE. Вырази их смысл обычным русским языком.
-                21. Денежные суммы в claim_text форматируй для документа: разделяй тысячи пробелами и не используй десятичную точку перед словом «рублей»; например «100 000 рублей 00 копеек». backend_calculation_used не изменяй.
-                22. Верни только валидный JSON без markdown и текста вне JSON.
+                4. Для LOADING_FAILURE используй точную фразу «транспортное средство не было предоставлено к погрузке».
+                5. Не используй термин «непредставление транспортного средства».
+                6. Если во входе есть act_number и act_date, добавь LOADING_FAILURE_ACT с required=true и точными реквизитами.
+                7. Не добавляй нормы, которых нет в legal_context, и не указывай в used_law_articles нормы, отсутствующие в claim_text.
+                8. Верни только валидный JSON без markdown и текста вне JSON.
                 """.formatted(String.join("\n- ", errors == null ? List.of() : errors))
         ));
         return messages;
+    }
+
+    long initialTimeoutMillis(long elapsedMs) {
+        long remainingForInitial = PIPELINE_BUDGET_MS - elapsedMs - FINALIZATION_RESERVE_MS;
+        return Math.max(0L, Math.min(INITIAL_LLM_TIMEOUT_MS, remainingForInitial));
+    }
+
+    long repairTimeoutMillis(long elapsedMs) {
+        long remainingForRepair = PIPELINE_BUDGET_MS - elapsedMs - FINALIZATION_RESERVE_MS;
+        long timeout = Math.min(REPAIR_LLM_MAX_TIMEOUT_MS, remainingForRepair);
+        return timeout >= REPAIR_MIN_TIMEOUT_MS ? timeout : 0L;
+    }
+
+    private long elapsedMillis(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
+
+    private GuardrailResult appendGuardrailWarning(GuardrailResult result, String warning) {
+        List<String> warnings = new ArrayList<>(result.warnings() == null ? List.of() : result.warnings());
+        if (!warnings.contains(warning)) {
+            warnings.add(warning);
+        }
+        return new GuardrailResult(
+                result.decision(),
+                result.errors() == null ? List.of() : result.errors(),
+                List.copyOf(warnings)
+        );
+    }
+
+    GenerateClaimResponse repairContractCitations(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            List<String> errors
+    ) {
+        if (!hasContractCitationRepairableError(errors)) {
+            return response;
+        }
+        if (request == null
+                || response == null
+                || isBlank(response.claimText())
+                || request.caseFacts() == null
+                || request.caseFacts().claimType() != GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                || request.caseFacts().contract() == null
+                || isBlank(request.caseFacts().contract().contractNumber())
+                || response.usedContractClauses() == null
+                || response.usedContractClauses().isEmpty()) {
+            return response;
+        }
+
+        Map<String, GenerateClaimRequest.ContractContextChunk> byChunkId = new java.util.HashMap<>();
+        for (GenerateClaimRequest.ContractContextChunk chunk :
+                request.contractContext() == null ? List.<GenerateClaimRequest.ContractContextChunk>of() : request.contractContext()) {
+            if (chunk != null && !isBlank(chunk.chunkId())) {
+                byChunkId.put(chunk.chunkId(), chunk);
+            }
+        }
+
+        Map<String, List<String>> clausesByType = new LinkedHashMap<>();
+        for (GenerateClaimResponse.UsedContractClause used : response.usedContractClauses()) {
+            if (used == null || isBlank(used.chunkId()) || isBlank(used.clauseNumber())) {
+                continue;
+            }
+            GenerateClaimRequest.ContractContextChunk source = byChunkId.get(used.chunkId());
+            if (source == null
+                    || isBlank(source.clauseType())
+                    || !normalize(source.clauseNumber()).equals(normalize(used.clauseNumber()))) {
+                continue;
+            }
+            if (!Set.of("PAYMENT_TERMS", "CLAIM_PROCEDURE", "PENALTY").contains(source.clauseType())) {
+                continue;
+            }
+            clausesByType.computeIfAbsent(source.clauseType(), ignored -> new ArrayList<>());
+            List<String> numbers = clausesByType.get(source.clauseType());
+            if (!numbers.contains(source.clauseNumber())) {
+                numbers.add(source.clauseNumber());
+            }
+        }
+
+        clausesByType.values().forEach(numbers -> numbers.sort(String::compareTo));
+
+        String repairedText = response.claimText();
+        repairedText = appendCanonicalCitationToMeaningLine(
+                repairedText,
+                PAYMENT_TERM_MEANING,
+                clausesByType.get("PAYMENT_TERMS"),
+                request.caseFacts().contract()
+        );
+        repairedText = appendCanonicalCitationToMeaningLine(
+                repairedText,
+                CLAIM_RESPONSE_MEANING,
+                clausesByType.get("CLAIM_PROCEDURE"),
+                request.caseFacts().contract()
+        );
+        repairedText = appendCanonicalCitationToMeaningLine(
+                repairedText,
+                CONTRACT_PENALTY_MEANING,
+                clausesByType.get("PENALTY"),
+                request.caseFacts().contract()
+        );
+
+        if (repairedText.equals(response.claimText())) {
+            return response;
+        }
+
+        return new GenerateClaimResponse(
+                response.claimType(),
+                repairedText,
+                response.summaryForLawyer(),
+                response.usedContractClauses(),
+                response.usedLawArticles(),
+                response.backendCalculationUsed(),
+                response.attachments(),
+                response.warnings(),
+                response.manualReviewRequired()
+        );
+    }
+
+    private boolean hasContractCitationRepairableError(List<String> errors) {
+        if (errors == null || errors.isEmpty()) {
+            return false;
+        }
+        return errors.stream()
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(error -> error.startsWith("claim_text does not cite used contract clause:")
+                        || error.startsWith("claim_text contract clause citation must include contract number")
+                        || (error.startsWith("claim_text must cite a ")
+                        && error.contains("contract clause in the same logical line")));
+    }
+
+    private boolean isTimeout(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SocketTimeoutException
+                    || current instanceof java.net.http.HttpTimeoutException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private String appendCanonicalCitationToMeaningLine(
+            String text,
+            Pattern meaningPattern,
+            List<String> clauseNumbers,
+            GenerateClaimRequest.ContractFacts contract
+    ) {
+        if (isBlank(text) || clauseNumbers == null || clauseNumbers.isEmpty() || contract == null
+                || isBlank(contract.contractNumber())) {
+            return text;
+        }
+
+        String[] lines = text.split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            if (!meaningPattern.matcher(line).find()) {
+                continue;
+            }
+            if (line.contains(contract.contractNumber())
+                    && clauseNumbers.stream().allMatch(number -> containsClauseReference(line, number))) {
+                return text;
+            }
+
+            String citation = canonicalContractCitation(clauseNumbers, contract);
+            lines[i] = appendBeforeTerminalPunctuation(line, " (" + citation + ")");
+            return String.join("\n", lines);
+        }
+        return text;
+    }
+
+    private boolean containsClauseReference(String text, String clauseNumber) {
+        if (isBlank(text) || isBlank(clauseNumber)) {
+            return false;
+        }
+        String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
+        String marker = "(?:пункт(?:а|у|е|ом|ы|ов|ам|ами|ах)?|п\\.|пп\\.)\\s*"
+                + previousClauses
+                + Pattern.quote(clauseNumber);
+        return Pattern.compile("(?iu)" + marker).matcher(text).find();
+    }
+
+    private String canonicalContractCitation(
+            List<String> clauseNumbers,
+            GenerateClaimRequest.ContractFacts contract
+    ) {
+        String clauses = clauseNumbers.size() == 1
+                ? "п. " + clauseNumbers.get(0)
+                : "пп. " + String.join(" и ", clauseNumbers);
+        StringBuilder result = new StringBuilder(clauses)
+                .append(" Договора № ")
+                .append(contract.contractNumber());
+        if (!isBlank(contract.contractDate())) {
+            result.append(" от ").append(formatRussianDate(contract.contractDate()));
+        }
+        return result.toString();
+    }
+
+    private String appendBeforeTerminalPunctuation(String line, String addition) {
+        int end = line.length();
+        while (end > 0 && Character.isWhitespace(line.charAt(end - 1))) {
+            end--;
+        }
+        String trailingWhitespace = line.substring(end);
+        if (end > 0 && ".!?;:".indexOf(line.charAt(end - 1)) >= 0) {
+            return line.substring(0, end - 1) + addition + line.charAt(end - 1) + trailingWhitespace;
+        }
+        return line.substring(0, end) + addition + trailingWhitespace;
+    }
+
+    private String formatRussianDate(String rawDate) {
+        if (isBlank(rawDate)) {
+            return rawDate;
+        }
+        try {
+            LocalDate date = LocalDate.parse(rawDate, DateTimeFormatter.ISO_LOCAL_DATE);
+            return "%02d %s %d года".formatted(
+                    date.getDayOfMonth(),
+                    RU_MONTHS[date.getMonthValue() - 1],
+                    date.getYear()
+            );
+        } catch (DateTimeParseException ignored) {
+            return rawDate;
+        }
     }
 
     private GigaChatChatResponse.Usage mergeUsage(
