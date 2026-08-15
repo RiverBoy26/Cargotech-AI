@@ -250,10 +250,15 @@ function formatDate(value) {
   return year && month && day ? `${day}.${month}.${year}` : value;
 }
 
+function claimHistoryStatusLabel(status, emptyLabel = '—') {
+  if (!status) return emptyLabel;
+  return STATUS_MAP[status]?.text || 'Неизвестен';
+}
+
 function renderHistoryItem(item) {
   const date = item.changedAt || item.createdAt || '';
   const title = item.newStatus
-    ? `${item.previousStatus || '—'} → ${item.newStatus}`
+    ? `${claimHistoryStatusLabel(item.previousStatus)} → ${claimHistoryStatusLabel(item.newStatus)}`
     : (item.text || 'Комментарий');
   const subtitle = item.newStatus ? (item.reason || '') : '';
   const actor = item.changedByLabel || item.authorName || item.changedBy || item.authorId || '—';
@@ -523,6 +528,9 @@ function humanizeAutocheckMessage(message) {
 
   const missingLawArticle = message.match(/^claim_text does not cite used law article:\s*(.+)$/i);
   if (missingLawArticle) return `В тексте отсутствует ссылка на использованную норму закона: ${missingLawArticle[1]}.`;
+
+  const missingShipmentRoute = message.match(/^claim_text does not contain expected shipment\.route:\s*(.+)$/i);
+  if (missingShipmentRoute) return `В тексте претензии отсутствует маршрут перевозки: ${missingShipmentRoute[1]}.`;
 
   if (/[А-Яа-яЁё]/.test(message)) return message;
   return 'Автопроверка обнаружила несоответствие в тексте. Проверьте содержание претензии перед утверждением.';

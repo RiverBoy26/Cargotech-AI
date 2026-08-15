@@ -61,8 +61,9 @@ const CLAUSE_TYPE_OPTIONS = {
   LIABILITY: 'Ответственность', OTHER: 'Другое',
 };
 const PARTY_TYPE_LABEL = { CLIENT: 'Клиент', EXPEDITOR: 'Экспедитор', OTHER: 'Другое' };
+const PARTY_STATUS_LABEL = { ACTIVE: 'Активен', ARCHIVED: 'Архивирован' };
 const SHIPMENT_STATUS_LABEL = {
-  PLANNED: 'Запланирован', IN_PROGRESS: 'В пути', COMPLETED: 'Завершён', CANCELLED: 'Отменён',
+  CREATED: 'Создан', IN_PROGRESS: 'В пути', COMPLETED: 'Завершён', CANCELLED: 'Отменён',
 };
 
 function escapeAdmin(value) {
@@ -308,7 +309,7 @@ async function loadParties() {
         <div>${escapeAdmin(party.email)}</div>
         <div>
           <span class="status-pill ${party.active ? 'status-pill-active' : 'status-pill-blocked'}">
-            ${party.active ? 'Активен' : 'Архивирован'}
+            ${PARTY_STATUS_LABEL[party.active ? 'ACTIVE' : 'ARCHIVED']}
           </span>
         </div>
       </div>`).join('') || '<div class="admin_entity_empty">Контрагентов пока нет</div>';
@@ -699,7 +700,7 @@ async function loadShipments() {
               : shipment.status === 'CANCELLED'
                 ? 'status-pill-blocked'
                 : 'status-pill-neutral'
-          }">${escapeAdmin(SHIPMENT_STATUS_LABEL[shipment.status] || shipment.status)}</span>
+          }">${escapeAdmin(SHIPMENT_STATUS_LABEL[shipment.status] || 'Неизвестен')}</span>
         </div>
       </div>`).join('') || '<div class="admin_entity_empty">Рейсов пока нет</div>';
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
