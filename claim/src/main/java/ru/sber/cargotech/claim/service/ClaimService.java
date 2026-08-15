@@ -836,6 +836,13 @@ public class ClaimService {
                         : reopenReason,
                     SYSTEM_ACTOR_ID
                 );
+            } else if (claim.getStatus() == ClaimStatus.CANCELLED_PAID
+                    && claim.getSentAt() == null) {
+                restorePreSendStatusAfterPaymentDeletion(
+                    user,
+                    claim,
+                    reopenReason
+                );
             }
             return;
         }
@@ -849,6 +856,59 @@ public class ClaimService {
             claim,
             "Задолженность полностью погашена",
             true
+        );
+    }
+
+    private void restorePreSendStatusAfterPaymentDeletion(
+        CurrentClaimUser user,
+        ClaimEntity claim,
+        String reopenReason
+    ) {
+        ClaimStatus restoredStatus = historyRepository
+            .findTopByClaimIdAndNewStatusOrderByChangedAtDesc(
+                claim.getId(),
+                ClaimStatus.CANCELLED_PAID
+            )
+            .map(ClaimStatusHistory::getPreviousStatus)
+            .filter(status -> status == ClaimStatus.DRAFT
+                || status == ClaimStatus.PENDING_LEGAL_REVIEW
+                || status == ClaimStatus.LEGAL_APPROVED)
+            .orElseThrow(() -> ClaimException.conflict(
+                "Не удалось восстановить статус претензии после удаления платежа: "
+                    + "в истории отсутствует исходный статус до оплаты"
+            ));
+
+        String reason = reopenReason == null || reopenReason.isBlank()
+            ? "Оплата до отправки отменена, задолженность восстановлена"
+            : reopenReason;
+        ClaimStatus previousStatus = claim.getStatus();
+
+        claim.setPaidAt(null);
+        claim.setCancelledAt(null);
+        claim.setCancellationReasonCode(null);
+        claim.setCancellationReason(null);
+        claim.setStatus(restoredStatus);
+        claim.setUpdatedBy(SYSTEM_ACTOR_ID);
+        claimRepository.save(claim);
+
+        recordStatus(
+            claim.getId(),
+            previousStatus,
+            restoredStatus,
+            reason,
+            SYSTEM_ACTOR_ID
+        );
+        outboxWriter.write(
+            "CLAIM",
+            claim.getId(),
+            "CLAIM_STATUS_CHANGED",
+            user.organizationId(),
+            SYSTEM_ACTOR_ID,
+            Map.of(
+                "claimId", claim.getId(),
+                "previousStatus", previousStatus.name(),
+                "newStatus", restoredStatus.name()
+            )
         );
     }
 

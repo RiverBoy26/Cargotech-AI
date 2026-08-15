@@ -267,6 +267,121 @@ class ClaimServiceSendOrderTest {
     }
 
     @Test
+    void deletedPaymentReopensCancelledPaidClaimToPreviousPreSendStatus() {
+        UUID organizationId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+
+        ClaimEntity reloadedClaim = new ClaimEntity();
+        reloadedClaim.setId(claimId);
+        reloadedClaim.setOrganizationId(organizationId);
+        reloadedClaim.setStatus(ClaimStatus.CANCELLED_PAID);
+        reloadedClaim.setPaidAt(java.time.OffsetDateTime.now().minusHours(1));
+        reloadedClaim.setCancelledAt(java.time.OffsetDateTime.now().minusHours(1));
+        reloadedClaim.setCancellationReasonCode("FULL_PAYMENT_BEFORE_SEND");
+        reloadedClaim.setCancellationReason(
+            "Задолженность полностью погашена до отправки претензии"
+        );
+
+        ClaimStatusHistory paidCancellation = new ClaimStatusHistory();
+        paidCancellation.setClaimId(claimId);
+        paidCancellation.setPreviousStatus(ClaimStatus.PENDING_LEGAL_REVIEW);
+        paidCancellation.setNewStatus(ClaimStatus.CANCELLED_PAID);
+
+        ClaimCalculationResponse calculation = org.mockito.Mockito.mock(
+                ClaimCalculationResponse.class
+        );
+        when(calculation.totalAmount()).thenReturn(new java.math.BigDecimal("100.00"));
+        when(calculationService.recalculate(user, claimId)).thenReturn(calculation);
+        when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
+                .thenReturn(Optional.of(reloadedClaim));
+        when(historyRepository.findTopByClaimIdAndNewStatusOrderByChangedAtDesc(
+                claimId,
+                ClaimStatus.CANCELLED_PAID
+        )).thenReturn(Optional.of(paidCancellation));
+
+        ClaimService service = new ClaimService(
+                claimRepository,
+                queryRepository,
+                historyRepository,
+                shipmentService,
+                paymentClient,
+                contractService,
+                partyService,
+                calculationService,
+                versionService,
+                outboxWriter
+        );
+
+        String reason = "Удалён сопоставленный платёж: ошибочная банковская операция";
+        service.synchronizePaymentState(user, claimId, reason);
+
+        assertThat(reloadedClaim.getStatus()).isEqualTo(ClaimStatus.PENDING_LEGAL_REVIEW);
+        assertThat(reloadedClaim.getPaidAt()).isNull();
+        assertThat(reloadedClaim.getCancelledAt()).isNull();
+        assertThat(reloadedClaim.getCancellationReasonCode()).isNull();
+        assertThat(reloadedClaim.getCancellationReason()).isNull();
+
+        ArgumentCaptor<ClaimStatusHistory> historyCaptor =
+                ArgumentCaptor.forClass(ClaimStatusHistory.class);
+        verify(historyRepository).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getPreviousStatus())
+                .isEqualTo(ClaimStatus.CANCELLED_PAID);
+        assertThat(historyCaptor.getValue().getNewStatus())
+                .isEqualTo(ClaimStatus.PENDING_LEGAL_REVIEW);
+        assertThat(historyCaptor.getValue().getReason()).isEqualTo(reason);
+        assertThat(historyCaptor.getValue().getChangedBy())
+                .isEqualTo(new UUID(0L, 0L));
+    }
+
+    @Test
+    void cancelledPaidClaimDoesNotGuessPreviousStatusWhenHistoryIsMissing() {
+        UUID organizationId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+
+        ClaimEntity reloadedClaim = new ClaimEntity();
+        reloadedClaim.setId(claimId);
+        reloadedClaim.setOrganizationId(organizationId);
+        reloadedClaim.setStatus(ClaimStatus.CANCELLED_PAID);
+        reloadedClaim.setPaidAt(java.time.OffsetDateTime.now().minusHours(1));
+        reloadedClaim.setCancelledAt(java.time.OffsetDateTime.now().minusHours(1));
+
+        ClaimCalculationResponse calculation = org.mockito.Mockito.mock(
+                ClaimCalculationResponse.class
+        );
+        when(calculation.totalAmount()).thenReturn(new java.math.BigDecimal("100.00"));
+        when(calculationService.recalculate(user, claimId)).thenReturn(calculation);
+        when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
+                .thenReturn(Optional.of(reloadedClaim));
+        when(historyRepository.findTopByClaimIdAndNewStatusOrderByChangedAtDesc(
+                claimId,
+                ClaimStatus.CANCELLED_PAID
+        )).thenReturn(Optional.empty());
+
+        ClaimService service = new ClaimService(
+                claimRepository,
+                queryRepository,
+                historyRepository,
+                shipmentService,
+                paymentClient,
+                contractService,
+                partyService,
+                calculationService,
+                versionService,
+                outboxWriter
+        );
+
+        assertThatThrownBy(() -> service.synchronizePaymentState(user, claimId))
+                .isInstanceOf(ClaimException.class)
+                .hasMessageContaining("в истории отсутствует исходный статус");
+
+        assertThat(reloadedClaim.getStatus()).isEqualTo(ClaimStatus.CANCELLED_PAID);
+        assertThat(reloadedClaim.getPaidAt()).isNotNull();
+        assertThat(reloadedClaim.getCancelledAt()).isNotNull();
+    }
+
+    @Test
     void deletedPaymentReopensPaidSentClaimWithReason() {
         UUID organizationId = UUID.randomUUID();
         UUID claimId = UUID.randomUUID();
