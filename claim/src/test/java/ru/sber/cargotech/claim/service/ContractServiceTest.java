@@ -177,6 +177,11 @@ class ContractServiceTest {
         assertThatThrownBy(() -> service().confirmExtraction(user, contractId))
             .isInstanceOf(ClaimException.class)
             .hasMessage("Договор с таким номером уже существует");
+
+        // Duplicate validation must happen before the managed contract is mutated. Otherwise
+        // the following repository query may trigger Hibernate auto-flush and leak SQLState 23505.
+        assertThat(contract.getNumber()).isNull();
+        verify(contractRepository, never()).saveAndFlush(any());
     }
 
     @Test

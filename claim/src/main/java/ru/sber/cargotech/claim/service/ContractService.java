@@ -229,12 +229,21 @@ public class ContractService {
         }
         List<ContractExtractedValue> candidates = extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contractId);
         validateExtractedPartyIdentity(contract, candidates);
-        applyConfirmedCandidates(contract, candidates, user.userId());
+
+        // Check the final number before mutating the managed entity. Otherwise Hibernate may
+        // auto-flush the new number before executing the exists-query and PostgreSQL raises
+        // uq_claim_contracts_number first, turning a normal duplicate validation into HTTP 500.
+        String confirmedNumber = confirmedContractNumber(candidates);
+        if (confirmedNumber == null) {
+            throw ClaimException.validation("Укажите номер договора перед подтверждением");
+        }
         if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNullAndIdNot(
-            user.organizationId(), contract.getNumber(), contract.getId()
+            user.organizationId(), confirmedNumber, contract.getId()
         )) {
             throw ClaimException.conflict("Договор с таким номером уже существует");
         }
+
+        applyConfirmedCandidates(contract, candidates, user.userId());
         contract.setStatus(ContractStatus.ACTIVE);
         contract.setExtractionStatus(ContractExtractionStatus.CONFIRMED);
         contract.setExtractionConfirmedAt(OffsetDateTime.now());
@@ -484,6 +493,16 @@ public class ContractService {
         if (!scalarFields.containsAll(requiredReviewFields)) {
             throw ClaimException.validation("Экран проверки должен содержать все поля договора");
         }
+    }
+
+
+    private String confirmedContractNumber(List<ContractExtractedValue> candidates) {
+        for (ContractExtractedValue candidate : candidates) {
+            if (candidate.getField() != ContractExtractionField.CONTRACT_NUMBER) continue;
+            String value = blankToNull(candidate.getValue());
+            if (value != null) return contractNumber(value);
+        }
+        return null;
     }
 
     private void applyConfirmedCandidates(
