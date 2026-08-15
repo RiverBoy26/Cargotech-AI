@@ -750,6 +750,39 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
+    void acceptsDativePluralGroupedSameTypeContractClauses() {
+        String text = typedPaymentText("календарных").replace(
+                "В соответствии с п. 10.2 Договора №45/2026 от 10.01.2026 письменный ответ направить в течение 10 календарных дней с даты получения настоящей претензии.",
+                "Согласно пунктам 10.1 и 10.2 Договора №45/2026 от 10.01.2026 письменный ответ направить в течение 10 календарных дней с даты получения настоящей претензии."
+        );
+
+        GuardrailResult result = service.check(
+                typedPaymentRequestWithAdditionalClaimProcedureClause(),
+                typedPaymentResponseWithAdditionalClaimProcedureClause(text)
+        );
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksDativePluralGroupedContractClausesWithDifferentSemanticRoles() {
+        String text = typedPaymentText("календарных").replace(
+                "В соответствии с п. 9.4 Договора №45/2026 от 10.01.2026 начислена договорная неустойка — 2 400 руб.",
+                "В соответствии с пунктами 8.2 и 9.4 Договора №45/2026 от 10.01.2026 начислена договорная неустойка — 2 400 руб."
+        );
+
+        GuardrailResult result = service.check(
+                typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS),
+                typedPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("different semantic roles"));
+    }
+
+    @Test
     void blocksGroupedContractClausesWithDifferentSemanticRoles() {
         String text = typedPaymentText("календарных").replace(
                 "В соответствии с п. 9.4 Договора №45/2026 от 10.01.2026 начислена договорная неустойка — 2 400 руб.",
@@ -896,6 +929,48 @@ class RuleBasedGuardrailServiceTest {
         assertThat(result.errors()).anyMatch(error -> error.contains("Article 395"));
     }
 
+
+    private GenerateClaimRequest typedPaymentRequestWithAdditionalClaimProcedureClause() {
+        GenerateClaimRequest base = typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS);
+        return new GenerateClaimRequest(
+                base.caseFacts(),
+                base.backendCalculation(),
+                List.of(
+                        base.contractContext().get(0),
+                        base.contractContext().get(1),
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "typed-response-intro", "10.1", "Претензионный порядок", "CLAIM_PROCEDURE",
+                                "До обращения в суд стороны используют письменную претензию."
+                        ),
+                        base.contractContext().get(2)
+                ),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+    }
+
+    private GenerateClaimResponse typedPaymentResponseWithAdditionalClaimProcedureClause(String text) {
+        GenerateClaimResponse base = typedPaymentResponse(text);
+        return new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                base.summaryForLawyer(),
+                List.of(
+                        base.usedContractClauses().get(0),
+                        base.usedContractClauses().get(1),
+                        new GenerateClaimResponse.UsedContractClause(
+                                "10.1", "typed-response-intro", "претензионный порядок"
+                        ),
+                        base.usedContractClauses().get(2)
+                ),
+                base.usedLawArticles(),
+                base.backendCalculationUsed(),
+                base.attachments(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+    }
 
     private GenerateClaimRequest typedPaymentRequest(GenerateClaimRequest.TermDayType responseDayType) {
         GenerateClaimRequest base = productionPaymentRequest();

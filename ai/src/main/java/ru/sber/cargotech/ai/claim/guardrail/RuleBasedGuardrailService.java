@@ -501,7 +501,7 @@ public class RuleBasedGuardrailService {
         }
 
         Pattern groupPattern = Pattern.compile(
-            "(?iu)(?:пункт(?:а|у|е|ом|ы|ов)?|п\\.|пп\\.)\\s*"
+            "(?iu)(?:пункт(?:а|у|е|ом|ы|ов|ам|ами|ах)?|п\\.|пп\\.)\\s*"
                 + "((?:\\d+(?:\\.\\d+)+)(?:\\s*(?:,|;|и)\\s*(?:(?:п\\.|пп\\.)\\s*)?\\d+(?:\\.\\d+)+)+)"
         );
         Matcher groupMatcher = groupPattern.matcher(claimText);
@@ -530,7 +530,7 @@ public class RuleBasedGuardrailService {
         // Treat every number inside such a group as an explicit citation instead
         // of requiring a separate "п." marker before each number.
         String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
-        String marker = "(?:пункт(?:а|у|е|ом|ы|ов)?|п\\.|пп\\.)\\s*"
+        String marker = "(?:пункт(?:а|у|е|ом|ы|ов|ам|ами|ах)?|п\\.|пп\\.)\\s*"
                 + previousClauses
                 + Pattern.quote(clauseNumber);
         return Pattern.compile("(?iu)" + marker).matcher(claimText).find();
@@ -546,7 +546,7 @@ public class RuleBasedGuardrailService {
         }
 
         String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
-        String clauseMarker = "(?:пункт(?:а|у|е|ом|ы|ов)?|п\\.|пп\\.)\\s*"
+        String clauseMarker = "(?:пункт(?:а|у|е|ом|ы|ов|ам|ами|ах)?|п\\.|пп\\.)\\s*"
                 + previousClauses
                 + Pattern.quote(clauseNumber);
         String contractMarker = "(?:договор\\p{L}*\\s*)?(?:№\\s*)?"
