@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.service;
 
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
+import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.TermDayType;
@@ -18,43 +19,85 @@ public final class OverdueDateCalculator {
     }
 
     public static LocalDate overdueStartDate(ClaimShipment shipment, ClaimContract contract) {
-        PaymentStartEvent configuredEvent = contract.getPaymentStartEvent();
-        LocalDate baseDate;
+        LocalDate dueDate = paymentDueDate(shipment, contract);
+        return dueDate == null ? null : dueDate.plusDays(1);
+    }
 
+    static LocalDate paymentDueDate(ClaimShipment shipment, ClaimContract contract) {
+        PaymentStartEvent configuredEvent = contract.getPaymentStartEvent();
+        LocalDate effectiveDate = contract.getValidFrom() != null
+            ? contract.getValidFrom()
+            : contract.getSignedAt();
+
+        LocalDate baseDate;
         if (configuredEvent == null) {
-            // Product fallback is used only when the contract does not define an anchor.
+            /*
+             * Backward compatibility for contracts that were created manually before the
+             * parser existed. A confirmed parsed contract is different: null there means
+             * "the parser/reviewer could not safely represent the contractual anchor".
+             * That state must never silently become ACT_SIGNED.
+             */
+            boolean confirmedParsedContract = contract.getDocumentId() != null
+                && contract.getExtractionStatus() == ContractExtractionStatus.CONFIRMED
+                && contract.getPaymentDays() != null;
+            if (confirmedParsedContract) {
+                return null;
+            }
             baseDate = shipment.getActSignedAt() != null
                 ? shipment.getActSignedAt()
                 : shipment.getUnloadingDate();
+            if (!notBeforeEffective(baseDate, effectiveDate)) return null;
         } else {
-            baseDate = switch (configuredEvent) {
-                case ACT_SIGNED -> shipment.getActSignedAt();
-                case UNLOADING_DATE -> shipment.getUnloadingDate();
-                case TTN_SIGNED -> shipment.getTtnSignedAt();
-                case INVOICE_DATE -> shipment.getInvoiceDate();
-                case REGISTRY_INCLUDED, DOCUMENT_PACKAGE_RECEIVED -> shipment.getPaymentStartEventDate();
-            };
+            switch (configuredEvent) {
+                case LATEST_ACT_OR_DOCUMENT_PACKAGE -> {
+                    LocalDate actDate = shipment.getActSignedAt();
+                    LocalDate documentsDate = shipment.getPaymentStartEventDate();
+                    if (!notBeforeEffective(actDate, effectiveDate)
+                            || !notBeforeEffective(documentsDate, effectiveDate)) {
+                        return null;
+                    }
+                    baseDate = actDate.isAfter(documentsDate) ? actDate : documentsDate;
+                }
+                case ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE -> {
+                    LocalDate actDate = shipment.getActSignedAt();
+                    LocalDate documentsDate = shipment.getPaymentStartEventDate();
+                    if (!notBeforeEffective(actDate, effectiveDate)
+                            || !notBeforeEffective(documentsDate, effectiveDate)) {
+                        return null;
+                    }
+
+                    int paymentDays = paymentDays(contract);
+                    TermDayType dayType = dayType(contract);
+                    LocalDate nominalDueDate = addTermDays(actDate, paymentDays, dayType);
+
+                    /*
+                     * "N days from the act, provided the documents were received" does not
+                     * define how a late document package shifts an already expired term.
+                     * Do not invent a shift. Such a case requires a lawyer.
+                     */
+                    if (documentsDate.isAfter(nominalDueDate)) {
+                        return null;
+                    }
+                    return applyPaymentSchedule(nominalDueDate, contract);
+                }
+                case ACT_SIGNED -> baseDate = shipment.getActSignedAt();
+                case UNLOADING_DATE -> baseDate = shipment.getUnloadingDate();
+                case TTN_SIGNED -> baseDate = shipment.getTtnSignedAt();
+                case INVOICE_DATE -> baseDate = shipment.getInvoiceDate();
+                case REGISTRY_INCLUDED, DOCUMENT_PACKAGE_RECEIVED -> baseDate = shipment.getPaymentStartEventDate();
+                default -> {
+                    return null;
+                }
+            }
+            if (!notBeforeEffective(baseDate, effectiveDate)) return null;
         }
 
-        // Never silently replace an explicit contractual anchor with another shipment date.
-        if (baseDate == null) {
-            return null;
-        }
-
-        int paymentDays = contract.getPaymentDays() == null ? 0 : contract.getPaymentDays();
-        TermDayType dayType = contract.getPaymentDayType() == null
-            ? TermDayType.CALENDAR_DAYS
-            : contract.getPaymentDayType();
-        LocalDate dueDate = addTermDays(baseDate, paymentDays, dayType);
-        dueDate = applyPaymentSchedule(dueDate, contract);
-        return dueDate == null ? null : dueDate.plusDays(1);
+        LocalDate dueDate = addTermDays(baseDate, paymentDays(contract), dayType(contract));
+        return applyPaymentSchedule(dueDate, contract);
     }
 
     static LocalDate applyPaymentSchedule(LocalDate dueDate, ClaimContract contract) {
         if (dueDate == null || contract.getPaymentScheduleType() == null) {
-            return dueDate;
-        }
-        if (contract.getPaymentScheduleType() != PaymentScheduleType.NEXT_PAYMENT_DAY) {
             return dueDate;
         }
 
@@ -64,7 +107,10 @@ public final class OverdueDateCalculator {
             return null;
         }
 
-        LocalDate cursor = dueDate;
+        LocalDate cursor = switch (contract.getPaymentScheduleType()) {
+            case NEXT_PAYMENT_DAY -> dueDate;
+            case NEXT_PAYMENT_DAY_AFTER_TERM -> dueDate.plusDays(1);
+        };
         for (int i = 0; i < 7; i++) {
             if (allowedDays.contains(cursor.getDayOfWeek())) {
                 return cursor;
@@ -93,13 +139,18 @@ public final class OverdueDateCalculator {
     }
 
     static LocalDate addTermDays(LocalDate baseDate, int days, TermDayType dayType) {
+        if (baseDate == null) return null;
         if (days <= 0) return baseDate;
         if (dayType == TermDayType.CALENDAR_DAYS) {
             return baseDate.plusDays(days);
         }
 
-        // MVP calendar: working/banking days exclude weekends. Public-holiday overrides
-        // should be supplied by a production calendar service before industrial use.
+        /*
+         * MVP business calendar: working/banking days exclude weekends only.
+         * Public-holiday overrides require a production RF calendar service.
+         * Until then this limitation must be covered by acceptance/manual review
+         * for periods crossing official holidays.
+         */
         LocalDate cursor = baseDate;
         int remaining = days;
         while (remaining > 0) {
@@ -117,5 +168,19 @@ public final class OverdueDateCalculator {
             return 0;
         }
         return Math.toIntExact(ChronoUnit.DAYS.between(overdueStartDate, calculationDate));
+    }
+
+    private static int paymentDays(ClaimContract contract) {
+        return contract.getPaymentDays() == null ? 0 : contract.getPaymentDays();
+    }
+
+    private static TermDayType dayType(ClaimContract contract) {
+        return contract.getPaymentDayType() == null
+            ? TermDayType.CALENDAR_DAYS
+            : contract.getPaymentDayType();
+    }
+
+    private static boolean notBeforeEffective(LocalDate date, LocalDate effectiveDate) {
+        return date != null && (effectiveDate == null || !date.isBefore(effectiveDate));
     }
 }

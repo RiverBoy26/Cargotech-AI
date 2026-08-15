@@ -11,6 +11,7 @@ import ru.sber.cargotech.claim.dto.SubmitContractExtractionRequest;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ContractExtractedValue;
+import ru.sber.cargotech.claim.enums.ClauseType;
 import ru.sber.cargotech.claim.enums.ContractExtractionField;
 import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.ContractRagStatus;
@@ -176,6 +177,11 @@ class ContractServiceTest {
         assertThatThrownBy(() -> service().confirmExtraction(user, contractId))
             .isInstanceOf(ClaimException.class)
             .hasMessage("Договор с таким номером уже существует");
+
+        // Duplicate validation must happen before the managed contract is mutated. Otherwise
+        // the following repository query may trigger Hibernate auto-flush and leak SQLState 23505.
+        assertThat(contract.getNumber()).isNull();
+        verify(contractRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -206,6 +212,82 @@ class ContractServiceTest {
 
         assertThat(contract.getRagIndexStatus()).isEqualTo(ContractRagStatus.NOT_INDEXED);
         verify(contractRepository, never()).save(contract);
+    }
+
+
+    @Test
+    void confirmationBlocksWhenContractClientInnDoesNotMatchSelectedParty() {
+        UUID organizationId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+        ClaimContract contract = contract(contractId, organizationId, ContractExtractionStatus.REVIEW_REQUIRED);
+        List<ContractExtractedValue> values = new ArrayList<>(extractedValues("ТСЛ-08-26", "30"));
+        values.add(extractedValue(ContractExtractionField.CLIENT_INN, "6319245078", null));
+
+        ClaimParty selectedClient = party(contract.getClientId(), "ТехноСклад из карточки");
+        selectedClient.setInn("7107883961");
+
+        when(contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId))
+            .thenReturn(Optional.of(contract));
+        when(extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contractId)).thenReturn(values);
+        when(partyService.getEntity(organizationId, contract.getClientId())).thenReturn(selectedClient);
+
+        assertThatThrownBy(() -> service().confirmExtraction(user, contractId))
+            .isInstanceOf(ClaimException.class)
+            .hasMessageContaining("ИНН клиента в договоре")
+            .hasMessageContaining("6319245078")
+            .hasMessageContaining("7107883961");
+
+        verify(contractRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void confirmationBlocksUnsupportedDynamicPenaltyEvenAfterManualScalarOverride() {
+        UUID organizationId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+        ClaimContract contract = contract(contractId, organizationId, ContractExtractionStatus.REVIEW_REQUIRED);
+        List<ContractExtractedValue> values = new ArrayList<>(extractedValues("ЮА-2026", "21"));
+        replaceValue(values, ContractExtractionField.PENALTY_TYPE, "CONTRACT_PENALTY");
+        replaceValue(values, ContractExtractionField.PENALTY_RATE, "0.05");
+        values.add(extractedValue(
+            ContractExtractionField.EXACT_CLAUSE,
+            "9.4. Неустойка составляет одну трехсотую ключевой ставки Банка России за каждый день просрочки.",
+            ClauseType.PENALTY
+        ));
+
+        when(contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId))
+            .thenReturn(Optional.of(contract));
+        when(extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contractId)).thenReturn(values);
+
+        assertThatThrownBy(() -> service().confirmExtraction(user, contractId))
+            .isInstanceOf(ClaimException.class)
+            .hasMessageContaining("ключевой ставки Банка России")
+            .hasMessageContaining("нельзя подменять");
+    }
+
+    @Test
+    void confirmationBlocksUnsupportedInvoiceAndUpdCompositeAnchorEvenAfterManualOverride() {
+        UUID organizationId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+        ClaimContract contract = contract(contractId, organizationId, ContractExtractionStatus.REVIEW_REQUIRED);
+        List<ContractExtractedValue> values = new ArrayList<>(extractedValues("СТ-2026", "10"));
+        replaceValue(values, ContractExtractionField.PAYMENT_START_EVENT, "INVOICE_DATE");
+        values.add(extractedValue(
+            ContractExtractionField.EXACT_CLAUSE,
+            "8.2. Оплата производится в течение 10 рабочих дней с даты получения счета и подписанного УПД.",
+            ClauseType.PAYMENT_TERMS
+        ));
+
+        when(contractRepository.findByIdAndOrganizationIdAndDeletedAtIsNull(contractId, organizationId))
+            .thenReturn(Optional.of(contract));
+        when(extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contractId)).thenReturn(values);
+
+        assertThatThrownBy(() -> service().confirmExtraction(user, contractId))
+            .isInstanceOf(ClaimException.class)
+            .hasMessageContaining("счёта и УПД")
+            .hasMessageContaining("составное условие");
     }
 
     private ContractService service() {
@@ -258,6 +340,7 @@ class ContractServiceTest {
                     case CLAIM_RESPONSE_DAYS -> "10";
                     case CLAIM_RESPONSE_DAY_TYPE -> "CALENDAR_DAYS";
                     case JURISDICTION -> "Арбитражный суд Новосибирской области";
+                    case CLIENT_INN, EXPEDITOR_INN -> null;
                     case EXACT_CLAUSE -> null;
                 },
                 manuallyEdited ? null : "Источник",
@@ -268,6 +351,32 @@ class ContractServiceTest {
                 manuallyEdited
             ))
             .toList());
+    }
+
+
+    private ContractExtractedValue extractedValue(
+        ContractExtractionField field,
+        String value,
+        ClauseType clauseType
+    ) {
+        ContractExtractedValue extracted = new ContractExtractedValue();
+        extracted.setField(field);
+        extracted.setValue(value);
+        extracted.setClauseType(clauseType);
+        extracted.setManuallyEdited(true);
+        return extracted;
+    }
+
+    private void replaceValue(
+        List<ContractExtractedValue> values,
+        ContractExtractionField field,
+        String value
+    ) {
+        values.stream()
+            .filter(item -> item.getField() == field)
+            .findFirst()
+            .orElseThrow()
+            .setValue(value);
     }
 
     private List<ContractExtractedValue> extractedValues(String number, String paymentDays) {

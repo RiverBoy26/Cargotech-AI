@@ -70,6 +70,9 @@ public class ContractTextExtractionService {
     private static final Pattern ARBITRATION_COURT = Pattern.compile(
         "(?iu)(арбитражн(?:ый|ом)\\s+суд(?:е)?\\s+[\\p{L}0-9№«»\"()\\-\\s]{2,140}?)(?=[,.;]|$)"
     );
+    private static final Pattern INN_AFTER_ROLE = Pattern.compile(
+        "(?isu)(?<!\\p{L})(?:%s)\\s*:?\\s*.{0,700}?(?<!\\p{L})ИНН\\s*[:№]?\\s*(\\d{10}|\\d{12})(?!\\d)"
+    );
 
     private static final Map<DayOfWeek, Pattern> WEEK_DAY_PATTERNS = Map.ofEntries(
         Map.entry(DayOfWeek.MONDAY, Pattern.compile("(?iu)(?<!\\p{L})понедельник\\p{L}*(?!\\p{L})")),
@@ -95,7 +98,9 @@ public class ContractTextExtractionService {
         ContractExtractionField.PENALTY_CAP_BASE,
         ContractExtractionField.CLAIM_RESPONSE_DAYS,
         ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE,
-        ContractExtractionField.JURISDICTION
+        ContractExtractionField.JURISDICTION,
+        ContractExtractionField.CLIENT_INN,
+        ContractExtractionField.EXPEDITOR_INN
     );
     private static final Map<String, Integer> MONTHS = Map.ofEntries(
         Map.entry("января", 1), Map.entry("февраля", 2), Map.entry("марта", 3),
@@ -165,9 +170,12 @@ public class ContractTextExtractionService {
             boolean scheduleTypeFound = isNextPaymentDaySchedule(lower);
             boolean weekDaysDeclared = isPaymentWeekDayDeclaration(lower);
             if (scheduleTypeFound) {
+                PaymentScheduleType scheduleType = isStrictPaymentDayAfterTerm(lower)
+                    ? PaymentScheduleType.NEXT_PAYMENT_DAY_AFTER_TERM
+                    : PaymentScheduleType.NEXT_PAYMENT_DAY;
                 putOnce(scalars, candidate(
                     ContractExtractionField.PAYMENT_SCHEDULE_TYPE,
-                    PaymentScheduleType.NEXT_PAYMENT_DAY.name(),
+                    scheduleType.name(),
                     fragment,
                     page,
                     confidence("0.90"),
@@ -293,6 +301,8 @@ public class ContractTextExtractionService {
             }
         }
 
+        extractPartyInns(text, scalars);
+
         if (!scalars.containsKey(ContractExtractionField.PENALTY_TYPE) && !unsupportedPaymentPenaltyFound) {
             scalars.put(
                 ContractExtractionField.PENALTY_TYPE,
@@ -356,6 +366,11 @@ public class ContractTextExtractionService {
     private boolean isNextPaymentDaySchedule(String lower) {
         if (!containsAny(lower, "платежн", "платёжн")) return false;
         return NEXT_PAYMENT_DAY_SIGNAL.matcher(lower).find();
+    }
+
+    private boolean isStrictPaymentDayAfterTerm(String lower) {
+        return containsAny(lower, "после истечения", "по истечении")
+            && containsAny(lower, "платежн", "платёжн");
     }
 
     private boolean isPaymentWeekDayDeclaration(String lower) {
@@ -461,6 +476,38 @@ public class ContractTextExtractionService {
             return PenaltyCapBase.OUTSTANDING_DEBT;
         }
         return null;
+    }
+
+    private void extractPartyInns(
+        String text,
+        Map<ContractExtractionField, ContractExtractionCandidateRequest> scalars
+    ) {
+        extractPartyInn(text, scalars, ContractExtractionField.CLIENT_INN,
+            "Заказчик|Клиент|Грузовладелец");
+        extractPartyInn(text, scalars, ContractExtractionField.EXPEDITOR_INN,
+            "Экспедитор|Перевозчик|Исполнитель");
+    }
+
+    private void extractPartyInn(
+        String text,
+        Map<ContractExtractionField, ContractExtractionCandidateRequest> scalars,
+        ContractExtractionField field,
+        String rolePattern
+    ) {
+        Pattern pattern = Pattern.compile(
+            String.format(INN_AFTER_ROLE.pattern(), rolePattern),
+            INN_AFTER_ROLE.flags()
+        );
+        Matcher matcher = pattern.matcher(text);
+        if (!matcher.find()) return;
+        putOnce(scalars, candidate(
+            field,
+            matcher.group(1),
+            null,
+            null,
+            confidence("0.98"),
+            null
+        ));
     }
 
     private ContractExtractionCandidateRequest fallbackCandidate(ContractExtractionField field, String value) {
@@ -600,8 +647,39 @@ public class ContractTextExtractionService {
     }
 
     private PaymentStartEvent paymentStartEvent(String lower) {
-        // Combined anchors cannot be represented safely as a single event.
-        if (containsAny(lower, "более поздн", "наступившей позднее", "которая наступит позднее")) return null;
+        boolean hasDocumentPackage = containsAny(
+            lower,
+            "полного комплекта документов",
+            "полного комплекта оригиналов документов",
+            "полного пакета документов",
+            "комплекта закрывающих документов",
+            "пакета закрывающих документов",
+            "комплекта перевозочных документов"
+        );
+        boolean hasAct = lower.contains("акт")
+            && containsAny(lower, "подписан", "подписания", "даты подписания");
+
+        // Preserve "later of act / documents" instead of silently choosing one date.
+        if (containsAny(lower, "более поздн", "наступившей позднее", "которая наступит позднее")) {
+            if (hasAct && hasDocumentPackage) {
+                return PaymentStartEvent.LATEST_ACT_OR_DOCUMENT_PACKAGE;
+            }
+            return null;
+        }
+
+        // The act remains the mathematical anchor, while receiving the document package
+        // is an additional prerequisite. It is intentionally not treated as "later of".
+        if (hasAct && hasDocumentPackage
+                && containsAny(lower, "при условии получения", "при условии предоставления", "при условии передачи")) {
+            return PaymentStartEvent.ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE;
+        }
+
+        // A single scalar anchor cannot faithfully express "invoice AND signed UPD".
+        boolean invoiceAndUpd = INVOICE_WORD.matcher(lower).find()
+            && (lower.contains("упд") || (lower.contains("универсальн") && lower.contains("передаточн")));
+        if (invoiceAndUpd) {
+            return null;
+        }
 
         List<PaymentStartEvent> events = new ArrayList<>();
         if (lower.contains("реестр") && containsAny(
@@ -611,20 +689,14 @@ public class ContractTextExtractionService {
         )) {
             events.add(PaymentStartEvent.REGISTRY_INCLUDED);
         }
-        if (containsAny(
-            lower,
-            "полного комплекта документов",
-            "полного комплекта оригиналов документов",
-            "полного пакета документов",
-            "комплекта закрывающих документов",
-            "пакета закрывающих документов"
-        ) && containsAny(lower, "получен", "предоставлен", "передан", "направлен", "представлен")) {
+        if (hasDocumentPackage && containsAny(
+            lower, "получен", "получения", "предоставлен", "передан", "направлен", "представлен"
+        )) {
             events.add(PaymentStartEvent.DOCUMENT_PACKAGE_RECEIVED);
         }
 
-        // Match the event that actually starts the term instead of every document merely mentioned
-        // in the same sentence. Example: "со дня фактической выгрузки груза, указанной в
-        // транспортной накладной" is UNLOADING_DATE, not TTN_SIGNED.
+        // Match the event that actually starts the term instead of every document merely
+        // mentioned in the same sentence.
         if (matchesAnchor(lower, "(?:фактическ\\p{L}*\\s+)?(?:выгрузк\\p{L}*|разгрузк\\p{L}*)")) {
             events.add(PaymentStartEvent.UNLOADING_DATE);
         }

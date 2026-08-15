@@ -88,11 +88,15 @@ public class OverdueShipmentService {
         PenaltyType penaltyType = contract.getPenaltyType() == null
             ? PenaltyType.ARTICLE_395
             : contract.getPenaltyType();
-        BigDecimal penaltyRate = contract.getPenaltyRate() == null
-            ? (penaltyType == PenaltyType.ARTICLE_395
-                ? new BigDecimal("18.00")
-                : BigDecimal.ZERO)
-            : contract.getPenaltyRate();
+        List<PenaltyScheduleCalculator.RatePeriod> article395RatePeriods =
+            actuallyOverdue && penaltyType == PenaltyType.ARTICLE_395
+                ? article395RateProvider.periods(overdueStartDate, today)
+                : List.of();
+        BigDecimal penaltyRate = penaltyType == PenaltyType.ARTICLE_395
+            ? (article395RatePeriods.isEmpty()
+                ? null
+                : article395RatePeriods.get(article395RatePeriods.size() - 1).rate())
+            : (contract.getPenaltyRate() == null ? BigDecimal.ZERO : contract.getPenaltyRate());
         List<PenaltyScheduleCalculator.Allocation> paymentAllocations =
             paymentState.allocations() == null
                 ? List.of()
@@ -110,9 +114,7 @@ public class OverdueShipmentService {
                 penaltyType,
                 penaltyRate,
                 paymentAllocations,
-                penaltyType == PenaltyType.ARTICLE_395
-                    ? article395RateProvider.periods(overdueStartDate, today)
-                    : List.of()
+                article395RatePeriods
             )
             : BigDecimal.ZERO;
         ClaimPaymentAllocationCalculator.AllocationResult allocation =

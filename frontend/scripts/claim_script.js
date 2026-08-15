@@ -427,15 +427,258 @@ async function loadClaimContext(claim) {
   setRecipientEmail(debtor?.email);
 }
 
+function parseUsedSourceLine(line) {
+  const raw = String(line || '').trim();
+  if (!raw) return null;
+
+  const documentMatch = raw.match(
+    /^DOCUMENT\s*(.*?)\s*\|\s*CHUNK\s*(.*?)\s*\|\s*SCORE\s*([0-9.]*)\s*\|\s*TEXT\s*(.*)$/i
+  );
+  if (documentMatch) {
+    return {
+      kind: 'retrieved',
+      documentId: documentMatch[1].trim(),
+      chunkId: documentMatch[2].trim(),
+      score: documentMatch[3] ? Number(documentMatch[3]) : null,
+      text: documentMatch[4].trim(),
+      raw,
+    };
+  }
+
+  const contractMatch = raw.match(/^CONTRACT\s+(\S+)(?:\s+(.+))?$/i);
+  if (contractMatch) {
+    return {
+      kind: 'contract',
+      chunkId: contractMatch[1]?.trim() || '',
+      clauseNumber: contractMatch[2]?.trim() || '',
+      text: '',
+      raw,
+    };
+  }
+
+  const lawMatch = raw.match(/^LAW\s+(\S+)\s+(.+?)\s+(\S+)$/i);
+  if (lawMatch) {
+    return {
+      kind: 'law',
+      chunkId: lawMatch[1]?.trim() || '',
+      lawCode: lawMatch[2]?.trim() || '',
+      article: lawMatch[3]?.trim() || '',
+      text: '',
+      raw,
+    };
+  }
+
+  return { kind: 'unknown', text: raw, raw };
+}
+
+function parseUsedSources(rawSources) {
+  if (!rawSources) return [];
+
+  try {
+    const parsed = JSON.parse(rawSources);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => ({
+        kind: 'json',
+        documentId: item?.documentId || item?.document_id || '',
+        chunkId: item?.chunkId || item?.chunk_id || '',
+        score: Number.isFinite(Number(item?.score)) ? Number(item.score) : null,
+        text: item?.text || item?.content || item?.citation || JSON.stringify(item),
+        raw: JSON.stringify(item),
+      }));
+    }
+  } catch (_) {
+    // Current backend stores one source per line. Keep this branch as forward compatibility.
+  }
+
+  return rawSources
+    .split(/\r?\n/)
+    .map(parseUsedSourceLine)
+    .filter(Boolean);
+}
+
+function detectSourceClause(text) {
+  const value = String(text || '').trim();
+  const direct = value.match(/^(?:п\.?\s*)?(\d+(?:\.\d+)+)\.?\s+/i);
+  return direct?.[1] || '';
+}
+
+function detectLegalArticle(source) {
+  const text = String(source?.text || '');
+  const explicit = text.match(/(?:статья|ст\.)\s*(\d+(?:\.\d+)*)/i);
+  if (explicit) return explicit[1];
+
+  const technical = `${source?.chunkId || ''} ${source?.documentId || ''}`;
+  const fromId = technical.match(/(?:gk|гк|uat|уат|87fz|87-фз)[_-]?(?:rf[_-]?)?(\d{2,4})/i);
+  return fromId?.[1] || source?.article || '';
+}
+
+function isLegalSource(source) {
+  const technical = `${source?.kind || ''} ${source?.chunkId || ''} ${source?.documentId || ''}`.toLowerCase();
+  return source?.kind === 'law'
+    || /(?:legal|law|gk|uat|87fz|гк|уат)/i.test(technical);
+}
+
+function describeSourcePurpose(text, legal) {
+  const value = String(text || '').toLowerCase();
+
+  if (legal) {
+    if (/395|денежн.*обязатель|процент/.test(value)) {
+      return { title: 'Проценты за просрочку', purpose: 'правовое основание начисления процентов за просрочку' };
+    }
+    if (/неустойк|штраф|пен/.test(value)) {
+      return { title: 'Ответственность и неустойка', purpose: 'правовое основание ответственности за нарушение обязательства' };
+    }
+    if (/экспедиц|перевоз/.test(value)) {
+      return { title: 'Транспортно-экспедиционные отношения', purpose: 'правовую квалификацию отношений сторон' };
+    }
+    return { title: 'Правовое основание', purpose: 'правовую норму, использованную при проверке претензии' };
+  }
+
+  if (/неустойк|штраф|пен/.test(value)) {
+    return { title: 'Ответственность / неустойка', purpose: 'условия ответственности за нарушение срока оплаты' };
+  }
+  if (/претензи/.test(value) && /(дн|срок|ответ|рассматрива)/.test(value)) {
+    return { title: 'Срок ответа на претензию', purpose: 'срок и порядок ответа на претензию' };
+  }
+  if (/расч[её]т|российск.*руб|безналич|перечислен|расчетн.*счет/.test(value)) {
+    return { title: 'Порядок расчётов', purpose: 'порядок проведения расчётов между сторонами' };
+  }
+  if (/оплат/.test(value)) {
+    return { title: 'Срок оплаты', purpose: 'срок и условия оплаты оказанных услуг' };
+  }
+  if (/документ|акт|оригинал/.test(value)) {
+    return { title: 'Документы для оплаты', purpose: 'документы и события, влияющие на наступление срока оплаты' };
+  }
+  return { title: 'Условие договора', purpose: 'условие договора, использованное при формировании претензии' };
+}
+
+function sourceRelevance(score) {
+  if (!Number.isFinite(score)) return null;
+  if (score >= 0.75) return { label: 'Высокая релевантность', level: 'high' };
+  if (score >= 0.55) return { label: 'Средняя релевантность', level: 'medium' };
+  return { label: 'Дополнительный источник', level: 'low' };
+}
+
+function appendSourceTechnicalDetails(card, source) {
+  const rows = [];
+  if (source.chunkId) rows.push(['Фрагмент', source.chunkId]);
+  if (source.documentId) rows.push(['Документ в базе', source.documentId]);
+  if (Number.isFinite(source.score)) rows.push(['Оценка поиска', `${Math.round(source.score * 100)}%`]);
+
+  if (!rows.length) return;
+
+  const details = document.createElement('details');
+  details.className = 'source_technical';
+
+  const summary = document.createElement('summary');
+  summary.textContent = 'Технические детали';
+  details.appendChild(summary);
+
+  const grid = document.createElement('div');
+  grid.className = 'source_technical_grid';
+
+  rows.forEach(([label, value]) => {
+    const labelElement = document.createElement('span');
+    labelElement.className = 'source_technical_label';
+    labelElement.textContent = label;
+
+    const valueElement = document.createElement('span');
+    valueElement.className = 'source_technical_value';
+    valueElement.textContent = value;
+
+    grid.append(labelElement, valueElement);
+  });
+
+  details.appendChild(grid);
+  card.appendChild(details);
+}
+
+function createUsedSourceCard(source, index) {
+  const legal = isLegalSource(source);
+  const clause = source.clauseNumber || detectSourceClause(source.text);
+  const article = detectLegalArticle(source);
+  const descriptor = describeSourcePurpose(source.text, legal);
+  const relevance = sourceRelevance(source.score);
+
+  const card = document.createElement('article');
+  card.className = 'source_card';
+
+  const header = document.createElement('div');
+  header.className = 'source_card_header';
+
+  const heading = document.createElement('div');
+  heading.className = 'source_card_heading';
+
+  const type = document.createElement('span');
+  type.className = `source_type_badge ${legal ? 'source_type_law' : 'source_type_contract'}`;
+  type.textContent = legal ? 'Правовая норма' : 'Договор';
+
+  const title = document.createElement('strong');
+  title.className = 'source_card_title';
+
+  if (legal && article) {
+    title.textContent = `Статья ${article} — ${descriptor.title}`;
+  } else if (!legal && clause) {
+    title.textContent = `Пункт ${clause} — ${descriptor.title}`;
+  } else {
+    title.textContent = descriptor.title || `Источник ${index + 1}`;
+  }
+
+  heading.append(type, title);
+  header.appendChild(heading);
+
+  if (relevance) {
+    const badge = document.createElement('span');
+    badge.className = `source_relevance source_relevance_${relevance.level}`;
+    badge.textContent = relevance.label;
+    header.appendChild(badge);
+  }
+
+  card.appendChild(header);
+
+  const purpose = document.createElement('p');
+  purpose.className = 'source_purpose';
+  purpose.textContent = `Подтверждает: ${descriptor.purpose}.`;
+  card.appendChild(purpose);
+
+  if (source.text) {
+    const quote = document.createElement('blockquote');
+    quote.className = 'source_quote';
+    quote.textContent = source.text;
+    card.appendChild(quote);
+  } else {
+    const fallback = document.createElement('p');
+    fallback.className = 'source_quote source_quote_compact';
+
+    if (source.kind === 'law') {
+      fallback.textContent = [source.lawCode, source.article ? `ст. ${source.article}` : '']
+        .filter(Boolean)
+        .join(', ');
+    } else if (source.kind === 'contract') {
+      fallback.textContent = clause
+        ? `Использован пункт ${clause} договора.`
+        : 'Использован подтверждённый фрагмент договора.';
+    } else {
+      fallback.textContent = source.raw || 'Источник использован при формировании претензии.';
+    }
+    card.appendChild(fallback);
+  }
+
+  appendSourceTechnicalDetails(card, source);
+  return card;
+}
+
 function renderUsedSources(claim, contract) {
   const contractSource = document.getElementById('contract_source');
   const contractTitle = document.getElementById('contract_source_title');
   const contractMeta = document.getElementById('contract_source_meta');
   const contractDownload = document.getElementById('btn_download_contract_source');
-  const sourcesText = document.getElementById('used_sources');
+  const sourcesContainer = document.getElementById('used_sources');
+  const sourcesIntro = document.getElementById('used_sources_intro');
   const sourcesEmpty = document.getElementById('used_sources_empty');
   const hasContractDocument = Boolean(contract?.documentId);
   const rawSources = claim?.usedSources?.trim() || '';
+  const parsedSources = parseUsedSources(rawSources);
 
   if (contractSource) contractSource.hidden = !hasContractDocument;
   if (hasContractDocument) {
@@ -450,19 +693,21 @@ function renderUsedSources(claim, contract) {
     contractDownload.hidden = true;
   }
 
-  if (sourcesText) {
-    if (rawSources) {
-      try {
-        sourcesText.textContent = JSON.stringify(JSON.parse(rawSources), null, 2);
-      } catch (_) {
-        sourcesText.textContent = rawSources;
-      }
-    } else {
-      sourcesText.textContent = '';
-    }
-    sourcesText.hidden = !rawSources;
+  if (sourcesContainer) {
+    sourcesContainer.replaceChildren();
+    parsedSources.forEach((source, index) => {
+      sourcesContainer.appendChild(createUsedSourceCard(source, index));
+    });
+    sourcesContainer.hidden = parsedSources.length === 0;
   }
-  if (sourcesEmpty) sourcesEmpty.hidden = hasContractDocument || Boolean(rawSources);
+
+  if (sourcesIntro) {
+    sourcesIntro.hidden = parsedSources.length === 0;
+  }
+
+  if (sourcesEmpty) {
+    sourcesEmpty.hidden = hasContractDocument || parsedSources.length > 0;
+  }
 }
 
 function renderAutocheckWarning(claim) {

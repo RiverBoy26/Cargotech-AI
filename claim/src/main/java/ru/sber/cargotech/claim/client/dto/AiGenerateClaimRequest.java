@@ -57,15 +57,31 @@ public record AiGenerateClaimRequest(
             @JsonProperty("contract_number") String contractNumber,
             @JsonProperty("contract_date") String contractDate,
             @JsonProperty("claim_response_days") Integer claimResponseDays,
+            @JsonProperty("claim_response_day_type") TermDayType claimResponseDayType,
             @JsonProperty("document_id") String documentId
     ) {
         public ContractFacts(String contractNumber, String contractDate) {
-            this(contractNumber, contractDate, null, null);
+            this(contractNumber, contractDate, null, null, null);
         }
 
         public ContractFacts(String contractNumber, String contractDate, Integer claimResponseDays) {
-            this(contractNumber, contractDate, claimResponseDays, null);
+            this(contractNumber, contractDate, claimResponseDays, null, null);
         }
+
+        public ContractFacts(
+                String contractNumber,
+                String contractDate,
+                Integer claimResponseDays,
+                String documentId
+        ) {
+            this(contractNumber, contractDate, claimResponseDays, null, documentId);
+        }
+    }
+
+    public enum TermDayType {
+        CALENDAR_DAYS,
+        WORKING_DAYS,
+        BANKING_DAYS
     }
 
     public record ShipmentFacts(
@@ -154,8 +170,18 @@ public record AiGenerateClaimRequest(
             @JsonProperty("chunk_id") String chunkId,
             @JsonProperty("clause_number") String clauseNumber,
             @JsonProperty("section_title") String sectionTitle,
+            @JsonProperty("clause_type") String clauseType,
             String text
-    ) {}
+    ) {
+        public ContractContextChunk(
+                String chunkId,
+                String clauseNumber,
+                String sectionTitle,
+                String text
+        ) {
+            this(chunkId, clauseNumber, sectionTitle, null, text);
+        }
+    }
 
     public record LegalContextItem(
             @JsonProperty("chunk_id") String chunkId,

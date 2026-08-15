@@ -81,7 +81,26 @@ CREATE TABLE IF NOT EXISTS cargotech.article_395_rates (
 );
 
 INSERT INTO cargotech.article_395_rates (effective_from, rate, source)
-VALUES ('2026-07-27', 14.0000, 'https://www.cbr.ru/hd_base/KeyRate/')
+VALUES
+	('2023-01-01', 7.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-07-24', 8.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-08-15', 12.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-09-18', 13.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-10-30', 15.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-12-18', 16.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2024-07-29', 18.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2024-09-16', 19.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2024-10-28', 21.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-06-09', 20.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-07-28', 18.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-09-15', 17.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-10-27', 16.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-12-22', 16.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-02-16', 15.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-03-23', 15.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-04-27', 14.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-06-22', 14.2500, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-07-27', 14.0000, 'https://www.cbr.ru/hd_base/KeyRate/')
 ON CONFLICT (effective_from) DO UPDATE
 SET rate = EXCLUDED.rate, source = EXCLUDED.source;
 
@@ -133,8 +152,8 @@ CREATE TABLE cargotech.claim_contracts (
 	CONSTRAINT claim_contracts_payment_days_check CHECK (((payment_days IS NULL) OR (payment_days >= 0))),
 	CONSTRAINT claim_contracts_payment_day_type_check CHECK (((payment_day_type IS NULL) OR ((payment_day_type)::text = ANY ((ARRAY['CALENDAR_DAYS'::character varying, 'WORKING_DAYS'::character varying, 'BANKING_DAYS'::character varying])::text[])))),
 	CONSTRAINT claim_contracts_claim_response_day_type_check CHECK (((claim_response_day_type IS NULL) OR ((claim_response_day_type)::text = ANY ((ARRAY['CALENDAR_DAYS'::character varying, 'WORKING_DAYS'::character varying, 'BANKING_DAYS'::character varying])::text[])))),
-	CONSTRAINT claim_contracts_payment_start_event_check CHECK (((payment_start_event IS NULL) OR ((payment_start_event)::text = ANY ((ARRAY['ACT_SIGNED'::character varying, 'UNLOADING_DATE'::character varying, 'TTN_SIGNED'::character varying, 'INVOICE_DATE'::character varying, 'REGISTRY_INCLUDED'::character varying, 'DOCUMENT_PACKAGE_RECEIVED'::character varying])::text[])))),
-	CONSTRAINT claim_contracts_payment_schedule_type_check CHECK (((payment_schedule_type IS NULL) OR ((payment_schedule_type)::text = 'NEXT_PAYMENT_DAY'::text))),
+	CONSTRAINT claim_contracts_payment_start_event_check CHECK (((payment_start_event IS NULL) OR ((payment_start_event)::text = ANY ((ARRAY['ACT_SIGNED'::character varying, 'UNLOADING_DATE'::character varying, 'TTN_SIGNED'::character varying, 'INVOICE_DATE'::character varying, 'REGISTRY_INCLUDED'::character varying, 'DOCUMENT_PACKAGE_RECEIVED'::character varying, 'LATEST_ACT_OR_DOCUMENT_PACKAGE'::character varying, 'ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE'::character varying])::text[])))),
+	CONSTRAINT claim_contracts_payment_schedule_type_check CHECK (((payment_schedule_type IS NULL) OR ((payment_schedule_type)::text = ANY ((ARRAY['NEXT_PAYMENT_DAY'::character varying, 'NEXT_PAYMENT_DAY_AFTER_TERM'::character varying])::text[])))),
 	CONSTRAINT claim_contracts_payment_schedule_pair_check CHECK (((payment_schedule_type IS NULL AND payment_week_days IS NULL) OR (payment_schedule_type IS NOT NULL AND payment_week_days IS NOT NULL))),
 	CONSTRAINT claim_contracts_penalty_rate_check CHECK (((penalty_rate IS NULL) OR (penalty_rate >= (0)::numeric))),
 	CONSTRAINT claim_contracts_penalty_cap_percent_check CHECK (((penalty_cap_percent IS NULL) OR (penalty_cap_percent >= (0)::numeric))),

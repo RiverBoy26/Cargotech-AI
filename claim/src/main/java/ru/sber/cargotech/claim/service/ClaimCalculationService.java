@@ -76,15 +76,23 @@ public class ClaimCalculationService {
 
         LocalDate calculationDate = LocalDate.now();
         LocalDate overdueStartDate = OverdueDateCalculator.overdueStartDate(shipment, contract);
+        if (overdueStartDate == null) {
+            throw ClaimException.validation(
+                "Не удалось безопасно определить дату начала просрочки по условиям договора. "
+                    + "Проверьте договорное событие начала срока оплаты и необходимые даты рейса"
+            );
+        }
         int overdueDays = OverdueDateCalculator.overdueDays(overdueStartDate, calculationDate);
         PenaltyType penaltyType = contract.getPenaltyType() == null
             ? PenaltyType.ARTICLE_395
             : contract.getPenaltyType();
-        BigDecimal penaltyRate = contract.getPenaltyRate() == null
-            ? (penaltyType == PenaltyType.ARTICLE_395
-                ? new BigDecimal("18.00")
-                : BigDecimal.ZERO)
-            : contract.getPenaltyRate();
+        List<PenaltyScheduleCalculator.RatePeriod> article395RatePeriods =
+            penaltyType == PenaltyType.ARTICLE_395
+                ? article395RateProvider.periods(overdueStartDate, calculationDate)
+                : List.of();
+        BigDecimal penaltyRate = penaltyType == PenaltyType.ARTICLE_395
+            ? latestArticle395Rate(article395RatePeriods)
+            : (contract.getPenaltyRate() == null ? BigDecimal.ZERO : contract.getPenaltyRate());
         List<PenaltyScheduleCalculator.Allocation> paymentAllocations =
             paymentState.allocations() == null
                 ? List.of()
@@ -101,9 +109,7 @@ public class ClaimCalculationService {
             penaltyType,
             penaltyRate,
             paymentAllocations,
-            penaltyType == PenaltyType.ARTICLE_395
-                ? article395RateProvider.periods(overdueStartDate, calculationDate)
-                : List.of()
+            article395RatePeriods
         );
         accruedPenaltyAmount = PenaltyCapCalculator.apply(
             accruedPenaltyAmount,
@@ -150,7 +156,8 @@ public class ClaimCalculationService {
             overdueDays,
             paymentAllocations.size(),
             contract.getPenaltyCapPercent(),
-            contract.getPenaltyCapBase()
+            contract.getPenaltyCapBase(),
+            article395RatePeriods
         ));
         Map<String, Object> inputSnapshot = new LinkedHashMap<>();
         inputSnapshot.put("shipmentId", shipment.getId().toString());
@@ -169,6 +176,14 @@ public class ClaimCalculationService {
         inputSnapshot.put("paymentDays", contract.getPaymentDays() == null ? 0 : contract.getPaymentDays());
         inputSnapshot.put("penaltyCapPercent", contract.getPenaltyCapPercent() == null ? "" : contract.getPenaltyCapPercent());
         inputSnapshot.put("penaltyCapBase", contract.getPenaltyCapBase() == null ? "" : contract.getPenaltyCapBase().name());
+        inputSnapshot.put("article395RatePeriods", article395RatePeriods.stream()
+            .map(period -> Map.of(
+                "from", period.from().toString(),
+                "to", period.to().toString(),
+                "rate", period.rate(),
+                "source", period.source() == null ? "" : period.source()
+            ))
+            .toList());
         calculation.setInputSnapshot(inputSnapshot);
         calculation.setCreatedBy(user.userId());
         ClaimCalculation saved = calculationRepository.save(calculation);
@@ -210,7 +225,8 @@ public class ClaimCalculationService {
         int days,
         int paymentCount,
         BigDecimal penaltyCapPercent,
-        ru.sber.cargotech.claim.enums.PenaltyCapBase penaltyCapBase
+        ru.sber.cargotech.claim.enums.PenaltyCapBase penaltyCapBase,
+        List<PenaltyScheduleCalculator.RatePeriod> article395RatePeriods
     ) {
         if (type == PenaltyType.NONE) {
             return "Неустойка не начисляется";
@@ -219,10 +235,24 @@ public class ClaimCalculationService {
             ? "Остаток долга по периодам между платежами"
             : "Остаток долга";
         if (type == PenaltyType.ARTICLE_395) {
-            return base + " × " + rate + "% × " + days + " дней / 365";
+            String periods = article395RatePeriods.stream()
+                .map(period -> period.from() + "—" + period.to() + ": "
+                    + period.rate().stripTrailingZeros().toPlainString() + "%")
+                .collect(java.util.stream.Collectors.joining("; "));
+            return base + " × ключевая ставка Банка России по периодам × дни / 365(366)"
+                + (periods.isBlank() ? "" : " (" + periods + ")");
         }
         return base + " × " + rate + "% × " + days + " дней"
             + PenaltyCapCalculator.describe(penaltyCapPercent, penaltyCapBase);
+    }
+
+    private static BigDecimal latestArticle395Rate(
+        List<PenaltyScheduleCalculator.RatePeriod> periods
+    ) {
+        if (periods == null || periods.isEmpty()) {
+            return null;
+        }
+        return periods.get(periods.size() - 1).rate();
     }
 
     private static BigDecimal money(BigDecimal value) {

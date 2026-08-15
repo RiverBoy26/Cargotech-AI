@@ -738,6 +738,338 @@ class RuleBasedGuardrailServiceTest {
         assertThat(result.errors()).anyMatch(error -> error.contains("machine-formatted RUB amount"));
     }
 
+
+    @Test
+    void passesTypedContractClausesWhenEachRequirementUsesItsOwnClause() {
+        GenerateClaimRequest request = typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS);
+        GuardrailResult result = service.check(request, typedPaymentResponse(typedPaymentText("календарных")));
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void acceptsDativePluralGroupedSameTypeContractClauses() {
+        String text = typedPaymentText("календарных").replace(
+                "В соответствии с п. 10.2 Договора №45/2026 от 10.01.2026 письменный ответ направить в течение 10 календарных дней с даты получения настоящей претензии.",
+                "Согласно пунктам 10.1 и 10.2 Договора №45/2026 от 10.01.2026 письменный ответ направить в течение 10 календарных дней с даты получения настоящей претензии."
+        );
+
+        GuardrailResult result = service.check(
+                typedPaymentRequestWithAdditionalClaimProcedureClause(),
+                typedPaymentResponseWithAdditionalClaimProcedureClause(text)
+        );
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksDativePluralGroupedContractClausesWithDifferentSemanticRoles() {
+        String text = typedPaymentText("календарных").replace(
+                "В соответствии с п. 9.4 Договора №45/2026 от 10.01.2026 начислена договорная неустойка — 2 400 руб.",
+                "В соответствии с пунктами 8.2 и 9.4 Договора №45/2026 от 10.01.2026 начислена договорная неустойка — 2 400 руб."
+        );
+
+        GuardrailResult result = service.check(
+                typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS),
+                typedPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("different semantic roles"));
+    }
+
+    @Test
+    void blocksGroupedContractClausesWithDifferentSemanticRoles() {
+        String text = typedPaymentText("календарных").replace(
+                "В соответствии с п. 9.4 Договора №45/2026 от 10.01.2026 начислена договорная неустойка — 2 400 руб.",
+                "В соответствии с п. 8.2, 9.4 Договора №45/2026 от 10.01.2026 начислена договорная неустойка — 2 400 руб."
+        );
+
+        GuardrailResult result = service.check(
+                typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS),
+                typedPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("different semantic roles"));
+    }
+
+    @Test
+    void blocksWrongResponseDayTypeEvenWhenNumberMatches() {
+        GuardrailResult result = service.check(
+                typedPaymentRequest(GenerateClaimRequest.TermDayType.WORKING_DAYS),
+                typedPaymentResponse(typedPaymentText("календарных"))
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("contract.claim_response_days"));
+    }
+
+
+    @Test
+    void blocksDemandSectionThatCollapsesDebtAndPenaltyIntoOnlyTotal() {
+        String text = typedPaymentText("календарных")
+                .replace(
+                        "1. Уплатить основной долг — 240 000 руб.\n"
+                                + "2. Уплатить договорную неустойку — 2 400 руб.\n"
+                                + "Всего — 242 400 руб.",
+                        "1. Оплатить общую сумму задолженности — 242 400 руб."
+                );
+
+        GuardrailResult result = service.check(
+                typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS),
+                typedPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("principal debt separately"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("sanction separately"));
+    }
+
+    @Test
+    void acceptsDemandSectionWithTotalAndBreakdownInOneSentence() {
+        String text = typedPaymentText("календарных")
+                .replace(
+                        "1. Уплатить основной долг — 240 000 руб.\n"
+                                + "2. Уплатить договорную неустойку — 2 400 руб.\n"
+                                + "Всего — 242 400 руб.",
+                        "1. Произвести оплату задолженности в размере 242 400 руб., "
+                                + "в том числе основной долг в размере 240 000 руб. "
+                                + "и договорную неустойку в размере 2 400 руб."
+                );
+
+        GuardrailResult result = service.check(
+                typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS),
+                typedPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
+    void blocksFirstPersonSingularDemandForLegalEntityCreditor() {
+        String text = typedPaymentText("календарных")
+                .replace("ООО Экспедитор требует:", "Требую:");
+
+        GuardrailResult result = service.check(
+                typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS),
+                typedPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("first-person singular"));
+    }
+
+    @Test
+    void blocksArticle395ForContractPenaltyWhenArticle330IsAvailable() {
+        String text = typedPaymentText("календарных")
+                .replace("ст. 330 ГК РФ", "ст. 395 ГК РФ");
+        GenerateClaimResponse response = new GenerateClaimResponse(
+                GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
+                text,
+                "Просрочка оплаты по договору",
+                List.of(
+                        new GenerateClaimResponse.UsedContractClause("8.2", "typed-payment", "срок оплаты"),
+                        new GenerateClaimResponse.UsedContractClause("9.4", "typed-penalty", "договорная неустойка"),
+                        new GenerateClaimResponse.UsedContractClause("10.2", "typed-response", "срок ответа")
+                ),
+                List.of(
+                        new GenerateClaimResponse.UsedLawArticle("law-309", "ГК РФ", "309", "надлежащее исполнение"),
+                        new GenerateClaimResponse.UsedLawArticle("law-395", "ГК РФ", "395", "ошибочная квалификация")
+                ),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        10,
+                        "RUB"
+                ),
+                List.of(),
+                List.of(),
+                true
+        );
+
+        GenerateClaimRequest base = typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                base.backendCalculation(),
+                base.contractContext(),
+                List.of(
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-309", "ГК РФ", "309", "надлежащее исполнение",
+                                "Обязательства исполняются надлежащим образом",
+                                "ст. 309 ГК РФ", "2026-08-15", "PAYMENT_DELAY"
+                        ),
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-330", "ГК РФ", "330", "договорная неустойка",
+                                "Неустойка устанавливается законом или договором",
+                                "ст. 330 ГК РФ", "2026-08-15", "PAYMENT_DELAY"
+                        ),
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-395", "ГК РФ", "395", "проценты",
+                                "Проценты за пользование чужими денежными средствами",
+                                "ст. 395 ГК РФ", "2026-08-15", "PAYMENT_DELAY"
+                        )
+                ),
+                base.templateContext(),
+                base.similarExamples()
+        );
+
+        GuardrailResult result = service.check(request, response);
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("Article 330"));
+        assertThat(result.errors()).anyMatch(error -> error.contains("Article 395"));
+    }
+
+
+    private GenerateClaimRequest typedPaymentRequestWithAdditionalClaimProcedureClause() {
+        GenerateClaimRequest base = typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS);
+        return new GenerateClaimRequest(
+                base.caseFacts(),
+                base.backendCalculation(),
+                List.of(
+                        base.contractContext().get(0),
+                        base.contractContext().get(1),
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "typed-response-intro", "10.1", "Претензионный порядок", "CLAIM_PROCEDURE",
+                                "До обращения в суд стороны используют письменную претензию."
+                        ),
+                        base.contractContext().get(2)
+                ),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+    }
+
+    private GenerateClaimResponse typedPaymentResponseWithAdditionalClaimProcedureClause(String text) {
+        GenerateClaimResponse base = typedPaymentResponse(text);
+        return new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                base.summaryForLawyer(),
+                List.of(
+                        base.usedContractClauses().get(0),
+                        base.usedContractClauses().get(1),
+                        new GenerateClaimResponse.UsedContractClause(
+                                "10.1", "typed-response-intro", "претензионный порядок"
+                        ),
+                        base.usedContractClauses().get(2)
+                ),
+                base.usedLawArticles(),
+                base.backendCalculationUsed(),
+                base.attachments(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+    }
+
+    private GenerateClaimRequest typedPaymentRequest(GenerateClaimRequest.TermDayType responseDayType) {
+        GenerateClaimRequest base = productionPaymentRequest();
+        return new GenerateClaimRequest(
+                new GenerateClaimRequest.CaseFacts(
+                        base.caseFacts().claimId(),
+                        base.caseFacts().claimNumber(),
+                        base.caseFacts().claimType(),
+                        base.caseFacts().creditor(),
+                        base.caseFacts().debtor(),
+                        new GenerateClaimRequest.ContractFacts(
+                                "45/2026", "10.01.2026", 10, responseDayType, "contract-doc-1"
+                        ),
+                        base.caseFacts().shipment(),
+                        base.caseFacts().payment(),
+                        base.caseFacts().claimDate(),
+                        base.caseFacts().signatory()
+                ),
+                base.backendCalculation(),
+                List.of(
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "typed-payment", "8.2", "Срок оплаты", "PAYMENT_TERMS",
+                                "Оплата должна быть произведена в течение 30 календарных дней."
+                        ),
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "typed-penalty", "9.4", "Неустойка", "PENALTY",
+                                "Неустойка 0,1 % за каждый календарный день просрочки."
+                        ),
+                        new GenerateClaimRequest.ContractContextChunk(
+                                "typed-response", "10.2", "Претензионный порядок", "CLAIM_PROCEDURE",
+                                "Ответ направляется в течение 10 дней с даты получения претензии."
+                        )
+                ),
+                List.of(
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-309", "ГК РФ", "309", "надлежащее исполнение",
+                                "Обязательства исполняются надлежащим образом",
+                                "ст. 309 ГК РФ", "2026-08-15", "PAYMENT_DELAY"
+                        ),
+                        new GenerateClaimRequest.LegalContextItem(
+                                "law-330", "ГК РФ", "330", "договорная неустойка",
+                                "Неустойка устанавливается законом или договором",
+                                "ст. 330 ГК РФ", "2026-08-15", "PAYMENT_DELAY"
+                        )
+                ),
+                base.templateContext(),
+                base.similarExamples()
+        );
+    }
+
+    private GenerateClaimResponse typedPaymentResponse(String text) {
+        return new GenerateClaimResponse(
+                GenerateClaimRequest.ClaimType.PAYMENT_DELAY,
+                text,
+                "Просрочка оплаты по договору",
+                List.of(
+                        new GenerateClaimResponse.UsedContractClause("8.2", "typed-payment", "срок оплаты"),
+                        new GenerateClaimResponse.UsedContractClause("9.4", "typed-penalty", "договорная неустойка"),
+                        new GenerateClaimResponse.UsedContractClause("10.2", "typed-response", "срок ответа")
+                ),
+                List.of(
+                        new GenerateClaimResponse.UsedLawArticle("law-309", "ГК РФ", "309", "надлежащее исполнение"),
+                        new GenerateClaimResponse.UsedLawArticle("law-330", "ГК РФ", "330", "договорная неустойка")
+                ),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        10,
+                        "RUB"
+                ),
+                List.of(),
+                List.of(),
+                true
+        );
+    }
+
+    private String typedPaymentText(String responseDayUnit) {
+        return """
+                Исх. № CLM-2026-001 от 10.06.2026.
+                Претензия о нарушении срока оплаты оказанных услуг.
+                От: ООО Экспедитор, ИНН 7800000000.
+                Кому: ООО Клиент, ИНН 7700000000.
+                Услуги по маршруту Санкт-Петербург — Москва подтверждены актом от 01.05.2026.
+                Согласно п. 8.2 Договора №45/2026 от 10.01.2026 срок оплаты истёк 31.05.2026.
+                Основной долг составляет 240 000 руб.
+                В соответствии с п. 9.4 Договора №45/2026 от 10.01.2026 начислена договорная неустойка — 2 400 руб.
+                Общая сумма требований — 242 400 руб.
+                Правовое основание: ст. 309 ГК РФ и ст. 330 ГК РФ.
+                ООО Экспедитор требует:
+                1. Уплатить основной долг — 240 000 руб.
+                2. Уплатить договорную неустойку — 2 400 руб.
+                Всего — 242 400 руб.
+                В соответствии с п. 10.2 Договора №45/2026 от 10.01.2026 письменный ответ направить в течение 10 %s дней с даты получения настоящей претензии.
+                Юрист __________ Дмитриев Павел Алексеевич
+                """.formatted(responseDayUnit);
+    }
+
     private GenerateClaimRequest productionPaymentRequest() {
         GenerateClaimRequest base = paymentRequest(true);
         return new GenerateClaimRequest(
@@ -995,17 +1327,124 @@ class RuleBasedGuardrailServiceTest {
         );
     }
 
+    private GenerateClaimResponse paymentResponseWithOverdueDays(String text, int overdueDays) {
+        GenerateClaimResponse base = validPaymentResponse(text);
+        return new GenerateClaimResponse(
+                base.claimType(),
+                base.claimText(),
+                base.summaryForLawyer(),
+                base.usedContractClauses(),
+                base.usedLawArticles(),
+                new GenerateClaimResponse.BackendCalculationUsed(
+                        base.backendCalculationUsed().principalDebt(),
+                        base.backendCalculationUsed().penaltyType(),
+                        base.backendCalculationUsed().penaltyAmount(),
+                        base.backendCalculationUsed().totalAmount(),
+                        overdueDays,
+                        base.backendCalculationUsed().currency()
+                ),
+                base.attachments(),
+                base.warnings(),
+                base.manualReviewRequired()
+        );
+    }
+
     private String validText() {
         return """
                 От: ООО Экспедитор, ИНН 7800000000.
                 Кому: ООО Клиент, ИНН 7700000000.
                 Претензия по п. 4.2 Договора №45/2026 от 10.01.2026.
-                Перевозка по маршруту Санкт-Петербург — Москва, заказ ORD-157.
+                Перевозка по маршруту Санкт-Петербург — Москва в рамках рейса № ORD-157.
                 Услуги подтверждены актом №157 от 01.05.2026, ТТН-157 и счётом INV-157.
                 Срок оплаты истёк 31.05.2026. Основной долг составляет 240 000 руб.,
                 неустойка — 2 400 руб., итого к оплате — 242 400 руб.
                 Правовое основание: ст. 309 ГК РФ.
                 """;
+    }
+
+    @Test
+    void blocksPaymentDelayWhenRideNumberIsCalledAnOrder() {
+        String text = validText().replace(
+                "в рамках рейса № ORD-157",
+                "по заказу № ORD-157"
+        );
+
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(text));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("must call it a ride number"));
+    }
+
+    @Test
+    void acceptsPaymentDelayWhenOrderNumberIsPresentedAsRideNumber() {
+        GuardrailResult result = service.check(paymentRequest(true), validPaymentResponse(validText()));
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).noneMatch(error -> error.contains("ride number"));
+    }
+
+    @Test
+    void blocksWhenAccrualPeriodUsesCalculationDateInsteadOfLastAccruedDay() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                new GenerateClaimRequest.BackendCalculation(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        "0,1% в день",
+                        29,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        "RUB",
+                        "backend",
+                        "17.07.2026",
+                        "14.08.2026"
+                ),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+        String text = validText()
+                + "\nНеустойка рассчитана за период с 17 июля 2026 года по 15 августа 2026 года.";
+
+        GuardrailResult result = service.check(request, paymentResponseWithOverdueDays(text, 29));
+
+        assertThat(result.decision()).isEqualTo(GuardrailDecision.BLOCK);
+        assertThat(result.errors()).anyMatch(error -> error.contains("overdue_end_date: 14.08.2026"));
+    }
+
+    @Test
+    void acceptsAccrualPeriodEndingOnLastAccruedDay() {
+        GenerateClaimRequest base = paymentRequest(true);
+        GenerateClaimRequest request = new GenerateClaimRequest(
+                base.caseFacts(),
+                new GenerateClaimRequest.BackendCalculation(
+                        new BigDecimal("240000"),
+                        GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY,
+                        "0,1% в день",
+                        29,
+                        new BigDecimal("2400"),
+                        new BigDecimal("242400"),
+                        "RUB",
+                        "backend",
+                        "17.07.2026",
+                        "14.08.2026"
+                ),
+                base.contractContext(),
+                base.legalContext(),
+                base.templateContext(),
+                base.similarExamples()
+        );
+        String text = validText()
+                + "\nНеустойка рассчитана за период с 17 июля 2026 года по 14 августа 2026 года.";
+
+        GuardrailResult result = service.check(request, paymentResponseWithOverdueDays(text, 29));
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
     }
 
     @Test

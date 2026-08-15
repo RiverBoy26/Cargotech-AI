@@ -2,6 +2,7 @@ package ru.sber.cargotech.ai.gigachat;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import ru.sber.cargotech.ai.config.GigaChatProperties;
@@ -11,6 +12,8 @@ import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
 import ru.sber.cargotech.ai.llm.logging.LlmLogService;
 import ru.sber.cargotech.ai.security.ReversiblePromptMasker;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -21,6 +24,7 @@ public class GigaChatClient {
     private final GigaChatProperties properties;
     private final GigaChatAuthService authService;
     private final RestClient restClient;
+    private final RestClient.Builder restClientBuilder;
     private final LlmLogService llmLogService;
     private final ReversiblePromptMasker reversiblePromptMasker;
 
@@ -33,7 +37,8 @@ public class GigaChatClient {
     ) {
         this.properties = properties;
         this.authService = authService;
-        this.restClient = restClientBuilder.build();
+        this.restClientBuilder = restClientBuilder.clone();
+        this.restClient = this.restClientBuilder.build();
         this.llmLogService = llmLogService;
         this.reversiblePromptMasker = reversiblePromptMasker;
     }
@@ -56,6 +61,16 @@ public class GigaChatClient {
             UUID userId,
             String operation
     ) {
+        return sendChatWithTrace(messages, caseId, userId, operation, null);
+    }
+
+    public ChatCallResult sendChatWithTrace(
+            List<GigaChatMessage> messages,
+            String caseId,
+            UUID userId,
+            String operation,
+            Long readTimeoutMillis
+    ) {
         String requestId = llmLogService.newRequestId();
         Instant startedAt = llmLogService.now();
         boolean providerInvoked = false;
@@ -75,7 +90,10 @@ public class GigaChatClient {
             );
 
             providerInvoked = true;
-            providerResponse = restClient.post()
+            RestClient callClient = readTimeoutMillis == null
+                    ? restClient
+                    : restClientWithReadTimeout(readTimeoutMillis);
+            providerResponse = callClient.post()
                     .uri(properties.getChatUrl())
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -120,6 +138,27 @@ public class GigaChatClient {
 
             throw e;
         }
+    }
+
+
+    private RestClient restClientWithReadTimeout(long readTimeoutMillis) {
+        if (readTimeoutMillis <= 0) {
+            throw new IllegalArgumentException("readTimeoutMillis must be positive");
+        }
+
+        long timeout = Math.min(readTimeoutMillis, Integer.MAX_VALUE);
+        Duration readTimeout = Duration.ofMillis(timeout);
+        Duration connectTimeout = Duration.ofMillis(Math.min(timeout, 10_000L));
+
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(readTimeout);
+
+        return restClientBuilder.clone()
+                .requestFactory(requestFactory)
+                .build();
     }
 
     public record ChatCallResult(

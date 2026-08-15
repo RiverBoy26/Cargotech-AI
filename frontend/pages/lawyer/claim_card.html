@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Карточка претензии</title>
-    <link rel="stylesheet" href="../../styles/claim_card.css?v=20260814-contract-source-1">
+    <link rel="stylesheet" href="../../styles/claim_card.css?v=20260814-readable-sources-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
@@ -90,14 +90,18 @@
                                 <div class="sources_view" id="used_sources_container" aria-live="polite">
                                     <div class="contract_source" id="contract_source" hidden>
                                         <div class="contract_source_info">
-                                            <span class="contract_source_type">Договор</span>
+                                            <span class="contract_source_type">Основной документ</span>
                                             <strong class="contract_source_title" id="contract_source_title"></strong>
                                             <span class="contract_source_meta" id="contract_source_meta"></span>
                                         </div>
                                         <button class="action_btn contract_source_download" id="btn_download_contract_source"
                                                 type="button" hidden>Скачать договор</button>
                                     </div>
-                                    <pre class="sources_text" id="used_sources" hidden></pre>
+
+                                    <p class="sources_intro" id="used_sources_intro" hidden>
+                                        Ниже указаны пункты договора и правовые основания, использованные при формировании претензии.
+                                    </p>
+                                    <div class="sources_cards" id="used_sources" hidden></div>
                                     <p class="sources_empty" id="used_sources_empty">Источники ещё не зафиксированы</p>
                                 </div>
                             </details>

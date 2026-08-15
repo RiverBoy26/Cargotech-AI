@@ -460,7 +460,7 @@ class ContractTextExtractionServiceTest {
 
         assertThat(values).anySatisfy(value -> {
             assertThat(value.field()).isEqualTo(ContractExtractionField.PAYMENT_SCHEDULE_TYPE);
-            assertThat(value.value()).isEqualTo("NEXT_PAYMENT_DAY");
+            assertThat(value.value()).isEqualTo("NEXT_PAYMENT_DAY_AFTER_TERM");
         });
         assertThat(values).anySatisfy(value -> {
             assertThat(value.field()).isEqualTo(ContractExtractionField.PAYMENT_WEEK_DAYS);
@@ -482,5 +482,78 @@ class ContractTextExtractionServiceTest {
                 assertThat(value.clauseNumber()).isEqualTo("8.2");
             });
     }
+
+
+    @Test
+    void preservesLaterOfActAndDocumentPackageAnchor() {
+        String text = "8.2. Оплата производится в течение 30 календарных дней с более поздней из двух дат: даты подписания акта оказанных услуг либо даты получения полного комплекта оригиналов документов.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_START_EVENT)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isEqualTo("LATEST_ACT_OR_DOCUMENT_PACKAGE"));
+    }
+
+    @Test
+    void preservesActAnchorWithDocumentPackagePrerequisite() {
+        String text = "8.2. Оплата производится в течение 45 календарных дней с даты подписания акта оказанных услуг при условии получения Клиентом полного комплекта перевозочных документов.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_START_EVENT)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isEqualTo("ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE"));
+    }
+
+    @Test
+    void invoiceAndUpdCompositeAnchorRemainsForManualReview() {
+        String text = "8.2. Клиент производит оплату в течение 10 рабочих дней с даты получения Клиентом счета и подписанного универсального передаточного документа (УПД).";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PAYMENT_START_EVENT)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isNull());
+    }
+
+    @Test
+    void dynamicOneThreeHundredthKeyRatePenaltyIsNotConvertedToArticle395() {
+        String text = "9.4. При нарушении срока оплаты неустойка составляет одну трехсотую действующей в соответствующий период ключевой ставки Банка России от суммы просроченного платежа за каждый день.";
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text).candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.PENALTY_TYPE)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isNull());
+    }
+
+    @Test
+    void extractsPartyInnsFromRequisitesWithoutTurningThemIntoEditableTerms() {
+        String text = """
+            Заказчик:
+            ООО «ТехноСклад Поволжье»
+            ИНН 6319245078 / КПП 631901001
+            Экспедитор:
+            ООО «Маршал Транспортные Решения»
+            ИНН 7812456730 / КПП 781101001
+            """;
+
+        List<ContractExtractionCandidateRequest> values = service.extract(text, "APACHE_POI").candidates();
+
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.CLIENT_INN)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isEqualTo("6319245078"));
+        assertThat(values)
+            .filteredOn(value -> value.field() == ContractExtractionField.EXPEDITOR_INN)
+            .singleElement()
+            .satisfies(value -> assertThat(value.value()).isEqualTo("7812456730"));
+    }
+
 
 }

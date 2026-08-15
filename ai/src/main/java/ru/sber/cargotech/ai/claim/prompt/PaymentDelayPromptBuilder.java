@@ -2,10 +2,13 @@ package ru.sber.cargotech.ai.claim.prompt;
 
 import org.springframework.stereotype.Service;
 import ru.sber.cargotech.ai.claim.dto.GenerateClaimRequest;
+import ru.sber.cargotech.ai.claim.dto.GenerateClaimResponse;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatMessage;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class PaymentDelayPromptBuilder {
@@ -25,6 +28,89 @@ public class PaymentDelayPromptBuilder {
         );
     }
 
+    public List<GigaChatMessage> buildRepair(
+            GenerateClaimRequest request,
+            GenerateClaimResponse blockedResponse,
+            List<String> errors
+    ) {
+        validate(request);
+
+        GenerateClaimRequest repairInput = new GenerateClaimRequest(
+                request.caseFacts(),
+                request.backendCalculation(),
+                repairContractContext(request, blockedResponse),
+                request.legalContext(),
+                null,
+                List.of()
+        );
+
+        String errorList = errors == null || errors.isEmpty()
+                ? "- guardrail rejected the response"
+                : "- " + String.join("\n- ", errors);
+
+        return List.of(
+                new GigaChatMessage("system", """
+                        Ты исправляешь ранее созданный JSON претензии PAYMENT_DELAY.
+                        AUTHORITATIVE_INPUT ниже является единственным источником фактов, сумм, дат, договора и права.
+                        Не пересчитывай backend_calculation и не добавляй отсутствующие факты или источники.
+                        Верни полный GenerateClaimResponse строго как валидный JSON без markdown и пояснений.
+                        """),
+                new GigaChatMessage("user", """
+                        Исправь BLOCKED_RESPONSE так, чтобы устранить все ошибки guardrail.
+
+                        GUARDRAIL_ERRORS:
+                        %s
+
+                        AUTHORITATIVE_INPUT:
+                        %s
+
+                        BLOCKED_RESPONSE:
+                        %s
+
+                        Критические правила ремонта:
+                        1. Все суммы, overdue_days, penalty_type и currency скопируй без изменения из backend_calculation.
+                        2. Все даты в claim_text пиши по-русски; overdue_end_date — последний день начисления, не claim_date.
+                        3. shipment.order_number в PAYMENT_DELAY называй только «рейс № ...» или «в рамках рейса № ...».
+                        4. Для каждого используемого нумерованного пункта договора укажи тот же clause_number/chunk_id в used_contract_clauses и процитируй его рядом с соответствующим условием как «п. X Договора № <номер> от <дата>».
+                        5. PAYMENT_TERMS используй только для оплаты, PENALTY — только для договорной неустойки, CLAIM_PROCEDURE — только для срока ответа. Не группируй разные clause_type.
+                        6. Каждую used_law_articles норму реально процитируй в claim_text; не добавляй норм вне legal_context.
+                        7. При LEGAL_INTEREST используй проценты по ст. 395 ГК РФ, не называй их неустойкой/штрафом/пеней.
+                        8. claim_response_days — только срок письменного ответа с даты получения претензии, не срок оплаты.
+                        9. attachments для PAYMENT_DELAY = []; не добавляй приложения, банковские реквизиты, суд или иск.
+                        10. Блок требований должен содержать total_amount и его состав: principal_debt + положительную penalty_amount.
+                        11. manual_review_required = true.
+                        """.formatted(errorList, toCompactJson(repairInput), toCompactJson(blockedResponse)))
+        );
+    }
+
+    private List<GenerateClaimRequest.ContractContextChunk> repairContractContext(
+            GenerateClaimRequest request,
+            GenerateClaimResponse blockedResponse
+    ) {
+        Set<String> selectedChunkIds = new HashSet<>();
+        if (blockedResponse != null && blockedResponse.usedContractClauses() != null) {
+            blockedResponse.usedContractClauses().stream()
+                    .filter(java.util.Objects::nonNull)
+                    .map(GenerateClaimResponse.UsedContractClause::chunkId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .forEach(selectedChunkIds::add);
+        }
+
+        Set<String> relevantTypes = new HashSet<>(Set.of("PAYMENT_TERMS", "CLAIM_PROCEDURE"));
+        if (request.backendCalculation() != null
+                && request.backendCalculation().penaltyType() == GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY) {
+            relevantTypes.add("PENALTY");
+        }
+
+        return request.contractContext() == null
+                ? List.of()
+                : request.contractContext().stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(chunk -> selectedChunkIds.contains(chunk.chunkId())
+                        || relevantTypes.contains(chunk.clauseType()))
+                .toList();
+    }
+
     private String buildSystemPrompt() {
         return """
                 Ты — AI-модуль для подготовки черновиков претензий по логистическим спорам.
@@ -39,7 +125,9 @@ public class PaymentDelayPromptBuilder {
                 5. contract_context используй только как источник условий договора.
                 6. Ссылайся только на те пункты договора, которые присутствуют в contract_context.
                 7. Если contract_context содержит пункт с clause_number, относящийся к используемому условию, обязательно процитируй этот пункт в claim_text в формате «п. X Договора № <номер> от <дата>» и добавь его в used_contract_clauses. Если clause_number отсутствует, не выдумывай его: пиши «согласно условиям договора», а в used_contract_clauses передавай clause_number = null.
-                7.1. Для PAYMENT_DELAY обязательно свяжи срок оплаты с конкретным пунктом договора, если такой нумерованный пункт есть в contract_context. Если в тексте используется договорный срок ответа на претензию и соответствующий нумерованный пункт есть в contract_context, процитируй и его.
+                7.1. Для PAYMENT_DELAY используй clause_type как назначение пункта: PAYMENT_TERMS — только для срока/условий оплаты, PENALTY — для договорной неустойки, CLAIM_PROCEDURE — для срока ответа на претензию. Не подменяй пункт одного назначения другим.
+                7.2. Если нумерованный пункт соответствующего clause_type есть в contract_context, процитируй его в той же логической строке/фразе, где используется соответствующее условие.
+                7.3. Не объединяй в одну групповую ссылку пункты разных clause_type. Например, срок оплаты по п. 8.2 и неустойку по п. 9.4 обосновывай отдельными фразами, а не «п. 8.2, 9.4».
                 8. legal_context используй только как источник правовых оснований.
                 9. Ссылайся только на те нормы, которые присутствуют в legal_context.
                 10. Не добавляй нормы закона самостоятельно.
@@ -56,7 +144,7 @@ public class PaymentDelayPromptBuilder {
                 21. Если claim_date заполнена, обязательно укажи её в начале документа как дату претензии.
                 22. Если contract.contract_date заполнена, обязательно укажи её в claim_text.
                 23. Если payment.payment_due_date заполнена, обязательно укажи её как последний установленный день оплаты.
-                24. Если contract.claim_response_days больше нуля, это срок только для письменного ответа на претензию. Требование погасить задолженность сформулируй отдельно и не присваивай ему этот N-дневный срок. Отдельной фразой потребуй направить письменный ответ в течение ровно указанного количества календарных дней с даты получения претензии.
+                24. Если contract.claim_response_days больше нуля, это срок только для письменного ответа на претензию. Требование погасить задолженность сформулируй отдельно и не присваивай ему этот N-дневный срок. Единицу срока бери строго из contract.claim_response_day_type: CALENDAR_DAYS = календарных дней, WORKING_DAYS = рабочих дней, BANKING_DAYS = банковских дней. Отдельной фразой потребуй направить письменный ответ в течение ровно указанного срока с даты получения претензии.
                 25. Если signatory заполнен, заверши документ блоком подписи с точными position, name и authority, если основание полномочий передано.
                 26. Если shipment.act_date есть, а shipment.act_number отсутствует, пиши «акт от <дата>» без символа № и без пустого места для номера.
                 27. Если shipment.act_number есть, укажи точный номер и дату акта.
@@ -72,19 +160,22 @@ public class PaymentDelayPromptBuilder {
                 37. Денежные суммы в claim_text оформляй читабельно: разделяй тысячи пробелами и не используй машинную запись вида «100000.00 рублей». Предпочтительный вид: «100 000 рублей 00 копеек». Числовое значение не меняй.
                 38. Правовую citation встраивай в естественную юридическую фразу, например «В соответствии со ст. 309 ГК РФ ...». Не используй конструкцию вида «В соответствии с ГК РФ, ст. 309 ...».
                 39. Правовое обоснование строй по иерархии: сначала точные условия договора, затем применимые нормы ГК РФ, затем применимые отраслевые нормы. Не вставляй статьи для количества.
-                39.1. Если backend_calculation.penalty_type = LEGAL_INTEREST и legal_context содержит ст. 395 ГК РФ, обязательно используй именно этот legal chunk как основание процентов. Не подменяй его договорной неустойкой.
-                40. Обязательно укажи период просрочки от backend_calculation.overdue_start_date до backend_calculation.overdue_end_date, если обе даты заполнены.
+                39.1. Если backend_calculation.penalty_type = LEGAL_INTEREST и legal_context содержит ст. 395 ГК РФ, обязательно используй именно ст. 395 ГК РФ как основание процентов. Не называй это договорной неустойкой и не применяй ст. 330 ГК РФ как основание этой суммы.
+                39.2. Если backend_calculation.penalty_type = CONTRACT_PENALTY и legal_context содержит ст. 330 ГК РФ, используй ст. 330 ГК РФ только как правовую квалификацию неустойки; ставку, предел и сумму бери исключительно из договора/backend_calculation. Не подменяй договорную неустойку процентами по ст. 395 ГК РФ.
+                40. Обязательно укажи период начисления санкции/процентов от backend_calculation.overdue_start_date до backend_calculation.overdue_end_date, если обе даты заполнены. backend_calculation.overdue_end_date — последний календарный день, за который начислена сумма; не заменяй его датой претензии. Для LEGAL_INTEREST предпочтительная форма: «По состоянию на <case_facts.claim_date> проценты по ст. 395 ГК РФ за период с <overdue_start_date> по <overdue_end_date> составляют ...».
                 41. В расчёте задолженности отдельно укажи исходную сумму обязательства из backend_calculation.original_obligation_amount, сумму поступивших оплат из backend_calculation.paid_amount и остаток основного долга из backend_calculation.principal_debt. Не подменяй эти значения друг другом.
-                42. shipment.order_number — только идентификатор заказа/рейса. Во входе нет отдельной даты заказа/заявки, поэтому никогда не добавляй к order_number конструкцию «от <дата>» и не придумывай дату заказа.
+                42. В сценарии PAYMENT_DELAY shipment.order_number — номер рейса CargoTech. Указывай его только как «рейс № <order_number>» / «в рамках рейса № <order_number>». Не называй его заказом или заявкой. Во входе нет отдельной даты заказа/заявки, поэтому никогда не добавляй к order_number конструкцию «от <дата>» и не придумывай дату заказа.
                 43. payment.payment_confirmed_by_accountant подтверждает только факт неоплаты/частичной оплаты. Не утверждай на этом основании, что бухгалтер подтвердил выставление документов, получение комплекта документов, наступление срока платежа или иные факты.
                 44. Если backend_calculation.penalty_type = LEGAL_INTEREST, называй сумму только «процентами по ст. 395 ГК РФ» или «процентами за пользование чужими денежными средствами». Не называй её неустойкой, штрафом или пеней.
-                45. Не объединяй разные ссылки так, чтобы их нельзя было однозначно проверить. Групповые ссылки вида «п. 8.2, 8.4 Договора № <номер> от <дата>» и «ст. 309, 314 ГК РФ» допустимы, если каждая указанная норма действительно использована.
+                45. Не объединяй договорные пункты разных назначений. Группа договорных пунктов допустима только если все они имеют одинаковый clause_type и подтверждают одно и то же условие. Группировка правовых норм допустима только если не скрывает их назначение.
                 46. Не добавляй отдельную строку с местом составления документа («г. Москва», «г. Барнаул» и т.п.): отдельного поля места составления во входных данных нет.
                 47. Блок сторон делай компактно, строго двумя строками: «От: <creditor.name>, ИНН <creditor.inn>, <creditor.legal_address>» и «Кому: <debtor.name>, ИНН <debtor.inn>, <debtor.legal_address>». Не дублируй адреса.
                 48. Не добавляй телефоны, email, факсы, сайты, пустые контактные поля, «в лице ...», «уполномоченное лицо» и иные сведения о представителях сторон: таких полей во входных данных нет. signatory используется только в финальном блоке подписи.
                 49. Не переносись во внутренние ссылки договора вроде «раздел 6», «пункт 7.3», если соответствующий фрагмент с этим номером отсутствует в contract_context. Передай смысл используемого пункта без непроверенной дополнительной ссылки.
                 50. Для каждого использованного нумерованного пункта договора ссылка в claim_text должна содержать номер договора в той же фразе: «п. X Договора № <номер> от <дата>». Для группы пунктов допустимо «п. 8.2, 8.4 Договора № ... от ...».
                 51. Если legal_context содержит ст. 801 ГК РФ и входные данные прямо подтверждают транспортно-экспедиционный характер услуг, используй ст. 801 ГК РФ как квалифицирующую норму. Не применяй её только по догадке.
+                52. Отправитель претензии — организация. Не используй первое лицо единственного числа «требую». Формулируй «<creditor.name> требует:» либо нейтральное «требуем».
+                53. В блоке требований не скрывай состав суммы: должны быть явно указаны основной долг, при положительной санкции — санкция/проценты с правильным названием, и общий итог. Допустимы либо отдельные строки для этих сумм, либо одна юридически естественная фраза вида «уплатить <итог>, в том числе основной долг <сумма> и проценты/неустойку <сумма>». Нельзя указывать только итог без расшифровки.
                 """;
     }
 
@@ -133,13 +224,13 @@ public class PaymentDelayPromptBuilder {
 
                 Обязательная структура claim_text:
                 1. Строка «Исх. № <case_facts.claim_number> от <case_facts.claim_date>», если значения заполнены.
-                2. Название: «Претензия о нарушении срока оплаты оказанных услуг».
+                2. Название строго: «Претензия о нарушении срока оплаты оказанных услуг». Не добавляй в заголовок номера пунктов договора, ссылки на нормы права или иные пояснения.
                 3. Отправитель и получатель — строго две компактные строки без отдельных блоков представителя и контактов:
                    «От: <creditor.name>, ИНН <creditor.inn>, <creditor.legal_address>»
                    «Кому: <debtor.name>, ИНН <debtor.inn>, <debtor.legal_address>».
                    Не повторяй адреса, не добавляй телефон/email и не добавляй «в лице ...».
                 4. Номер и дата договора точно из case_facts.contract.
-                5. Описание услуги или перевозки только из case_facts.shipment. order_number можно указать как номер заказа/рейса, но без даты заказа: отдельной даты заказа/заявки во входе нет.
+                5. Описание услуги или перевозки только из case_facts.shipment. Если order_number заполнен, в PAYMENT_DELAY называй его только номером рейса: «в рамках рейса № <order_number>». Не называй order_number заказом или заявкой и не добавляй к нему дату.
                 6. Подтверждающий акт:
                    - если act_number и act_date заполнены — «акт № <номер> от <дата>»;
                    - если заполнена только act_date — «акт от <дата>»;
@@ -147,9 +238,9 @@ public class PaymentDelayPromptBuilder {
                 7. Календарная дата срока оплаты из case_facts.payment.payment_due_date.
                 8. Факт отсутствия оплаты только если payment_status это подтверждает. payment_confirmed_by_accountant означает только подтверждение статуса оплаты и не подтверждает выставление/получение документов или наступление договорного срока.
                 9. Исходная сумма обязательства, поступившие оплаты, остаток основного долга, начисленная санкция/проценты и итог строго из backend_calculation. При penalty_type = LEGAL_INTEREST называй начисление процентами по ст. 395 ГК РФ, а не неустойкой.
-                10. Отдельный абзац с правовым обоснованием: минимум одна применимая citation из legal_context. До правовых норм укажи точные применимые пункты договора из contract_context в формате «п. X Договора № <номер> от <дата>». Если подтверждена транспортная экспедиция и legal_context содержит ст. 801 ГК РФ, включи её как квалифицирующую норму.
-                11. Требование оплатить точную total_amount.
-                12. Если claim_response_days больше нуля — раздели требования: отдельно потребуй погасить задолженность без выдуманного нового срока оплаты; отдельно потребуй направить письменный ответ в течение <N> календарных дней с даты получения настоящей претензии.
+                10. Правовое обоснование строй по смысловым блокам. Срок/обязанность оплаты обоснуй пунктом PAYMENT_TERMS и применимыми общими нормами; договорную неустойку — отдельной фразой пунктом PENALTY и, если он есть в legal_context, ст. 330 ГК РФ; проценты LEGAL_INTEREST — ст. 395 ГК РФ. Не сваливай разные договорные основания в одну групповую ссылку.
+                11. Блок требований начни формой «<creditor.name> требует:», а не «требую». Оформи денежные требования отдельными строками: отдельно основной долг <principal_debt>, отдельно положительную санкцию/проценты <penalty_amount>, затем отдельной строкой «Итого к оплате: <total_amount>». Не объединяй total_amount, основной долг и санкцию в одну фразу. Требование направить письменный ответ также вынеси отдельной строкой.
+                12. Если claim_response_days больше нуля — отдельной фразой потребуй письменный ответ с единицей срока из claim_response_day_type. Если существует нумерованный CLAIM_PROCEDURE chunk, процитируй этот пункт в той же фразе.
                 13. Если signatory заполнен — подпись в форме «<position> __________ <name>» и строка «Действует на основании: <authority>», если authority заполнено.
                 14. Не добавляй раздел «Приложения», перечень приложений, банковские реквизиты и фразы об отсутствии банковских реквизитов.
                 15. Все даты в самом claim_text преобразуй из входного формата в русскую письменную форму «DD <месяц> YYYY года». Не копируй YYYY-MM-DD.
@@ -181,11 +272,22 @@ public class PaymentDelayPromptBuilder {
                 """.replace("{INPUT_JSON}", inputJson);
     }
 
-    private String toJson(GenerateClaimRequest request) {
+    private String toCompactJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Failed to serialize compact repair payload",
+                    e
+            );
+        }
+    }
+
+    private String toJson(Object value) {
         try {
             return objectMapper
                     .writerWithDefaultPrettyPrinter()
-                    .writeValueAsString(request);
+                    .writeValueAsString(value);
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Failed to serialize GenerateClaimRequest for prompt",

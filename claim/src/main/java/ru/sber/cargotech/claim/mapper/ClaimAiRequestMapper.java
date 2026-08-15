@@ -59,6 +59,7 @@ public class ClaimAiRequestMapper {
                                 claim.getResponseDeadlineDays() == null
                                         ? contract.getClaimResponseDays()
                                         : claim.getResponseDeadlineDays(),
+                                mapTermDayType(contract.getClaimResponseDayType()),
                                 contract.getDocumentId() == null ? null : contract.getDocumentId().toString()
                         ),
                         new AiGenerateClaimRequest.ShipmentFacts(
@@ -80,22 +81,20 @@ public class ClaimAiRequestMapper {
                                 resolvePaymentStatus(calculation),
                                 claim.isNonPaymentConfirmed()
                         ),
-                        asString(LocalDate.now()),
+                        asString(resolveClaimDate(calculation)),
                         mapSignatory(claim, currentUser)
                 ),
                 new AiGenerateClaimRequest.BackendCalculation(
                         calculation.getRemainingDebt(),
                         mapPenaltyType(calculation),
-                        calculation.getPenaltyRate() == null
-                                ? null
-                                : calculation.getPenaltyRate().toPlainString(),
+                        penaltyRateText(calculation),
                         calculation.getOverdueDays(),
                         calculation.getPenaltyAmount(),
                         calculation.getTotalAmount(),
                         shipment.getCurrency(),
                         calculation.getFormula(),
                         asString(calculation.getOverdueStartDate()),
-                        asString(LocalDate.now()),
+                        asString(resolveOverdueEndDate(calculation)),
                         calculation.getPrincipalDebt(),
                         calculation.getPaidAmount()
                 ),
@@ -164,6 +163,16 @@ public class ClaimAiRequestMapper {
         return new AiGenerateClaimRequest.SignatoryFacts(name, position, claim.getSignerAuthority());
     }
 
+
+    private String penaltyRateText(ClaimCalculation calculation) {
+        if (calculation.getPenaltyType() == ru.sber.cargotech.claim.enums.PenaltyType.ARTICLE_395) {
+            return "ключевая ставка Банка России по периодам";
+        }
+        return calculation.getPenaltyRate() == null
+                ? null
+                : calculation.getPenaltyRate().stripTrailingZeros().toPlainString();
+    }
+
     private AiGenerateClaimRequest.PenaltyType mapPenaltyType(ClaimCalculation calculation) {
         return switch (calculation.getPenaltyType()) {
             case CONTRACT_PENALTY -> AiGenerateClaimRequest.PenaltyType.CONTRACT_PENALTY;
@@ -175,6 +184,25 @@ public class ClaimAiRequestMapper {
     private LocalDate resolvePaymentDueDate(ClaimCalculation calculation) {
         LocalDate overdueStartDate = calculation.getOverdueStartDate();
         return overdueStartDate == null ? null : overdueStartDate.minusDays(1);
+    }
+
+    private LocalDate resolveClaimDate(ClaimCalculation calculation) {
+        return calculation != null && calculation.getCalculationDate() != null
+                ? calculation.getCalculationDate()
+                : LocalDate.now();
+    }
+
+    private LocalDate resolveOverdueEndDate(ClaimCalculation calculation) {
+        if (calculation == null
+                || calculation.getCalculationDate() == null
+                || calculation.getOverdueDays() == null
+                || calculation.getOverdueDays() <= 0) {
+            return null;
+        }
+        // ClaimCalculationService counts overdue days as the half-open interval
+        // [overdue_start_date, calculation_date), so the last accrued day is
+        // always the calendar day immediately before calculation_date.
+        return calculation.getCalculationDate().minusDays(1);
     }
 
     private AiGenerateClaimRequest.PaymentStatus resolvePaymentStatus(ClaimCalculation calculation) {
@@ -214,6 +242,7 @@ public class ClaimAiRequestMapper {
                                 "contract-clause-" + clause.getId(),
                                 clause.getClauseNumber(),
                                 section,
+                                clause.getClauseType() == null ? null : clause.getClauseType().name(),
                                 clause.getText()
                         ));
                     });
@@ -226,6 +255,7 @@ public class ClaimAiRequestMapper {
                     prefix + "-payment-term",
                     null,
                     "Структурированные условия оплаты",
+                    ru.sber.cargotech.claim.enums.ClauseType.PAYMENT_TERMS.name(),
                     "Оплата должна быть произведена в течение " + contract.getPaymentDays()
                             + " " + termDayTypeLabel(contract.getPaymentDayType()) + ". Начало отсчёта срока: "
                             + paymentStartEventLabel(contract.getPaymentStartEvent())
@@ -244,6 +274,7 @@ public class ClaimAiRequestMapper {
                     prefix + "-penalty",
                     null,
                     "Структурированные условия ответственности",
+                    ru.sber.cargotech.claim.enums.ClauseType.PENALTY.name(),
                     "Вид ответственности за просрочку: " + penaltyTypeLabel(contract.getPenaltyType())
                             + "; " + rate + cap
                             + ". Номер пункта договора в карточке не указан; запрещено выдумывать номер пункта."
@@ -256,6 +287,7 @@ public class ClaimAiRequestMapper {
                     prefix + "-pretrial-response",
                     null,
                     "Структурированный срок ответа на претензию",
+                    ru.sber.cargotech.claim.enums.ClauseType.CLAIM_PROCEDURE.name(),
                     "Срок направления ответа на претензию: " + contract.getClaimResponseDays()
                             + " " + termDayTypeLabel(contract.getClaimResponseDayType())
                             + " с даты получения претензии. Номер пункта договора в карточке не указан."
@@ -270,17 +302,18 @@ public class ClaimAiRequestMapper {
                 || contract.getPaymentWeekDays().isBlank()) {
             return "";
         }
-        if (contract.getPaymentScheduleType() != ru.sber.cargotech.claim.enums.PaymentScheduleType.NEXT_PAYMENT_DAY) {
-            return "";
-        }
         String days = java.util.Arrays.stream(contract.getPaymentWeekDays().split(","))
             .map(String::trim)
             .filter(value -> !value.isBlank())
             .map(this::weekDayLabel)
             .collect(java.util.stream.Collectors.joining(", "));
-        return days.isBlank()
-            ? ""
-            : ". Если расчётная дата не является платёжным днём, срок переносится на ближайший следующий платёжный день (" + days + ")";
+        if (days.isBlank()) return "";
+        return switch (contract.getPaymentScheduleType()) {
+            case NEXT_PAYMENT_DAY ->
+                ". Если расчётная дата не является платёжным днём, срок переносится на ближайший следующий платёжный день (" + days + ")";
+            case NEXT_PAYMENT_DAY_AFTER_TERM ->
+                ". Оплата производится в первый платёжный день строго после истечения расчётного срока (" + days + ")";
+        };
     }
 
     private String weekDayLabel(String value) {
@@ -310,6 +343,19 @@ public class ClaimAiRequestMapper {
             case INVOICE_DATE -> "дата выставления счёта";
             case REGISTRY_INCLUDED -> "дата включения рейса в согласованный реестр";
             case DOCUMENT_PACKAGE_RECEIVED -> "дата получения полного комплекта документов";
+            case LATEST_ACT_OR_DOCUMENT_PACKAGE ->
+                "более поздняя из даты подписания акта и даты получения полного комплекта документов";
+            case ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE ->
+                "дата подписания акта при обязательном условии получения полного комплекта документов";
+        };
+    }
+
+    private AiGenerateClaimRequest.TermDayType mapTermDayType(TermDayType type) {
+        if (type == null) return null;
+        return switch (type) {
+            case CALENDAR_DAYS -> AiGenerateClaimRequest.TermDayType.CALENDAR_DAYS;
+            case WORKING_DAYS -> AiGenerateClaimRequest.TermDayType.WORKING_DAYS;
+            case BANKING_DAYS -> AiGenerateClaimRequest.TermDayType.BANKING_DAYS;
         };
     }
 
@@ -356,16 +402,6 @@ public class ClaimAiRequestMapper {
                         "Допускается для действующего договорного денежного обязательства."
                 ),
                 new AiGenerateClaimRequest.LegalContextItem(
-                        "fallback-payment-gk-310",
-                        "ГК РФ",
-                        "310",
-                        "Запрет одностороннего отказа от исполнения обязательства.",
-                        "Односторонний отказ от исполнения обязательства и одностороннее изменение его условий не допускаются, кроме предусмотренных законом или договором случаев.",
-                        "ГК РФ, ст. 310",
-                        "2026-08-12",
-                        "Применяется, если должник уклоняется от согласованной оплаты без предусмотренного основания."
-                ),
-                new AiGenerateClaimRequest.LegalContextItem(
                         "fallback-payment-gk-314-1",
                         "ГК РФ",
                         "314 п. 1",
@@ -374,19 +410,21 @@ public class ClaimAiRequestMapper {
                         "ГК РФ, п. 1 ст. 314",
                         "2026-08-12",
                         "Применяется при подтверждённом условии договора о сроке оплаты."
-                ),
-                new AiGenerateClaimRequest.LegalContextItem(
-                        "fallback-expedition-gk-801",
-                        "ГК РФ",
-                        "801",
-                        "Правовая основа договора транспортной экспедиции.",
-                        "По договору транспортной экспедиции экспедитор за вознаграждение и за счёт клиента выполняет или организует услуги, связанные с перевозкой груза.",
-                        "ГК РФ, ст. 801",
-                        "2026-08-12",
-                        "Используется только когда представленные договор и перевозка относятся к транспортной экспедиции."
                 )
         ));
-        if (calculation.getPenaltyType() == ru.sber.cargotech.claim.enums.PenaltyType.ARTICLE_395) {
+
+        if (calculation.getPenaltyType() == ru.sber.cargotech.claim.enums.PenaltyType.CONTRACT_PENALTY) {
+            items.add(new AiGenerateClaimRequest.LegalContextItem(
+                    "fallback-penalty-gk-330",
+                    "ГК РФ",
+                    "330",
+                    "Правовая квалификация договорной неустойки.",
+                    "Неустойкой признаётся определённая законом или договором денежная сумма, подлежащая уплате при неисполнении или ненадлежащем исполнении обязательства, в том числе при просрочке.",
+                    "ГК РФ, ст. 330",
+                    "2026-08-12",
+                    "Применяется только вместе с подтверждённым договорным условием о неустойке; размер и ставка берутся из договора и backend-расчёта."
+            ));
+        } else if (calculation.getPenaltyType() == ru.sber.cargotech.claim.enums.PenaltyType.ARTICLE_395) {
             items.add(new AiGenerateClaimRequest.LegalContextItem(
                     "fallback-interest-gk-395",
                     "ГК РФ",
