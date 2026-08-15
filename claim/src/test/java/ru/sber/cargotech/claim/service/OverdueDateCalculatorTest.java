@@ -3,11 +3,13 @@ package ru.sber.cargotech.claim.service;
 import org.junit.jupiter.api.Test;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
+import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PaymentScheduleType;
 import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -91,5 +93,86 @@ class OverdueDateCalculatorTest {
 
         assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract)).isNull();
     }
+
+
+    @Test
+    void laterOfActAndDocumentsRequiresBothDatesAndUsesLaterOne() {
+        ClaimContract contract = new ClaimContract();
+        contract.setSignedAt(LocalDate.of(2026, 7, 1));
+        contract.setPaymentStartEvent(PaymentStartEvent.LATEST_ACT_OR_DOCUMENT_PACKAGE);
+        contract.setPaymentDays(30);
+        contract.setPaymentDayType(TermDayType.CALENDAR_DAYS);
+
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setActSignedAt(LocalDate.of(2026, 7, 10));
+
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract)).isNull();
+
+        shipment.setPaymentStartEventDate(LocalDate.of(2026, 7, 15));
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract))
+            .isEqualTo(LocalDate.of(2026, 8, 15));
+    }
+
+    @Test
+    void actWithDocumentsPrerequisiteBlocksAmbiguousLateDocuments() {
+        ClaimContract contract = new ClaimContract();
+        contract.setSignedAt(LocalDate.of(2026, 6, 1));
+        contract.setPaymentStartEvent(PaymentStartEvent.ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE);
+        contract.setPaymentDays(10);
+        contract.setPaymentDayType(TermDayType.CALENDAR_DAYS);
+
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setActSignedAt(LocalDate.of(2026, 6, 5));
+        shipment.setPaymentStartEventDate(LocalDate.of(2026, 6, 10));
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract))
+            .isEqualTo(LocalDate.of(2026, 6, 16));
+
+        shipment.setPaymentStartEventDate(LocalDate.of(2026, 6, 20));
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract)).isNull();
+    }
+
+    @Test
+    void confirmedParsedContractWithUnknownAnchorDoesNotFallBackToAct() {
+        ClaimContract contract = new ClaimContract();
+        contract.setDocumentId(UUID.randomUUID());
+        contract.setExtractionStatus(ContractExtractionStatus.CONFIRMED);
+        contract.setPaymentDays(30);
+
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setActSignedAt(LocalDate.of(2026, 7, 10));
+
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract)).isNull();
+    }
+
+    @Test
+    void contractualAnchorBeforeContractEffectiveDateIsRejected() {
+        ClaimContract contract = new ClaimContract();
+        contract.setSignedAt(LocalDate.of(2026, 7, 8));
+        contract.setPaymentStartEvent(PaymentStartEvent.ACT_SIGNED);
+        contract.setPaymentDays(30);
+
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setActSignedAt(LocalDate.of(2026, 6, 16));
+
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract)).isNull();
+    }
+
+    @Test
+    void strictPaymentDayScheduleStartsAfterTermEvenWhenDueDateIsAllowedDay() {
+        ClaimContract contract = new ClaimContract();
+        contract.setPaymentStartEvent(PaymentStartEvent.DOCUMENT_PACKAGE_RECEIVED);
+        contract.setPaymentDays(4);
+        contract.setPaymentDayType(TermDayType.CALENDAR_DAYS);
+        contract.setPaymentScheduleType(PaymentScheduleType.NEXT_PAYMENT_DAY_AFTER_TERM);
+        contract.setPaymentWeekDays("FRIDAY");
+
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setPaymentStartEventDate(LocalDate.of(2026, 8, 3)); // Monday; +4 = Friday.
+
+        // Strict rule says first Friday AFTER the four-day term: 14.08, overdue starts 15.08.
+        assertThat(OverdueDateCalculator.overdueStartDate(shipment, contract))
+            .isEqualTo(LocalDate.of(2026, 8, 15));
+    }
+
 
 }

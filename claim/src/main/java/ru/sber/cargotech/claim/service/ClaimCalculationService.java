@@ -76,6 +76,12 @@ public class ClaimCalculationService {
 
         LocalDate calculationDate = LocalDate.now();
         LocalDate overdueStartDate = OverdueDateCalculator.overdueStartDate(shipment, contract);
+        if (overdueStartDate == null) {
+            throw ClaimException.validation(
+                "Не удалось безопасно определить дату начала просрочки по условиям договора. "
+                    + "Проверьте договорное событие начала срока оплаты и необходимые даты рейса"
+            );
+        }
         int overdueDays = OverdueDateCalculator.overdueDays(overdueStartDate, calculationDate);
         PenaltyType penaltyType = contract.getPenaltyType() == null
             ? PenaltyType.ARTICLE_395

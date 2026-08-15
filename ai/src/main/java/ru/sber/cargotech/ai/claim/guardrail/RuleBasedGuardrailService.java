@@ -35,6 +35,7 @@ public class RuleBasedGuardrailService {
             validateCalculationNotChanged(request, response, errors);
             validateUsedContractClauses(request, response, errors, warnings);
             validateUsedLawArticles(request, response, errors, warnings);
+            validatePaymentDelayLawSemantics(request, response, errors);
             validateForbiddenText(response, errors);
             validateManualReview(response, errors);
             factConsistencyValidator.validate(request, response, errors, warnings);
@@ -375,6 +376,148 @@ public class RuleBasedGuardrailService {
                         + used.clauseNumber());
             }
         }
+
+        validatePaymentDelayContractClauseSemantics(request, response, errors);
+    }
+
+    private void validatePaymentDelayContractClauseSemantics(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            List<String> errors
+    ) {
+        if (request.caseFacts() == null
+                || request.caseFacts().claimType() != GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                || isBlank(response.claimText())) {
+            return;
+        }
+
+        requireTypedClauseNearMeaning(
+            request,
+            response,
+            "PAYMENT_TERMS",
+            Pattern.compile("(?iu)(?:срок\\p{L}*\\s+оплат\\p{L}*|оплат\\p{L}*[^\\n]{0,100}(?:должн\\p{L}*|производ\\p{L}*|осуществл\\p{L}*|не\\s+позднее)|не\\s+позднее[^\\n]{0,80}оплат\\p{L}*)"),
+            "payment term",
+            errors
+        );
+
+        if (request.backendCalculation() != null
+                && request.backendCalculation().penaltyType() == GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY
+                && request.backendCalculation().penaltyAmount() != null
+                && request.backendCalculation().penaltyAmount().compareTo(BigDecimal.ZERO) > 0) {
+            requireTypedClauseNearMeaning(
+                request,
+                response,
+                "PENALTY",
+                Pattern.compile("(?iu)(?:неустойк\\p{L}*|пен(?:я|и|ей|ю))"),
+                "contract penalty",
+                errors
+            );
+        }
+
+        Integer responseDays = request.caseFacts().contract() == null
+                ? null
+                : request.caseFacts().contract().claimResponseDays();
+        if (responseDays != null && responseDays > 0) {
+            requireTypedClauseNearMeaning(
+                request,
+                response,
+                "CLAIM_PROCEDURE",
+                Pattern.compile("(?iu)(?:письменн\\p{L}*\\s+ответ\\p{L}*|ответ\\p{L}*[^\\n]{0,80}претензи\\p{L}*|претензи\\p{L}*[^\\n]{0,80}ответ\\p{L}*)"),
+                "claim response deadline",
+                errors
+            );
+        }
+
+        validateNoMixedTypedClauseGroups(request, response.claimText(), errors);
+    }
+
+    private void requireTypedClauseNearMeaning(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            String clauseType,
+            Pattern meaningPattern,
+            String label,
+            List<String> errors
+    ) {
+        List<GenerateClaimRequest.ContractContextChunk> candidates = safeList(request.contractContext()).stream()
+            .filter(Objects::nonNull)
+            .filter(chunk -> clauseType.equals(chunk.clauseType()))
+            .filter(chunk -> !isBlank(chunk.clauseNumber()))
+            .toList();
+        if (candidates.isEmpty()) return;
+
+        Set<String> allowedIds = candidates.stream()
+            .map(GenerateClaimRequest.ContractContextChunk::chunkId)
+            .filter(Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+        boolean selected = safeList(response.usedContractClauses()).stream()
+            .filter(Objects::nonNull)
+            .map(GenerateClaimResponse.UsedContractClause::chunkId)
+            .anyMatch(allowedIds::contains);
+        if (!selected) {
+            errors.add("Model must use a " + clauseType + " contract clause for " + label);
+            return;
+        }
+
+        String contractNumber = request.caseFacts().contract() == null
+            ? null
+            : request.caseFacts().contract().contractNumber();
+        boolean foundNearMeaning = false;
+        for (String line : response.claimText().split("\\R")) {
+            if (!meaningPattern.matcher(line).find()) continue;
+            for (GenerateClaimRequest.ContractContextChunk chunk : candidates) {
+                if (containsContractClauseReference(line, chunk.clauseNumber())
+                        && (isBlank(contractNumber) || line.contains(contractNumber))) {
+                    foundNearMeaning = true;
+                    break;
+                }
+            }
+            if (foundNearMeaning) break;
+        }
+        if (!foundNearMeaning) {
+            errors.add("claim_text must cite a " + clauseType + " contract clause in the same logical line as " + label);
+        }
+    }
+
+    private void validateNoMixedTypedClauseGroups(
+            GenerateClaimRequest request,
+            String claimText,
+            List<String> errors
+    ) {
+        List<GenerateClaimRequest.ContractContextChunk> typed = safeList(request.contractContext()).stream()
+            .filter(Objects::nonNull)
+            .filter(chunk -> !isBlank(chunk.clauseType()) && !isBlank(chunk.clauseNumber()))
+            .toList();
+        if (typed.size() < 2) return;
+
+        /*
+         * Do not reject two independent sentences merely because an LLM happened
+         * to keep them in the same paragraph/line. Only inspect actual grouped
+         * citation spans such as "п. 8.2, 9.4" / "пп. 8.2 и 9.4".
+         */
+        Map<String, String> typeByClause = new HashMap<>();
+        for (GenerateClaimRequest.ContractContextChunk chunk : typed) {
+            typeByClause.put(chunk.clauseNumber(), chunk.clauseType());
+        }
+
+        Pattern groupPattern = Pattern.compile(
+            "(?iu)(?:пункт(?:а|у|е|ом|ы|ов)?|п\\.|пп\\.)\\s*"
+                + "((?:\\d+(?:\\.\\d+)+)(?:\\s*(?:,|;|и)\\s*(?:(?:п\\.|пп\\.)\\s*)?\\d+(?:\\.\\d+)+)+)"
+        );
+        Matcher groupMatcher = groupPattern.matcher(claimText);
+        Pattern numberPattern = Pattern.compile("\\d+(?:\\.\\d+)+");
+        while (groupMatcher.find()) {
+            Set<String> types = new HashSet<>();
+            Matcher numberMatcher = numberPattern.matcher(groupMatcher.group(1));
+            while (numberMatcher.find()) {
+                String type = typeByClause.get(numberMatcher.group());
+                if (type != null) types.add(type);
+            }
+            if (types.size() > 1) {
+                errors.add("claim_text groups contract clauses with different semantic roles in one citation: " + types);
+                return;
+            }
+        }
     }
 
     private boolean containsContractClauseReference(String claimText, String clauseNumber) {
@@ -481,6 +624,44 @@ public class RuleBasedGuardrailService {
         }
 
         validateNoUnknownLawReferences(request, response, errors);
+    }
+
+    private void validatePaymentDelayLawSemantics(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            List<String> errors
+    ) {
+        if (request.caseFacts() == null
+                || request.caseFacts().claimType() != GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                || request.backendCalculation() == null
+                || isBlank(response.claimText())) {
+            return;
+        }
+
+        Set<String> referenced = extractReferencedArticleNumbers(response.claimText());
+        if (request.backendCalculation().penaltyType() == GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY) {
+            if (legalContextHasArticle(request, "330") && !referenced.contains("330")) {
+                errors.add("CONTRACT_PENALTY must be legally qualified by Article 330 when it is available in legal_context");
+            }
+            if (referenced.contains("395")) {
+                errors.add("CONTRACT_PENALTY must not be presented as Article 395 interest");
+            }
+        } else if (request.backendCalculation().penaltyType() == GenerateClaimRequest.PenaltyType.LEGAL_INTEREST) {
+            if (legalContextHasArticle(request, "395") && !referenced.contains("395")) {
+                errors.add("LEGAL_INTEREST must cite Article 395 when it is available in legal_context");
+            }
+            if (referenced.contains("330")) {
+                errors.add("LEGAL_INTEREST must not be presented as contractual penalty under Article 330");
+            }
+        }
+    }
+
+    private boolean legalContextHasArticle(GenerateClaimRequest request, String expectedArticle) {
+        return safeList(request.legalContext()).stream()
+            .filter(Objects::nonNull)
+            .map(GenerateClaimRequest.LegalContextItem::article)
+            .map(this::firstArticleNumber)
+            .anyMatch(expectedArticle::equals);
     }
 
     private GenerateClaimRequest.LegalContextItem findLegacyLegalContextItem(

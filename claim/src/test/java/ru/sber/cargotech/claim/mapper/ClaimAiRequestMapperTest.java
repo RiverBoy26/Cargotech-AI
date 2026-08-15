@@ -13,6 +13,7 @@ import ru.sber.cargotech.claim.enums.ContractRagStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
 import java.math.BigDecimal;
@@ -55,7 +56,8 @@ class ClaimAiRequestMapperTest {
         contract.setPaymentDays(5);
         contract.setPaymentStartEvent(PaymentStartEvent.ACT_SIGNED);
         contract.setPenaltyType(PenaltyType.NONE);
-        contract.setClaimResponseDays(10);
+        contract.setClaimResponseDays(14);
+        contract.setClaimResponseDayType(TermDayType.WORKING_DAYS);
 
         ClaimShipment shipment = new ClaimShipment();
         shipment.setOrderNumber("РЕЙС-2026-001");
@@ -88,7 +90,9 @@ class ClaimAiRequestMapperTest {
         );
 
         assertThat(result.caseFacts().claimNumber()).isEqualTo("CLM-2026-001");
-        assertThat(result.caseFacts().contract().claimResponseDays()).isEqualTo(10);
+        assertThat(result.caseFacts().contract().claimResponseDays()).isEqualTo(14);
+        assertThat(result.caseFacts().contract().claimResponseDayType())
+                .isEqualTo(AiGenerateClaimRequest.TermDayType.WORKING_DAYS);
         assertThat(result.caseFacts().payment().paymentDueDate()).isEqualTo("2026-07-25");
         assertThat(result.caseFacts().signatory().name()).isEqualTo("Дмитриев Павел Алексеевич");
         assertThat(result.caseFacts().signatory().position()).isEqualTo("Юрист");
@@ -101,6 +105,9 @@ class ClaimAiRequestMapperTest {
                         "Структурированные условия ответственности",
                         "Структурированный срок ответа на претензию"
                 );
+        assertThat(result.contractContext())
+                .extracting(AiGenerateClaimRequest.ContractContextChunk::clauseType)
+                .containsExactlyInAnyOrder("PAYMENT_TERMS", "PENALTY", "CLAIM_PROCEDURE");
         assertThat(result.ragOptions().organizationId()).isEqualTo(contract.getOrganizationId().toString());
         assertThat(result.ragOptions().enabled()).isTrue();
         assertThat(result.templateContext().templateStructure())
@@ -115,6 +122,64 @@ class ClaimAiRequestMapperTest {
                 claim, creditor, debtor, contract, shipment, calculation, user
         );
         assertThat(afterIndexFailure.ragOptions().enabled()).isFalse();
+    }
+
+
+    @Test
+    void contractPenaltyAddsArticle330ButNotArticle395OrGenericArticle310() {
+        ClaimEntity claim = new ClaimEntity();
+        claim.setId(UUID.randomUUID());
+        claim.setClaimNumber("CLM-PENALTY");
+        claim.setClaimType(ClaimType.PAYMENT_DELAY);
+        claim.setNonPaymentConfirmed(true);
+
+        ClaimContract contract = new ClaimContract();
+        contract.setId(UUID.randomUUID());
+        contract.setOrganizationId(userOrganizationId());
+        contract.setClientId(UUID.randomUUID());
+        contract.setNumber("P-1");
+        contract.setSignedAt(LocalDate.of(2026, 7, 1));
+        contract.setPaymentDays(30);
+        contract.setPaymentStartEvent(PaymentStartEvent.ACT_SIGNED);
+        contract.setPenaltyType(PenaltyType.CONTRACT_PENALTY);
+        contract.setPenaltyRate(new BigDecimal("0.1"));
+        contract.setClaimResponseDays(20);
+        contract.setClaimResponseDayType(TermDayType.CALENDAR_DAYS);
+
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setOrderNumber("R-1");
+        shipment.setActSignedAt(LocalDate.of(2026, 7, 2));
+        shipment.setCurrency("RUB");
+
+        ClaimCalculation calculation = new ClaimCalculation();
+        calculation.setPrincipalDebt(new BigDecimal("90000"));
+        calculation.setPaidAmount(BigDecimal.ZERO);
+        calculation.setRemainingDebt(new BigDecimal("90000"));
+        calculation.setPenaltyType(PenaltyType.CONTRACT_PENALTY);
+        calculation.setPenaltyRate(new BigDecimal("0.1"));
+        calculation.setPenaltyAmount(new BigDecimal("2520"));
+        calculation.setTotalAmount(new BigDecimal("92520"));
+        calculation.setOverdueDays(28);
+        calculation.setOverdueStartDate(LocalDate.of(2026, 7, 17));
+        calculation.setFormula("90000 × 0,1% × 28");
+
+        AiGenerateClaimRequest result = mapper.map(
+                claim,
+                party("ООО Экспедитор", "7812456730", "Санкт-Петербург"),
+                party("ООО Клиент", "6319245078", "Самара"),
+                contract,
+                shipment,
+                calculation,
+                new CurrentClaimUser(
+                        UUID.randomUUID(), userOrganizationId(),
+                        "Иван", "Иванов", "Иванович", List.of("LAWYER")
+                )
+        );
+
+        assertThat(result.legalContext())
+                .extracting(AiGenerateClaimRequest.LegalContextItem::article)
+                .contains("309", "314 п. 1", "330")
+                .doesNotContain("310", "395", "801");
     }
 
     private ClaimParty party(String name, String inn, String address) {

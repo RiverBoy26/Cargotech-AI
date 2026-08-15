@@ -228,6 +228,7 @@ public class ContractService {
             throw ClaimException.conflict("Нет результатов разбора договора, ожидающих подтверждения");
         }
         List<ContractExtractedValue> candidates = extractedValueRepository.findByContractIdOrderByCreatedAtAsc(contractId);
+        validateExtractedPartyIdentity(contract, candidates);
         applyConfirmedCandidates(contract, candidates, user.userId());
         if (contractRepository.existsByOrganizationIdAndNumberAndDeletedAtIsNullAndIdNot(
             user.organizationId(), contract.getNumber(), contract.getId()
@@ -476,7 +477,11 @@ public class ContractService {
         }
         Set<ContractExtractionField> requiredReviewFields = EnumSet.allOf(ContractExtractionField.class);
         requiredReviewFields.remove(ContractExtractionField.EXACT_CLAUSE);
-        if (!scalarFields.equals(requiredReviewFields)) {
+        // Safety-only identity fields were added after the original review API.
+        // Keep them optional for already-open review sessions and old clients.
+        requiredReviewFields.remove(ContractExtractionField.CLIENT_INN);
+        requiredReviewFields.remove(ContractExtractionField.EXPEDITOR_INN);
+        if (!scalarFields.containsAll(requiredReviewFields)) {
             throw ClaimException.validation("Экран проверки должен содержать все поля договора");
         }
     }
@@ -527,6 +532,7 @@ public class ContractService {
                     case CLAIM_RESPONSE_DAYS -> contract.setClaimResponseDays(nonNegativeInteger(value));
                     case CLAIM_RESPONSE_DAY_TYPE -> contract.setClaimResponseDayType(TermDayType.valueOf(value));
                     case JURISDICTION -> contract.setJurisdiction(value);
+                    case CLIENT_INN, EXPEDITOR_INN -> { /* safety-only extraction fields */ }
                     case EXACT_CLAUSE -> { }
                 }
             } catch (IllegalArgumentException exception) {
@@ -535,12 +541,157 @@ public class ContractService {
         }
         validatePaymentSchedule(contract);
         validatePenaltyCap(contract);
+        validateExtractedPaymentRule(contract, candidates);
+        validateExtractedPenaltyRule(contract, candidates);
         if (contract.getPenaltyType() == null) contract.setPenaltyType(PenaltyType.ARTICLE_395);
         if (contract.getClaimResponseDays() == null) contract.setClaimResponseDays(30);
         if (contract.getClaimResponseDayType() == null) contract.setClaimResponseDayType(TermDayType.CALENDAR_DAYS);
         if (contract.getNumber() == null) {
             throw ClaimException.validation("Укажите номер договора перед подтверждением");
         }
+    }
+
+    private void validateExtractedPartyIdentity(
+        ClaimContract contract,
+        List<ContractExtractedValue> candidates
+    ) {
+        String clientInn = extractedValue(candidates, ContractExtractionField.CLIENT_INN);
+        if (digitsOnly(clientInn) != null) {
+            validateExtractedInn(
+                "клиента",
+                clientInn,
+                partyService.getEntity(contract.getOrganizationId(), contract.getClientId()).getInn()
+            );
+        }
+
+        String expeditorInn = extractedValue(candidates, ContractExtractionField.EXPEDITOR_INN);
+        if (digitsOnly(expeditorInn) != null) {
+            validateExtractedInn(
+                "экспедитора",
+                expeditorInn,
+                partyService.getEntity(contract.getOrganizationId(), contract.getExpeditorId()).getInn()
+            );
+        }
+    }
+
+    private void validateExtractedInn(String role, String extractedInn, String cardInn) {
+        String extracted = digitsOnly(extractedInn);
+        if (extracted == null) return;
+        String card = digitsOnly(cardInn);
+        if (card == null) {
+            throw ClaimException.validation(
+                "В договоре найден ИНН " + role + " " + extracted
+                    + ", но в карточке контрагента ИНН не заполнен"
+            );
+        }
+        if (!extracted.equals(card)) {
+            throw ClaimException.validation(
+                "ИНН " + role + " в договоре (" + extracted
+                    + ") не совпадает с карточкой CargoTech (" + card + ")"
+            );
+        }
+    }
+
+    private String extractedValue(List<ContractExtractedValue> candidates, ContractExtractionField field) {
+        return candidates.stream()
+            .filter(candidate -> candidate.getField() == field)
+            .map(ContractExtractedValue::getValue)
+            .map(this::blankToNull)
+            .filter(Objects::nonNull)
+            .findFirst()
+            .orElse(null);
+    }
+
+    private String digitsOnly(String value) {
+        String normalized = blankToNull(value);
+        if (normalized == null) return null;
+        String digits = normalized.replaceAll("\\D", "");
+        return digits.isBlank() ? null : digits;
+    }
+
+    private void validateExtractedPaymentRule(
+        ClaimContract contract,
+        List<ContractExtractedValue> candidates
+    ) {
+        boolean hasPaymentClause = hasExtractedClause(candidates, ClauseType.PAYMENT_TERMS);
+        if (hasUnsupportedInvoiceAndUpdAnchor(candidates)) {
+            throw ClaimException.validation(
+                "В договоре срок оплаты зависит одновременно от счёта и УПД. "
+                    + "Текущая модель договора не может безопасно представить такое составное условие; "
+                    + "требуется ручная юридическая проверка"
+            );
+        }
+        if (hasPaymentClause && contract.getPaymentDays() != null && contract.getPaymentStartEvent() == null) {
+            throw ClaimException.validation(
+                "Условие срока оплаты найдено, но событие начала срока не удалось определить однозначно. "
+                    + "Проверьте пункт договора и укажите начало срока вручную"
+            );
+        }
+    }
+
+    private void validateExtractedPenaltyRule(
+        ClaimContract contract,
+        List<ContractExtractedValue> candidates
+    ) {
+        boolean hasPenaltyClause = hasExtractedClause(candidates, ClauseType.PENALTY);
+        if (hasUnsupportedKeyRateContractPenalty(candidates)) {
+            throw ClaimException.validation(
+                "В договоре установлена договорная санкция, рассчитываемая от ключевой ставки Банка России. "
+                    + "Её нельзя подменять фиксированной договорной ставкой или процентами по ст. 395 ГК РФ; "
+                    + "требуется ручная юридическая проверка"
+            );
+        }
+        if (hasPenaltyClause && contract.getPenaltyType() == null) {
+            throw ClaimException.validation(
+                "В договоре найдено условие ответственности за просрочку оплаты, но его формула не поддерживается автоматически. "
+                    + "Требуется ручная юридическая проверка"
+            );
+        }
+        if (contract.getPenaltyType() == PenaltyType.CONTRACT_PENALTY
+                && (contract.getPenaltyRate() == null || contract.getPenaltyRate().signum() <= 0)) {
+            throw ClaimException.validation(
+                "Для договорной неустойки должна быть указана положительная ставка"
+            );
+        }
+    }
+
+    private boolean hasUnsupportedInvoiceAndUpdAnchor(List<ContractExtractedValue> candidates) {
+        return exactClauseTexts(candidates, ClauseType.PAYMENT_TERMS).stream().anyMatch(text -> {
+            String lower = text.toLowerCase(java.util.Locale.ROOT);
+            boolean invoice = lower.contains("счет") || lower.contains("счёт");
+            boolean upd = lower.contains("упд") || (lower.contains("универсальн") && lower.contains("передаточн"));
+            boolean termFromBoth = lower.contains("с даты получения")
+                || lower.contains("после получения")
+                || lower.contains("с момента получения");
+            return invoice && upd && termFromBoth;
+        });
+    }
+
+    private boolean hasUnsupportedKeyRateContractPenalty(List<ContractExtractedValue> candidates) {
+        return exactClauseTexts(candidates, ClauseType.PENALTY).stream().anyMatch(text -> {
+            String lower = text.toLowerCase(java.util.Locale.ROOT);
+            boolean keyRate = lower.contains("ключев") && lower.contains("ставк");
+            boolean fraction = lower.matches("(?s).*(?:1\\s*/\\s*300|трехсот|трёхсот).*");
+            return keyRate && fraction;
+        });
+    }
+
+    private List<String> exactClauseTexts(List<ContractExtractedValue> candidates, ClauseType type) {
+        return candidates.stream()
+            .filter(candidate -> candidate.getField() == ContractExtractionField.EXACT_CLAUSE)
+            .filter(candidate -> candidate.getClauseType() == type)
+            .map(ContractExtractedValue::getValue)
+            .map(this::blankToNull)
+            .filter(Objects::nonNull)
+            .toList();
+    }
+
+    private boolean hasExtractedClause(List<ContractExtractedValue> candidates, ClauseType type) {
+        return candidates.stream().anyMatch(candidate ->
+            candidate.getField() == ContractExtractionField.EXACT_CLAUSE
+                && candidate.getClauseType() == type
+                && blankToNull(candidate.getValue()) != null
+        );
     }
 
     private void saveExtractedClause(UUID contractId, ContractExtractedValue candidate, UUID userId) {

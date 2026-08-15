@@ -15,5 +15,8 @@ public enum ContractExtractionField {
     CLAIM_RESPONSE_DAYS,
     CLAIM_RESPONSE_DAY_TYPE,
     JURISDICTION,
+    // Safety-only identity fields extracted from requisites; they are not editable contract terms.
+    CLIENT_INN,
+    EXPEDITOR_INN,
     EXACT_CLAUSE
 }

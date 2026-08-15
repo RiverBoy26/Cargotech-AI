@@ -84,6 +84,12 @@ public class ClaimFactConsistencyValidator {
             "(?imu)^\\s*г\\.\\s*[А-ЯЁ][А-Яа-яЁё .\\-]{1,80}\\s*$"
     );
     private static final Pattern ADDRESS_LABEL_PATTERN = Pattern.compile("(?iu)адрес\\s*:");
+    private static final Pattern FIRST_PERSON_SINGULAR_DEMAND_PATTERN = Pattern.compile(
+            "(?imu)(?:^|[.!?]\\s*)требую\\s*:?"
+    );
+    private static final Pattern ORGANIZATION_DEMAND_SECTION_PATTERN = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}_])(?:требует|требуем|просим)(?![\\p{L}\\p{N}_])\\s*:"
+    );
 
     private static final int ADDRESS_TOKEN_WINDOW = 20;
     private static final int TIME_WINDOW_MAX_DISTANCE = 120;
@@ -127,6 +133,7 @@ public class ClaimFactConsistencyValidator {
             validatePaymentDelayFacts(facts, text, errors);
             validatePaymentDelaySemantics(facts, request.backendCalculation(), text, errors);
             validatePaymentDelayPresentation(text, errors);
+            validatePaymentDelayDemandBreakdown(request.backendCalculation(), text, errors);
         } else if (facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
             validateLoadingFailureFacts(facts, request.backendCalculation(), text, narrative, errors, warnings);
         }
@@ -238,17 +245,23 @@ public class ClaimFactConsistencyValidator {
         }
         requireTextValue(text, contract.contractNumber(), "contract.contract_number", errors);
         requireDate(text, contract.contractDate(), "contract.contract_date", errors);
-        requireClaimResponseDeadline(text, contract.claimResponseDays(), errors);
+        requireClaimResponseDeadline(text, contract.claimResponseDays(), contract.claimResponseDayType(), errors);
     }
 
-    private void requireClaimResponseDeadline(String text, Integer days, List<String> errors) {
+    private void requireClaimResponseDeadline(
+            String text,
+            Integer days,
+            GenerateClaimRequest.TermDayType dayType,
+            List<String> errors
+    ) {
         if (days == null || days <= 0) {
             return;
         }
 
+        String dayWordPattern = dayTypePattern(dayType);
         Pattern daysPattern = Pattern.compile(
                 "(?iu)(?<!\\d)" + Pattern.quote(String.valueOf(days))
-                        + "\\s+календарн\\p{L}*\\s+дн\\p{L}*(?!\\d)"
+                        + "\\s+" + dayWordPattern + "\\s+дн\\p{L}*(?!\\d)"
         );
         String normalized = normalize(text);
         boolean hasDays = daysPattern.matcher(text).find();
@@ -256,7 +269,7 @@ public class ClaimFactConsistencyValidator {
 
         if (!hasDays || !tiedToReceipt) {
             errors.add("claim_text does not contain expected contract.claim_response_days: "
-                    + days + " calendar days from receipt of the claim");
+                    + days + " " + dayTypeLabel(dayType) + " from receipt of the claim");
         }
     }
 
@@ -343,12 +356,13 @@ public class ClaimFactConsistencyValidator {
         // claim. It must not silently become a new payment deadline.
         Integer responseDays = facts.contract() == null ? null : facts.contract().claimResponseDays();
         if (responseDays != null && responseDays > 0) {
+            GenerateClaimRequest.TermDayType responseDayType = facts.contract().claimResponseDayType();
             Pattern paymentDeadline = Pattern.compile(
                     "(?iu)(?:оплат\\p{L}*|перечисл\\p{L}*|погас\\p{L}*)"
                             + "[^.!?\\n]{0,180}"
                             + "(?:в\\s+течение\\s+)?"
                             + Pattern.quote(String.valueOf(responseDays))
-                            + "\\s+календарн\\p{L}*\\s+дн\\p{L}*"
+                            + "\\s+" + dayTypePattern(responseDayType) + "\\s+дн\\p{L}*"
             );
             if (paymentDeadline.matcher(text).find()) {
                 errors.add("claim_text incorrectly uses contract.claim_response_days as a payment deadline");
@@ -359,6 +373,10 @@ public class ClaimFactConsistencyValidator {
     private void validatePaymentDelayPresentation(String text, List<String> errors) {
         if (!hasText(text)) {
             return;
+        }
+
+        if (FIRST_PERSON_SINGULAR_DEMAND_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not use first-person singular demand 'требую' for a legal-entity creditor");
         }
 
         if (UNSUPPORTED_CONTACT_FIELD_PATTERN.matcher(text).find()) {
@@ -381,6 +399,28 @@ public class ClaimFactConsistencyValidator {
         if (addressLabels > 2) {
             errors.add("claim_text duplicates party addresses");
         }
+    }
+
+    private String dayTypePattern(GenerateClaimRequest.TermDayType dayType) {
+        GenerateClaimRequest.TermDayType effective = dayType == null
+                ? GenerateClaimRequest.TermDayType.CALENDAR_DAYS
+                : dayType;
+        return switch (effective) {
+            case CALENDAR_DAYS -> "календарн\\p{L}*";
+            case WORKING_DAYS -> "рабоч\\p{L}*";
+            case BANKING_DAYS -> "банковск\\p{L}*";
+        };
+    }
+
+    private String dayTypeLabel(GenerateClaimRequest.TermDayType dayType) {
+        GenerateClaimRequest.TermDayType effective = dayType == null
+                ? GenerateClaimRequest.TermDayType.CALENDAR_DAYS
+                : dayType;
+        return switch (effective) {
+            case CALENDAR_DAYS -> "calendar days";
+            case WORKING_DAYS -> "working days";
+            case BANKING_DAYS -> "banking days";
+        };
     }
 
     private void validateLoadingFailureFacts(
@@ -449,6 +489,68 @@ public class ClaimFactConsistencyValidator {
                 errors.add("claim_text contains amount not present in backend_calculation: " + found.toPlainString() + " RUB");
             }
         }
+    }
+
+
+    private void validatePaymentDelayDemandBreakdown(
+            GenerateClaimRequest.BackendCalculation calculation,
+            String text,
+            List<String> errors
+    ) {
+        if (calculation == null || !hasText(text)) {
+            return;
+        }
+
+        Matcher marker = ORGANIZATION_DEMAND_SECTION_PATTERN.matcher(text);
+        if (!marker.find()) {
+            // Keep legacy/manual texts compatible. New generation is instructed to
+            // use an explicit organization demand section; once it does, validate
+            // that the section does not collapse debt and sanctions into one total.
+            return;
+        }
+
+        String demandSection = text.substring(marker.end());
+        if (calculation.principalDebt() != null
+                && calculation.principalDebt().compareTo(BigDecimal.ZERO) > 0
+                && !containsSemanticAmount(
+                    demandSection,
+                    calculation.principalDebt(),
+                    Pattern.compile("(?iu)(?:основн\\p{L}*\\s+долг\\p{L}*|задолженн\\p{L}*)")
+                )) {
+            errors.add("demand section must state principal debt separately");
+        }
+
+        if (calculation.penaltyAmount() != null
+                && calculation.penaltyAmount().compareTo(BigDecimal.ZERO) > 0) {
+            Pattern sanctionMeaning = calculation.penaltyType() == GenerateClaimRequest.PenaltyType.LEGAL_INTEREST
+                    ? Pattern.compile("(?iu)(?:процент\\p{L}*[^\\n]{0,80}(?:395|чуж\\p{L}*\\s+денежн\\p{L}*\\s+средств\\p{L}*))")
+                    : Pattern.compile("(?iu)(?:неустойк\\p{L}*|пен(?:я|и|ей|ю))");
+            if (!containsSemanticAmount(demandSection, calculation.penaltyAmount(), sanctionMeaning)) {
+                errors.add("demand section must state the calculated sanction separately with its legal type");
+            }
+        }
+
+        if (calculation.totalAmount() != null
+                && calculation.totalAmount().compareTo(BigDecimal.ZERO) > 0
+                && !containsSemanticAmount(
+                    demandSection,
+                    calculation.totalAmount(),
+                    Pattern.compile("(?iu)(?:итог\\p{L}*|всего|общ\\p{L}*\\s+сумм\\p{L}*)")
+                )) {
+            errors.add("demand section must state total amount separately");
+        }
+    }
+
+    private boolean containsSemanticAmount(String text, BigDecimal amount, Pattern semanticPattern) {
+        for (String line : text.split("\\R")) {
+            if (!semanticPattern.matcher(line).find()) continue;
+            Matcher amountMatcher = RUB_AMOUNT_PATTERN.matcher(line);
+            while (amountMatcher.find()) {
+                BigDecimal found = parseRubAmount(amountMatcher);
+                if (sameAmount(found, amount)) return true;
+            }
+        }
+        return false;
     }
 
     private void validateAttachments(

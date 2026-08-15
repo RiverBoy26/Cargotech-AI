@@ -30,17 +30,21 @@ const CONTRACT_REVIEW_SCALAR_FIELDS = [
 const PAYMENT_SCHEDULE_FIELDS = new Set(['PAYMENT_SCHEDULE_TYPE', 'PAYMENT_WEEK_DAYS']);
 const PENALTY_CAP_FIELDS = new Set(['PENALTY_CAP_PERCENT', 'PENALTY_CAP_BASE']);
 const SPECIAL_CONTRACT_FIELDS = new Set([...PAYMENT_SCHEDULE_FIELDS, ...PENALTY_CAP_FIELDS]);
+const INTERNAL_CONTRACT_FIELDS = new Set(['CLIENT_INN', 'EXPEDITOR_INN']);
 const PAYMENT_START_EVENT_OPTIONS = {
   ACT_SIGNED: 'Дата подписания акта', UNLOADING_DATE: 'Дата выгрузки',
   TTN_SIGNED: 'Дата подписания ТТН', INVOICE_DATE: 'Дата счёта',
   REGISTRY_INCLUDED: 'Дата включения рейса в реестр',
   DOCUMENT_PACKAGE_RECEIVED: 'Дата получения полного комплекта документов',
+  LATEST_ACT_OR_DOCUMENT_PACKAGE: 'Более поздняя из даты акта и даты получения документов',
+  ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE: 'Дата акта при обязательном получении документов',
 };
 const TERM_DAY_TYPE_OPTIONS = {
   CALENDAR_DAYS: 'Календарные дни', WORKING_DAYS: 'Рабочие дни', BANKING_DAYS: 'Банковские дни',
 };
 const PAYMENT_SCHEDULE_TYPE_OPTIONS = {
-  NEXT_PAYMENT_DAY: 'Ближайший следующий платёжный день',
+  NEXT_PAYMENT_DAY: 'Ближайший платёжный день (включая расчётную дату)',
+  NEXT_PAYMENT_DAY_AFTER_TERM: 'Первый платёжный день строго после истечения срока',
 };
 const PAYMENT_WEEK_DAY_OPTIONS = {
   MONDAY: 'Пн', TUESDAY: 'Вт', WEDNESDAY: 'Ср', THURSDAY: 'Чт',
@@ -328,8 +332,15 @@ function paymentWeekDaysLabel(value) {
 }
 
 function paymentScheduleSummary(contract) {
-  if (contract.paymentScheduleType !== 'NEXT_PAYMENT_DAY' || !contract.paymentWeekDays) return '';
-  return ` → следующий платёжный день (${paymentWeekDaysLabel(contract.paymentWeekDays)})`;
+  if (!contract.paymentScheduleType || !contract.paymentWeekDays) return '';
+  const days = paymentWeekDaysLabel(contract.paymentWeekDays);
+  if (contract.paymentScheduleType === 'NEXT_PAYMENT_DAY_AFTER_TERM') {
+    return ` → первый платёжный день после истечения срока (${days})`;
+  }
+  if (contract.paymentScheduleType === 'NEXT_PAYMENT_DAY') {
+    return ` → ближайший платёжный день (${days})`;
+  }
+  return '';
 }
 
 async function loadContracts() {
@@ -540,7 +551,9 @@ function renderContractReview(panel, contractId, extraction) {
   contractExtractionDrafts.set(contractId, draft);
   const candidateEntries = candidates.map((candidate, index) => ({ candidate, index }));
   const scalarEntries = candidateEntries.filter(({ candidate }) =>
-    candidate.field !== 'EXACT_CLAUSE' && !SPECIAL_CONTRACT_FIELDS.has(candidate.field)
+    candidate.field !== 'EXACT_CLAUSE'
+      && !SPECIAL_CONTRACT_FIELDS.has(candidate.field)
+      && !INTERNAL_CONTRACT_FIELDS.has(candidate.field)
   );
   const specialEntries = candidateEntries.filter(({ candidate }) => SPECIAL_CONTRACT_FIELDS.has(candidate.field));
   const hasSpecialTerms = specialEntries.some(({ candidate }) => Boolean(candidate.value));
@@ -851,13 +864,24 @@ function updateShipmentClient() {
   const labels = {
     REGISTRY_INCLUDED: 'Дата включения рейса в реестр',
     DOCUMENT_PACKAGE_RECEIVED: 'Дата получения полного комплекта документов',
+    LATEST_ACT_OR_DOCUMENT_PACKAGE: 'Дата получения полного комплекта документов',
+    ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE: 'Дата получения полного комплекта документов',
   };
-  if (anchorLabel) anchorLabel.textContent = labels[contract?.paymentStartEvent] || 'Дата договорного события начала срока оплаты';
+  const event = contract?.paymentStartEvent;
+  if (anchorLabel) anchorLabel.textContent = labels[event] || 'Дата договорного события начала срока оплаты';
   if (anchorHint) {
-    anchorHint.textContent = labels[contract?.paymentStartEvent]
-      ? 'Обязательна для расчёта просрочки по выбранному договору.'
-      : 'Заполняется для нестандартного договорного события, если оно не совпадает с актом, выгрузкой, ТТН или счётом.';
+    if (event === 'LATEST_ACT_OR_DOCUMENT_PACKAGE') {
+      anchorHint.textContent = 'Обязательна: backend сравнит эту дату с датой акта и возьмёт более позднюю.';
+    } else if (event === 'ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE') {
+      anchorHint.textContent = 'Обязательна как подтверждение договорного условия. Если документы получены позже расчётного срока от акта, автоматический расчёт будет заблокирован для ручной проверки.';
+    } else {
+      anchorHint.textContent = labels[event]
+        ? 'Обязательна для расчёта просрочки по выбранному договору.'
+        : 'Заполняется для нестандартного договорного события, если оно не совпадает с актом, выгрузкой, ТТН или счётом.';
+    }
   }
+  const anchorInput = document.getElementById('shipment_payment_start_event_date');
+  if (anchorInput) anchorInput.required = Boolean(labels[event]);
 }
 
 async function loadShipmentContracts() {

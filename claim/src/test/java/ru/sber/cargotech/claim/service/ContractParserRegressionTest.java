@@ -1,5 +1,6 @@
 package ru.sber.cargotech.claim.service;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -41,8 +42,13 @@ class ContractParserRegressionTest {
 
     @Test
     void runContractsFromDirectory() throws Exception {
-        Path directory = Path.of(System.getProperty("contractParserDir", System.getProperty("user.dir")))
-            .toAbsolutePath().normalize();
+        String configuredDirectory = System.getProperty("contractParserDir");
+        Assumptions.assumeTrue(
+            configuredDirectory != null && !configuredDirectory.isBlank(),
+            "contractParserDir не задан; локальный regression runner пропущен"
+        );
+
+        Path directory = Path.of(configuredDirectory).toAbsolutePath().normalize();
         if (!Files.isDirectory(directory)) {
             fail("Каталог для parser regression не найден: " + directory);
         }
@@ -110,6 +116,8 @@ class ContractParserRegressionTest {
             printField(actual, ContractExtractionField.CLAIM_RESPONSE_DAYS, "срок ответа");
             printField(actual, ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE, "тип дней ответа");
             printField(actual, ContractExtractionField.JURISDICTION, "подсудность");
+            printField(actual, ContractExtractionField.CLIENT_INN, "ИНН клиента");
+            printField(actual, ContractExtractionField.EXPEDITOR_INN, "ИНН экспедитора");
             long clauses = extraction.candidates().stream()
                 .filter(value -> value.field() == ContractExtractionField.EXACT_CLAUSE)
                 .count();
@@ -184,6 +192,8 @@ class ContractParserRegressionTest {
         check(result, actual, ContractExtractionField.CLAIM_RESPONSE_DAYS, gold.claimResponseDays());
         check(result, actual, ContractExtractionField.CLAIM_RESPONSE_DAY_TYPE, gold.claimResponseDayType());
         check(result, actual, ContractExtractionField.JURISDICTION, gold.jurisdiction());
+        check(result, actual, ContractExtractionField.CLIENT_INN, gold.clientInn());
+        check(result, actual, ContractExtractionField.EXPEDITOR_INN, gold.expeditorInn());
         return result;
     }
 
@@ -286,6 +296,8 @@ class ContractParserRegressionTest {
         String claimResponseDays,
         String claimResponseDayType,
         String jurisdiction,
+        String clientInn,
+        String expeditorInn,
         boolean manualReviewExpected
     ) {
     }
@@ -294,44 +306,44 @@ class ContractParserRegressionTest {
 
     static {
         GOLD.put("01_Северный_Контур_договор_ТЭУ.docx", new Gold(
-            "ТЭ-041/26", "2026-02-12", "45", "CALENDAR_DAYS", "ACT_SIGNED", null, null,
+            "ТЭ-041/26", "2026-02-12", "45", "CALENDAR_DAYS", "ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE", null, null,
             "CONTRACT_PENALTY", "0.05", "10", "INVOICE_AMOUNT", "20", "CALENDAR_DAYS",
-            "Арбитражный суд города Москвы", false));
+            "Арбитражный суд города Москвы", "7714582031", "7812456730", false));
         GOLD.put("02_ВолгаФуд_перевозка_автотранспортом.docx", new Gold(
             "19-П/2026", "2026-04-23", "15", "BANKING_DAYS", "ACT_SIGNED", null, null,
             "CONTRACT_PENALTY", "0.1", "10", "OUTSTANDING_DEBT", "15", "CALENDAR_DAYS",
-            "Арбитражный суд Республики Татарстан", false));
+            "Арбитражный суд Республики Татарстан", "1659217042", "7812456730", false));
         GOLD.put("03_УралПромСнаб_экспедиция.docx", new Gold(
             "УПС-ЭК/77", "2026-03-05", "30", "CALENDAR_DAYS", "UNLOADING_DATE", null, null,
             "ARTICLE_395", null, null, null, "30", "CALENDAR_DAYS",
-            "По месту нахождения ответчика", false));
+            "По месту нахождения ответчика", "6678129450", "7812456730", false));
         GOLD.put("04_НеваМаркет_рамочный_договор.docx", new Gold(
-            "РТЭ-2026/118", "2026-01-18", "60", "CALENDAR_DAYS", "DOCUMENT_PACKAGE_RECEIVED", "NEXT_PAYMENT_DAY", "FRIDAY",
+            "РТЭ-2026/118", "2026-01-18", "60", "CALENDAR_DAYS", "DOCUMENT_PACKAGE_RECEIVED", "NEXT_PAYMENT_DAY_AFTER_TERM", "FRIDAY",
             "CONTRACT_PENALTY", "0.03", null, null, "30", "CALENDAR_DAYS",
-            "Арбитражный суд города Санкт-Петербурга и Ленинградской области", false));
+            "Арбитражный суд города Санкт-Петербурга и Ленинградской области", "7816793204", "7812456730", false));
         GOLD.put("05_СибирьТрейд_ТЭО.docx", new Gold(
-            "СТ-Э/260511", "2026-05-11", "10", "WORKING_DAYS", ANY, null, null,
+            "СТ-Э/260511", "2026-05-11", "10", "WORKING_DAYS", null, null, null,
             "CONTRACT_PENALTY", "0.07", null, null, "10", "WORKING_DAYS",
-            "Арбитражный суд Новосибирской области", true));
+            "Арбитражный суд Новосибирской области", "5403098127", "7812456730", true));
         GOLD.put("06_ЮгАгро_организация_перевозок.docx", new Gold(
             "YA-06/2026-ТР", "2026-06-02", "21", "CALENDAR_DAYS", "TTN_SIGNED", null, null,
             null, null, null, null, "25", "CALENDAR_DAYS",
-            "Арбитражный суд Краснодарского края", true));
+            "Арбитражный суд Краснодарского края", "2311286405", "7812456730", true));
         GOLD.put("07_БалтикИмпорт_экспедиционный.docx", new Gold(
             "БИ-ТЭ-75/26", "2026-02-27", "75", "CALENDAR_DAYS", "ACT_SIGNED", null, null,
             "ARTICLE_395", null, null, null, "14", "WORKING_DAYS",
-            "Арбитражный суд Калининградской области", false));
+            "Арбитражный суд Калининградской области", "3906394712", "7812456730", false));
         GOLD.put("08_ТехноСклад_логистические_услуги.docx", new Gold(
-            "ТСЛ-08-26", "2026-07-08", "30", "CALENDAR_DAYS", null, null, null,
+            "ТСЛ-08-26", "2026-07-08", "30", "CALENDAR_DAYS", "LATEST_ACT_OR_DOCUMENT_PACKAGE", null, null,
             "CONTRACT_PENALTY", "0.1", "100", "PRINCIPAL_DEBT", "20", "CALENDAR_DAYS",
-            "Арбитражный суд Самарской области", true));
+            "Арбитражный суд Самарской области", "6319245078", "7812456730", false));
         GOLD.put("09_КаспийРитейл_перевозка.docx", new Gold(
             "КР/2026-44", "2026-04-14", "5", "BANKING_DAYS", "REGISTRY_INCLUDED", null, null,
             "CONTRACT_PENALTY", "0.2", "20", "SHIPMENT_COST", "10", "CALENDAR_DAYS",
-            "Арбитражный суд Астраханской области", false));
+            "Арбитражный суд Астраханской области", "3015118042", "7812456730", false));
         GOLD.put("10_АлтайНапитки_генеральный_договор.docx", new Gold(
             "АН-ТЭ/2026-013", "2026-03-31", "45", "CALENDAR_DAYS", "DOCUMENT_PACKAGE_RECEIVED", "NEXT_PAYMENT_DAY", "TUESDAY,THURSDAY",
             "ARTICLE_395", null, null, null, "30", "CALENDAR_DAYS",
-            "Арбитражный суд Алтайского края", false));
+            "Арбитражный суд Алтайского края", "2224186305", "7812456730", false));
     }
 }
