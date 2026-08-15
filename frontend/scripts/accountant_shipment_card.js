@@ -87,11 +87,14 @@ async function initAccountantShipmentCard() {
     document.getElementById('draft_text').value = latestVersion?.content || '';
 
     const editable = !claim || claim.status === 'DRAFT';
+    const shipmentCompleted = shipment.shipmentStatus === 'COMPLETED';
     document.getElementById('draft_reason').disabled = !editable;
     document.getElementById('draft_text').disabled = !editable;
-    confirmButton.hidden = !editable;
+    confirmButton.hidden = !editable || !shipmentCompleted;
     saveButton.hidden = !claim || !editable;
-    if (!editable) {
+    if (editable && !shipmentCompleted) {
+      message.textContent = 'Подтвердить неуплату можно только после завершения рейса';
+    } else if (!editable) {
       message.textContent = 'Редактирование доступно только до передачи претензии юристу';
     }
 

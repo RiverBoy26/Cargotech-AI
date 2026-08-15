@@ -35,6 +35,7 @@ import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.enums.ClaimType;
 import ru.sber.cargotech.claim.enums.ClaimVersionSource;
 import ru.sber.cargotech.claim.enums.DocumentValidationStatus;
+import ru.sber.cargotech.claim.enums.ShipmentStatus;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.repository.ClaimQueryRepository;
@@ -196,6 +197,9 @@ public class ClaimService {
         claim.setAssignedLawyerId(request.assignedLawyerId());
         claim.setCreatedBy(user.userId());
         claim.setUpdatedBy(user.userId());
+        if (Boolean.TRUE.equals(request.nonPaymentConfirmed())) {
+            requireCompletedShipment(shipment);
+        }
         applyNonPaymentConfirmation(claim, user, request.nonPaymentConfirmed(), request.nonPaymentConfirmationComment());
         claim.normalizeTotals();
         // The response is loaded immediately through ClaimQueryRepository (JDBC).
@@ -272,6 +276,9 @@ public class ClaimService {
             claim.setAssignedLawyerId(request.assignedLawyerId());
         }
         if (request.nonPaymentConfirmed() != null) {
+            if (request.nonPaymentConfirmed()) {
+                requireCompletedShipment(user, claim);
+            }
             applyNonPaymentConfirmation(
                 claim,
                 user,
@@ -420,6 +427,7 @@ public class ClaimService {
                 user.organizationId(),
                 claimId
         );
+        requireCompletedShipment(user, claim);
 
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             throw ClaimException.conflict(
@@ -492,6 +500,7 @@ public class ClaimService {
             StatusChangeRequest request
     ) {
         ClaimEntity claim = getEntity(user.organizationId(), claimId);
+        requireCompletedShipment(user, claim);
         if (claim.getStatus() != ClaimStatus.DRAFT) {
             throw ClaimException.conflict(
                     "Подтвердить отсутствие оплаты можно только для претензии в статусе DRAFT"
@@ -519,6 +528,19 @@ public class ClaimService {
         );
 
         return get(user, saved.getId());
+    }
+
+    private void requireCompletedShipment(CurrentClaimUser user, ClaimEntity claim) {
+        ClaimShipment shipment = shipmentService.getEntity(user.organizationId(), claim.getShipmentId());
+        requireCompletedShipment(shipment);
+    }
+
+    private void requireCompletedShipment(ClaimShipment shipment) {
+        if (shipment.getStatus() != ShipmentStatus.COMPLETED) {
+            throw ClaimException.conflict(
+                "Подтвердить неуплату можно только после завершения рейса"
+            );
+        }
     }
 
     @Transactional

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Администратор экспедитора</title>
-    <link rel="stylesheet" href="../../styles/admin_dashboard.css?v=20260814-click-lock-1">
+    <link rel="stylesheet" href="../../styles/admin_dashboard.css?v=20260815-claim-style-shipment-filters-1">
     <link rel="stylesheet" href="../../styles/admin_contracts.css?v=20260813-contract-review-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -204,7 +204,7 @@
             </div>
             <section class="add_user_form" id="shipment_form" aria-labelledby="shipment_form_title">
                 <div class="add_user_form_title" id="shipment_form_title">Новый рейс</div>
-                <div class="panel_subtitle">Клиент и экспедитор подставляются автоматически из выбранного договора.</div>
+                <div class="panel_subtitle">Клиент и экспедитор подставляются автоматически из выбранного договора. Статус рейса определяется по датам погрузки и выгрузки.</div>
                 <div class="add_user_form_fields">
                     <div class="form_field">
                         <label class="form_label" for="shipment_order_number">Номер рейса *</label>
@@ -219,15 +219,6 @@
                     <div class="form_field">
                         <label class="form_label" for="shipment_client_name">Клиент</label>
                         <input class="form_input" id="shipment_client_name" name="shipment_client_name" autocomplete="off" value="Выберите договор" readonly>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="shipment_status">Статус *</label>
-                        <select class="form_input form_select" id="shipment_status">
-                            <option value="CREATED" selected>Создан</option>
-                            <option value="IN_PROGRESS">В пути</option>
-                            <option value="COMPLETED">Завершён</option>
-                            <option value="CANCELLED">Отменён</option>
-                        </select>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_route_from">Пункт отправления</label>
@@ -273,6 +264,22 @@
                     <button class="primary_btn" id="save_shipment_btn" type="button">Создать рейс</button>
                 </div>
             </section>
+            <div class="toolbar shipment_filters" role="search" aria-label="Поиск и фильтрация рейсов">
+                <div class="search_box">
+                    <span class="search-box__icon">
+                        <img src="../../assets/Search.svg" alt="">
+                    </span>
+                    <input class="search-box__input" id="shipment_search" type="search"
+                           autocomplete="off" placeholder="Поиск по рейсу, клиенту или договору"
+                           aria-label="Поиск рейсов">
+                </div>
+                <select class="status_filter" id="shipment_status_filter" aria-label="Фильтр рейсов по статусу">
+                    <option value="">Все статусы</option>
+                    <option value="CREATED">Создан</option>
+                    <option value="IN_PROGRESS">В пути</option>
+                    <option value="COMPLETED">Завершён</option>
+                </select>
+            </div>
             <div class="admin_entity_table">
                 <div class="admin_entity_table_head">
                     <div class="admin_entity_table_head_t">Рейс</div>
@@ -344,6 +351,6 @@
     </div>
 
     <script src="../../scripts/api.js?v=20260813-contract-extraction-1"></script>
-    <script src="../../scripts/admin_script.js?v=20260815-russian-statuses-1"></script>
+    <script src="../../scripts/admin_script.js?v=20260815-required-payment-event-date-1"></script>
 </body>
 </html>

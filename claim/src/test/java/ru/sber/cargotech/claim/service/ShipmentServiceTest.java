@@ -9,6 +9,7 @@ import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.ContractStatus;
+import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.ShipmentStatus;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
@@ -62,6 +63,40 @@ class ShipmentServiceTest {
         assertThatThrownBy(() -> service.create(user, request))
             .isInstanceOf(ClaimException.class)
             .hasMessage("Рейс можно привязать только к подтверждённому действующему договору");
+        verify(shipmentRepository, never()).save(any(ClaimShipment.class));
+    }
+
+    @Test
+    void requiredContractualPaymentEventDateCannotBeOmitted() {
+        UUID organizationId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(UUID.randomUUID(), organizationId);
+
+        when(partyService.getEntity(organizationId, clientId)).thenReturn(new ClaimParty());
+        when(partyService.getEntity(organizationId, organizationId)).thenReturn(new ClaimParty());
+        ClaimContract contract = new ClaimContract();
+        contract.setId(contractId);
+        contract.setOrganizationId(organizationId);
+        contract.setClientId(clientId);
+        contract.setExpeditorId(organizationId);
+        contract.setNumber("Д-1");
+        contract.setStatus(ContractStatus.ACTIVE);
+        contract.setPaymentStartEvent(PaymentStartEvent.REGISTRY_INCLUDED);
+        when(contractService.getEntity(organizationId, contractId)).thenReturn(contract);
+
+        ShipmentRequest request = new ShipmentRequest(
+            "РЕЙС-1", clientId, organizationId, contractId,
+            null, null, null, null, null, null, null, null,
+            BigDecimal.TEN, "RUB", null, null
+        );
+        ShipmentService service = new ShipmentService(
+            shipmentRepository, partyService, contractService, outboxWriter
+        );
+
+        assertThatThrownBy(() -> service.create(user, request))
+            .isInstanceOf(ClaimException.class)
+            .hasMessage("Заполните обязательное поле «Дата договорного события начала срока оплаты»");
         verify(shipmentRepository, never()).save(any(ClaimShipment.class));
     }
 }

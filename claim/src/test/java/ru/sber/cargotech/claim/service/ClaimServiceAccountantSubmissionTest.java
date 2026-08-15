@@ -13,8 +13,11 @@ import ru.sber.cargotech.claim.dto.ClaimCalculationResponse;
 import ru.sber.cargotech.claim.dto.ClaimVersionResponse;
 import ru.sber.cargotech.claim.dto.CreateClaimVersionRequest;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
+import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.enums.ClaimVersionSource;
+import ru.sber.cargotech.claim.enums.ShipmentStatus;
+import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.repository.ClaimQueryRepository;
 import ru.sber.cargotech.claim.repository.ClaimRepository;
@@ -26,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.inOrder;
@@ -49,19 +53,24 @@ class ClaimServiceAccountantSubmissionTest {
     void savesAccountantTextAndReturnsPendingLegalReviewStatus() {
         UUID organizationId = UUID.randomUUID();
         UUID claimId = UUID.randomUUID();
+        UUID shipmentId = UUID.randomUUID();
         CurrentClaimUser user = new CurrentClaimUser(
             UUID.randomUUID(), organizationId, "Анна", "Смирнова", null, List.of("ACCOUNTANT")
         );
         ClaimEntity claim = new ClaimEntity();
         claim.setId(claimId);
         claim.setOrganizationId(organizationId);
+        claim.setShipmentId(shipmentId);
         claim.setStatus(ClaimStatus.DRAFT);
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setStatus(ShipmentStatus.COMPLETED);
         ClaimVersionResponse version = mock(ClaimVersionResponse.class);
         ClaimDetailsResponse details = mock(ClaimDetailsResponse.class);
         ClaimCalculationResponse calculation = mock(ClaimCalculationResponse.class);
 
         when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
             .thenReturn(Optional.of(claim));
+        when(shipmentService.getEntity(organizationId, shipmentId)).thenReturn(shipment);
         when(claimRepository.save(any(ClaimEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(versionService.create(any(), any(), any())).thenReturn(version);
         when(calculation.remainingDebt()).thenReturn(new java.math.BigDecimal("100.00"));
@@ -111,5 +120,50 @@ class ClaimServiceAccountantSubmissionTest {
             org.mockito.ArgumentMatchers.eq(claimId),
             any(CreateClaimVersionRequest.class)
         );
+    }
+
+    @Test
+    void rejectsNonPaymentConfirmationUntilShipmentIsCompleted() {
+        UUID organizationId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        UUID shipmentId = UUID.randomUUID();
+        CurrentClaimUser user = new CurrentClaimUser(
+            UUID.randomUUID(), organizationId, "Анна", "Смирнова", null, List.of("ACCOUNTANT")
+        );
+        ClaimEntity claim = new ClaimEntity();
+        claim.setId(claimId);
+        claim.setOrganizationId(organizationId);
+        claim.setShipmentId(shipmentId);
+        claim.setStatus(ClaimStatus.DRAFT);
+        ClaimShipment shipment = new ClaimShipment();
+        shipment.setStatus(ShipmentStatus.IN_PROGRESS);
+        ClaimCalculationResponse calculation = mock(ClaimCalculationResponse.class);
+
+        when(calculation.remainingDebt()).thenReturn(new java.math.BigDecimal("100.00"));
+        when(calculationService.recalculate(user, claimId)).thenReturn(calculation);
+        when(claimRepository.findByIdAndOrganizationId(claimId, organizationId))
+            .thenReturn(Optional.of(claim));
+        when(shipmentService.getEntity(organizationId, shipmentId)).thenReturn(shipment);
+
+        ClaimService service = new ClaimService(
+            claimRepository,
+            queryRepository,
+            historyRepository,
+            shipmentService,
+            paymentClient,
+            contractService,
+            partyService,
+            calculationService,
+            versionService,
+            outboxWriter
+        );
+        AccountantClaimSubmissionRequest request = new AccountantClaimSubmissionRequest(
+            "Неоплата",
+            "Текст претензии"
+        );
+
+        assertThatThrownBy(() -> service.submitToLegalReview(user, claimId, request))
+            .isInstanceOf(ClaimException.class)
+            .hasMessage("Подтвердить неуплату можно только после завершения рейса");
     }
 }

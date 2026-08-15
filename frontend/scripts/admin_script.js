@@ -695,28 +695,54 @@ function bindContractExtractionActions() {
   });
 }
 
+let adminShipments = [];
+
+function shipmentMatchesSearch(shipment, search) {
+  return [shipment.orderNumber, shipment.clientName, shipment.contractNumber]
+    .some((value) => String(value || '').toLowerCase().includes(search));
+}
+
+function renderShipments() {
+  const list = document.getElementById('shipments_list');
+  const search = document.getElementById('shipment_search').value.trim().toLowerCase();
+  const status = document.getElementById('shipment_status_filter').value;
+  const shipments = adminShipments.filter((shipment) =>
+    (!search || shipmentMatchesSearch(shipment, search))
+    && (!status || shipment.status === status)
+  );
+
+  const emptyMessage = adminShipments.length
+    ? 'Рейсы по заданным условиям не найдены'
+    : 'Рейсов пока нет';
+  list.innerHTML = shipments.map((shipment) => `
+    <div class="admin_entity_row">
+      <div>${escapeAdmin(shipment.orderNumber)}</div>
+      <div>${escapeAdmin(shipment.clientName)}</div>
+      <div>${escapeAdmin(shipment.contractNumber)}</div>
+      <div>${formatMoney(shipment.serviceAmount)}</div>
+      <div>
+        <span class="status-pill ${
+          shipment.status === 'COMPLETED'
+            ? 'status-pill-active'
+            : shipment.status === 'CANCELLED'
+              ? 'status-pill-blocked'
+              : 'status-pill-neutral'
+        }">${escapeAdmin(SHIPMENT_STATUS_LABEL[shipment.status] || 'Неизвестен')}</span>
+      </div>
+    </div>`).join('') || `<div class="admin_entity_empty">${emptyMessage}</div>`;
+}
+
 async function loadShipments() {
   const list = document.getElementById('shipments_list');
   list.textContent = 'Загрузка...';
   try {
     const page = await getShipments();
-    list.innerHTML = (page.content || []).map((shipment) => `
-      <div class="admin_entity_row">
-        <div>${escapeAdmin(shipment.orderNumber)}</div>
-        <div>${escapeAdmin(shipment.clientName)}</div>
-        <div>${escapeAdmin(shipment.contractNumber)}</div>
-        <div>${formatMoney(shipment.serviceAmount)}</div>
-        <div>
-          <span class="status-pill ${
-            shipment.status === 'COMPLETED'
-              ? 'status-pill-active'
-              : shipment.status === 'CANCELLED'
-                ? 'status-pill-blocked'
-                : 'status-pill-neutral'
-          }">${escapeAdmin(SHIPMENT_STATUS_LABEL[shipment.status] || 'Неизвестен')}</span>
-        </div>
-      </div>`).join('') || '<div class="admin_entity_empty">Рейсов пока нет</div>';
-  } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
+    adminShipments = page.content || [];
+    renderShipments();
+  } catch (error) {
+    adminShipments = [];
+    list.textContent = `Ошибка: ${error.message}`;
+  }
 }
 
 const partyForm = document.getElementById('party_form');
@@ -912,7 +938,6 @@ function resetShipmentForm() {
   document.getElementById('shipment_order_number').value = '';
   document.getElementById('shipment_contract_id').value = '';
   document.getElementById('shipment_client_name').value = 'Выберите договор';
-  document.getElementById('shipment_status').value = 'CREATED';
   document.getElementById('shipment_route_from').value = '';
   document.getElementById('shipment_route_to').value = '';
   document.getElementById('shipment_loading_date').value = '';
@@ -948,9 +973,15 @@ document.getElementById('save_shipment_btn').addEventListener('click', async () 
   const serviceAmountRaw = document.getElementById('shipment_service_amount').value;
   const loadingDate = document.getElementById('shipment_loading_date').value;
   const unloadingDate = document.getElementById('shipment_unloading_date').value;
+  const paymentStartEventDateInput = document.getElementById('shipment_payment_start_event_date');
 
   if (!orderNumber || !contract || serviceAmountRaw === '') {
     errorElement.textContent = 'Заполните обязательные поля: номер рейса, договор и стоимость.';
+    return;
+  }
+  if (paymentStartEventDateInput.required && !paymentStartEventDateInput.value) {
+    errorElement.textContent = 'Заполните обязательное поле «Дата договорного события начала срока оплаты».';
+    paymentStartEventDateInput.focus();
     return;
   }
   if (loadingDate && unloadingDate && loadingDate > unloadingDate) {
@@ -970,14 +1001,13 @@ document.getElementById('save_shipment_btn').addEventListener('click', async () 
     contractId,
     serviceAmount,
     currency: document.getElementById('shipment_currency').value,
-    status: document.getElementById('shipment_status').value,
   };
   setOptional(payload, 'routeFrom', document.getElementById('shipment_route_from').value.trim());
   setOptional(payload, 'routeTo', document.getElementById('shipment_route_to').value.trim());
   setOptional(payload, 'loadingDate', loadingDate);
   setOptional(payload, 'unloadingDate', unloadingDate);
   setOptional(payload, 'actSignedAt', document.getElementById('shipment_act_signed_at').value);
-  setOptional(payload, 'paymentStartEventDate', document.getElementById('shipment_payment_start_event_date').value);
+  setOptional(payload, 'paymentStartEventDate', paymentStartEventDateInput.value);
 
   saveButton.disabled = true;
   saveButton.textContent = 'Создание...';
@@ -996,6 +1026,9 @@ document.getElementById('save_shipment_btn').addEventListener('click', async () 
 
 const tabButtons = document.querySelectorAll('.tab_btn');
 const tabPanels = document.querySelectorAll('.tab_panel');
+
+document.getElementById('shipment_search').addEventListener('input', renderShipments);
+document.getElementById('shipment_status_filter').addEventListener('change', renderShipments);
 
 tabButtons.forEach((button) => {
   button.addEventListener('click', () => {

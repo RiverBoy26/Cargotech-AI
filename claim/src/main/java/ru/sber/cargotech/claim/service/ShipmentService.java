@@ -11,13 +11,17 @@ import ru.sber.cargotech.claim.dto.ShipmentResponse;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
-import ru.sber.cargotech.claim.enums.ShipmentStatus;
 import ru.sber.cargotech.claim.enums.ContractStatus;
+import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.ShipmentStatus;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimOutboxWriter;
 import ru.sber.cargotech.claim.repository.ClaimShipmentRepository;
 import ru.sber.cargotech.claim.security.CurrentClaimUser;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.UUID;
 
@@ -25,6 +29,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class ShipmentService {
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Europe/Moscow");
+    private static final EnumSet<PaymentStartEvent> REQUIRES_PAYMENT_START_EVENT_DATE = EnumSet.of(
+        PaymentStartEvent.REGISTRY_INCLUDED,
+        PaymentStartEvent.DOCUMENT_PACKAGE_RECEIVED,
+        PaymentStartEvent.LATEST_ACT_OR_DOCUMENT_PACKAGE,
+        PaymentStartEvent.ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE
+    );
     private final ClaimShipmentRepository shipmentRepository;
     private final PartyService partyService;
     private final ContractService contractService;
@@ -56,7 +67,7 @@ public class ShipmentService {
         shipment.setOrganizationId(user.organizationId());
         shipment.setCreatedBy(user.userId());
         shipment.setUpdatedBy(user.userId());
-        apply(shipment, request, user.userId(), expeditorId);
+        apply(shipment, request, user.userId(), expeditorId, false);
         ClaimShipment saved = shipmentRepository.save(shipment);
         outboxWriter.write("SHIPMENT", saved.getId(), "SHIPMENT_CREATED", user.organizationId(), user.userId(), Map.of("shipmentId", saved.getId()));
         return toResponse(user.organizationId(), saved);
@@ -69,7 +80,7 @@ public class ShipmentService {
         UUID expeditorId = user.organizationId();
         validateReferences(user.organizationId(), request, expeditorId);
         ClaimShipment shipment = getEntity(user.organizationId(), id);
-        apply(shipment, request, user.userId(), expeditorId);
+        apply(shipment, request, user.userId(), expeditorId, true);
         ClaimShipment saved = shipmentRepository.save(shipment);
         outboxWriter.write("SHIPMENT", saved.getId(), "SHIPMENT_UPDATED", user.organizationId(), user.userId(), Map.of("shipmentId", saved.getId()));
         return toResponse(user.organizationId(), saved);
@@ -98,8 +109,12 @@ public class ShipmentService {
         ClaimShipment shipment,
         ShipmentRequest request,
         UUID userId,
-        UUID expeditorId
+        UUID expeditorId,
+        boolean allowCancellation
     ) {
+        boolean cancelled = allowCancellation
+            && (shipment.getStatus() == ShipmentStatus.CANCELLED
+                || request.status() == ShipmentStatus.CANCELLED);
         shipment.setOrderNumber(request.orderNumber());
         shipment.setClientId(request.clientId());
         shipment.setExpeditorId(expeditorId);
@@ -114,7 +129,13 @@ public class ShipmentService {
         shipment.setPaymentStartEventDate(request.paymentStartEventDate());
         shipment.setServiceAmount(request.serviceAmount());
         shipment.setCurrency(request.currency() == null || request.currency().isBlank() ? "RUB" : request.currency());
-        shipment.setStatus(request.status() == null ? ShipmentStatus.CREATED : request.status());
+        shipment.setStatus(cancelled
+            ? ShipmentStatus.CANCELLED
+            : ShipmentStatusResolver.resolve(
+                request.loadingDate(),
+                request.unloadingDate(),
+                LocalDate.now(BUSINESS_ZONE)
+            ));
         shipment.setExternalId(request.externalId());
         shipment.setUpdatedBy(userId);
     }
@@ -132,6 +153,12 @@ public class ShipmentService {
         ClaimContract contract = contractService.getEntity(organizationId, request.contractId());
         if (contract.getStatus() != ContractStatus.ACTIVE || contract.getNumber() == null) {
             throw ClaimException.validation("Рейс можно привязать только к подтверждённому действующему договору");
+        }
+        if (REQUIRES_PAYMENT_START_EVENT_DATE.contains(contract.getPaymentStartEvent())
+                && request.paymentStartEventDate() == null) {
+            throw ClaimException.validation(
+                "Заполните обязательное поле «Дата договорного события начала срока оплаты»"
+            );
         }
         if (!contract.getClientId().equals(request.clientId()) || !contract.getExpeditorId().equals(expeditorId)) {
             throw ClaimException.validation("Клиент и экспедитор рейса должны совпадать с договором");

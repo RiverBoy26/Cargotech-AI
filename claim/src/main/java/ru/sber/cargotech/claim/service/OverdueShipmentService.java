@@ -150,6 +150,7 @@ public class OverdueShipmentService {
             overdueStartDate == null ? null : overdueStartDate.minusDays(1),
             overdueStartDate,
             actuallyOverdue ? OverdueDateCalculator.overdueDays(overdueStartDate, today) : 0,
+            shipment.getStatus(),
             claim == null ? null : claim.getId(),
             claim == null ? null : claim.getClaimNumber(),
             claim == null ? null : claim.getStatus(),
