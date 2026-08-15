@@ -299,8 +299,6 @@ public class ClaimGenerationPipelineService {
             throw new IllegalStateException("RAG retrieval failed and no provided contract_context is available", exception);
         }
 
-        ragWarnings.addAll(ragContext.warnings());
-
         GenerateClaimRequest enriched = new GenerateClaimRequest(
                 request.caseFacts(),
                 request.backendCalculation(),
@@ -309,7 +307,38 @@ public class ClaimGenerationPipelineService {
                 ragContext.templateContext() == null ? request.templateContext() : ragContext.templateContext(),
                 mergeSimilarExamples(request.similarExamples(), ragContext.similarExamples())
         );
+        addEffectiveRagWarnings(ragWarnings, ragContext.warnings(), enriched);
         return new EnrichmentResult(enriched, List.copyOf(ragContext.retrievedFragments()));
+    }
+
+    void addEffectiveRagWarnings(
+            List<String> target,
+            List<String> retrievalWarnings,
+            GenerateClaimRequest finalRequest
+    ) {
+        if (retrievalWarnings == null || retrievalWarnings.isEmpty()) {
+            return;
+        }
+        for (String warning : retrievalWarnings) {
+            if (warning == null || warning.isBlank()) {
+                continue;
+            }
+            if ("contract_context is empty".equals(warning)
+                    && finalRequest.contractContext() != null
+                    && !finalRequest.contractContext().isEmpty()) {
+                continue;
+            }
+            if ("legal_context is empty".equals(warning)
+                    && finalRequest.legalContext() != null
+                    && !finalRequest.legalContext().isEmpty()) {
+                continue;
+            }
+            if ("template_context is empty".equals(warning)
+                    && finalRequest.templateContext() != null) {
+                continue;
+            }
+            target.add(warning);
+        }
     }
 
     private boolean hasProvidedContractContext(GenerateClaimPipelineRequest request) {

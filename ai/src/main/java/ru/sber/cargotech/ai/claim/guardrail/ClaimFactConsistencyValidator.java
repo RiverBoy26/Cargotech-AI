@@ -535,7 +535,7 @@ public class ClaimFactConsistencyValidator {
                 && !containsSemanticAmount(
                     demandSection,
                     calculation.totalAmount(),
-                    Pattern.compile("(?iu)(?:итог\\p{L}*|всего|общ\\p{L}*\\s+сумм\\p{L}*)")
+                    Pattern.compile("(?iu)(?:итог\\p{L}*|всего|общ\\p{L}*\\s+сумм\\p{L}*|(?:произвест\\p{L}*\\s+)?(?:оплат\\p{L}*|уплат\\p{L}*|погас\\p{L}*)[^\\n]{0,80}задолженн\\p{L}*[^\\n]{0,40}(?:в\\s+размере|на\\s+сумму))")
                 )) {
             errors.add("demand section must state total amount separately");
         }

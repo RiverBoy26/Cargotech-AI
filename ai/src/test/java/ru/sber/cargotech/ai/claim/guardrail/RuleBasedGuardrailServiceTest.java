@@ -798,6 +798,28 @@ class RuleBasedGuardrailServiceTest {
     }
 
     @Test
+    void acceptsDemandSectionWithTotalAndBreakdownInOneSentence() {
+        String text = typedPaymentText("календарных")
+                .replace(
+                        "1. Уплатить основной долг — 240 000 руб.\n"
+                                + "2. Уплатить договорную неустойку — 2 400 руб.\n"
+                                + "Всего — 242 400 руб.",
+                        "1. Произвести оплату задолженности в размере 242 400 руб., "
+                                + "в том числе основной долг в размере 240 000 руб. "
+                                + "и договорную неустойку в размере 2 400 руб."
+                );
+
+        GuardrailResult result = service.check(
+                typedPaymentRequest(GenerateClaimRequest.TermDayType.CALENDAR_DAYS),
+                typedPaymentResponse(text)
+        );
+
+        assertThat(result.decision()).withFailMessage("Guardrail errors: %s", result.errors())
+                .isEqualTo(GuardrailDecision.PASS);
+        assertThat(result.errors()).isEmpty();
+    }
+
+    @Test
     void blocksFirstPersonSingularDemandForLegalEntityCreditor() {
         String text = typedPaymentText("календарных")
                 .replace("ООО Экспедитор требует:", "Требую:");

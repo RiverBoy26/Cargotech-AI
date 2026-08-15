@@ -125,4 +125,57 @@ class ClaimGenerationPipelineContractContextTest {
         assertThat(normalized.usedContractClauses()).containsExactly(used);
     }
 
+    @Test
+    void suppressesEmptyRagWarningsWhenTrustedFallbackContextFilledTheFinalRequest() {
+        ClaimGenerationPipelineService service = new ClaimGenerationPipelineService(
+                null, null, null, null, null, null
+        );
+        var request = new GenerateClaimRequest(
+                null,
+                null,
+                List.of(new GenerateClaimRequest.ContractContextChunk(
+                        "contract-8-2", "8.2", "Оплата", "PAYMENT_TERMS", "Срок оплаты"
+                )),
+                List.of(new GenerateClaimRequest.LegalContextItem(
+                        "law-395", "ГК РФ", "395", "проценты",
+                        "Проценты за пользование чужими денежными средствами",
+                        "ст. 395 ГК РФ", "2026-08-15", "PAYMENT_DELAY"
+                )),
+                new GenerateClaimRequest.TemplateContext(
+                        "template-payment", "Претензия", GenerateClaimRequest.ClaimType.PAYMENT_DELAY, List.of("Требования")
+                ),
+                List.of()
+        );
+        var warnings = new java.util.ArrayList<String>();
+
+        service.addEffectiveRagWarnings(
+                warnings,
+                List.of("contract_context is empty", "legal_context is empty", "template_context is empty"),
+                request
+        );
+
+        assertThat(warnings).isEmpty();
+    }
+
+    @Test
+    void keepsEmptyRagWarningsWhenFinalContextIsStillMissing() {
+        ClaimGenerationPipelineService service = new ClaimGenerationPipelineService(
+                null, null, null, null, null, null
+        );
+        var request = new GenerateClaimRequest(null, null, List.of(), List.of(), null, List.of());
+        var warnings = new java.util.ArrayList<String>();
+
+        service.addEffectiveRagWarnings(
+                warnings,
+                List.of("contract_context is empty", "legal_context is empty", "template_context is empty"),
+                request
+        );
+
+        assertThat(warnings).containsExactly(
+                "contract_context is empty",
+                "legal_context is empty",
+                "template_context is empty"
+        );
+    }
+
 }
