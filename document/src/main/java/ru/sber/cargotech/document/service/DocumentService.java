@@ -39,19 +39,22 @@ public class DocumentService {
     private final DocumentLinkRepository linkRepository;
     private final LocalDocumentStorageService storageService;
     private final DocumentMapper mapper;
+    private final DocumentTextExtractionService textExtractionService;
 
     public DocumentService(
         DocumentRepository documentRepository,
         DocumentFileRepository fileRepository,
         DocumentLinkRepository linkRepository,
         LocalDocumentStorageService storageService,
-        DocumentMapper mapper
+        DocumentMapper mapper,
+        DocumentTextExtractionService textExtractionService
     ) {
         this.documentRepository = documentRepository;
         this.fileRepository = fileRepository;
         this.linkRepository = linkRepository;
         this.storageService = storageService;
         this.mapper = mapper;
+        this.textExtractionService = textExtractionService;
     }
 
     @PreAuthorize("hasAuthority('DOCUMENT_UPLOAD')")
@@ -85,6 +88,10 @@ public class DocumentService {
 
         if (entityType != null && entityId != null) {
             createLink(document, entityType, entityId, linkType, user.userId());
+        }
+
+        if (document.getDocumentType() == DocumentType.CONTRACT) {
+            textExtractionService.extractAndSave(document);
         }
 
         return toResponse(document);

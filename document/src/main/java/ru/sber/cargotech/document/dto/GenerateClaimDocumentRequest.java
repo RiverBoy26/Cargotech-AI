@@ -12,6 +12,7 @@ public record GenerateClaimDocumentRequest(
     UUID templateVersionId,
     String templateCode,
     @NotNull UUID claimId,
+    @NotNull UUID claimVersionId,
     GeneratedDocumentType outputType,
     String documentNumber,
     LocalDate documentDate,

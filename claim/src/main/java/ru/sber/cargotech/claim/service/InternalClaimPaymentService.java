@@ -6,15 +6,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.ClaimPaymentContextResponse;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
+import ru.sber.cargotech.claim.entity.ClaimCalculation;
 import ru.sber.cargotech.claim.entity.ClaimParty;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
 import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimPartyRepository;
+import ru.sber.cargotech.claim.repository.ClaimCalculationRepository;
 import ru.sber.cargotech.claim.repository.ClaimRepository;
 import ru.sber.cargotech.claim.repository.ClaimShipmentRepository;
 
 import java.util.List;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Service
@@ -25,12 +28,14 @@ public class InternalClaimPaymentService {
     private static final List<ClaimStatus> CLOSED_STATUSES = List.of(
             ClaimStatus.PAID,
             ClaimStatus.CANCELLED,
+            ClaimStatus.CANCELLED_PAID,
             ClaimStatus.CLOSED_IN_COURT
     );
 
     private final ClaimRepository claimRepository;
     private final ClaimShipmentRepository shipmentRepository;
     private final ClaimPartyRepository partyRepository;
+    private final ClaimCalculationRepository calculationRepository;
 
     @Transactional(readOnly = true)
     public ClaimPaymentContextResponse getPaymentContext(
@@ -104,6 +109,8 @@ public class InternalClaimPaymentService {
             UUID organizationId,
             UUID claimId,
             UUID checkId,
+            BigDecimal remainingPrincipalAmount,
+            BigDecimal remainingPenaltyAmount,
             UUID userId
     ) {
         log.debug("Обновление последней проверки оплаты: organizationId={}, claimId={}, checkId={}, userId={}", organizationId, claimId, checkId, userId);
@@ -115,7 +122,10 @@ public class InternalClaimPaymentService {
                 ));
 
         claim.setLastPaymentCheckId(checkId);
+        claim.setPrincipalDebt(remainingPrincipalAmount);
+        claim.setPenaltyAmount(remainingPenaltyAmount);
         claim.setUpdatedBy(userId);
+        claim.normalizeTotals();
 
         claimRepository.save(claim);
     }
@@ -142,13 +152,33 @@ public class InternalClaimPaymentService {
                         "Должник претензии не найден"
                 ));
 
+        ClaimCalculation calculation = calculationRepository
+                .findFirstByClaimIdOrderByCalculationVersionDesc(claim.getId())
+                .orElse(null);
+
+        BigDecimal serviceAmount = calculation == null
+                ? claim.getPrincipalDebt()
+                : calculation.getPrincipalDebt();
+        BigDecimal calculatedPaidAmount = calculation == null
+                ? BigDecimal.ZERO
+                : calculation.getPaidAmount();
+        BigDecimal remainingPrincipalAmount = calculation == null
+                ? claim.getPrincipalDebt()
+                : calculation.getRemainingDebt();
+        BigDecimal remainingPenaltyAmount = calculation == null
+                ? claim.getPenaltyAmount()
+                : calculation.getPenaltyAmount();
+
         return new ClaimPaymentContextResponse(
                 claim.getId(),
                 shipment.getId(),
                 claim.getClaimNumber(),
                 debtor.getInn(),
                 shipment.getOrderNumber(),
-                shipment.getServiceAmount(),
+                serviceAmount,
+                calculatedPaidAmount,
+                remainingPrincipalAmount,
+                remainingPenaltyAmount,
                 claim.getStatus().toString()
         );
     }

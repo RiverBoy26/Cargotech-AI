@@ -82,12 +82,22 @@ public class ClaimController {
         return claimService.update(currentUserProvider.getRequiredUser(), claimId, request);
     }
 
+    @PatchMapping("/{claimId}/accountant-draft")
+    @PreAuthorize("hasAuthority('OVERDUE_UPDATE')")
+    public ClaimDetailsResponse updateAccountantDraft(
+        @PathVariable UUID claimId,
+        @Valid @RequestBody UpdateAccountantDraftRequest request
+    ) {
+        log.info("Обновление черновика претензии бухгалтером: claimId={}", claimId);
+        return claimService.updateAccountantDraft(currentUserProvider.getRequiredUser(), claimId, request);
+    }
+
     @DeleteMapping("/{claimId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('CLAIM_DELETE')")
     public void delete(@PathVariable UUID claimId) {
         log.info("Вызов endpoint: delete");
-        claimService.deleteDraft(currentUserProvider.getRequiredUser(), claimId);
+        claimService.delete(currentUserProvider.getRequiredUser(), claimId);
     }
 
     @PostMapping("/{claimId}/generate")
@@ -104,8 +114,7 @@ public class ClaimController {
     @PreAuthorize("hasAuthority('OVERDUE_CONFIRM_NON_PAYMENT')")
     public ClaimDetailsResponse submitToLegalReview(
             @PathVariable UUID claimId,
-            @Valid @RequestBody(required = false)
-            StatusChangeRequest request
+            @Valid @RequestBody AccountantClaimSubmissionRequest request
     ) {
         log.info(
                 "Передача претензии на юридическую проверку с подтверждением неуплаты: claimId={}",
@@ -116,6 +125,51 @@ public class ClaimController {
                 currentUserProvider.getRequiredUser(),
                 claimId,
                 request
+        );
+    }
+
+    @PostMapping("/{claimId}/confirm-non-payment")
+    @PreAuthorize("hasAuthority('OVERDUE_CONFIRM_NON_PAYMENT')")
+    public ClaimDetailsResponse confirmNonPayment(
+            @PathVariable UUID claimId,
+            @Valid @RequestBody(required = false) StatusChangeRequest request
+    ) {
+        log.info("Подтверждение отсутствия оплаты: claimId={}", claimId);
+        return claimService.confirmNonPayment(
+                currentUserProvider.getRequiredUser(),
+                claimId,
+                request
+        );
+    }
+
+    @PostMapping("/{claimId}/request-non-payment-confirmation")
+    @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
+    public ClaimDetailsResponse requestNonPaymentConfirmation(@PathVariable UUID claimId) {
+        log.info("Запрос подтверждения отсутствия оплаты: claimId={}", claimId);
+        return claimService.requestNonPaymentConfirmation(
+            currentUserProvider.getRequiredUser(),
+            claimId
+        );
+    }
+
+    @GetMapping("/{claimId}/send-checklist")
+    @PreAuthorize("hasAuthority('CLAIM_READ')")
+    public SendChecklistResponse sendChecklist(@PathVariable UUID claimId) {
+        log.info("Проверка готовности претензии к отправке: claimId={}", claimId);
+        return claimService.sendChecklist(currentUserProvider.getRequiredUser(), claimId);
+    }
+
+    @PostMapping("/{claimId}/validation-override")
+    @PreAuthorize("hasAuthority('CLAIM_UPDATE')")
+    public ClaimDetailsResponse overrideValidation(
+        @PathVariable UUID claimId,
+        @Valid @RequestBody ValidationOverrideRequest request
+    ) {
+        log.info("Ручное подтверждение проверки претензии: claimId={}", claimId);
+        return claimService.overrideValidation(
+            currentUserProvider.getRequiredUser(),
+            claimId,
+            request
         );
     }
 
@@ -161,6 +215,20 @@ public class ClaimController {
     ) {
         log.info("Вызов endpoint: cancel");
         return claimService.cancel(currentUserProvider.getRequiredUser(), claimId, request);
+    }
+
+    @PostMapping("/{claimId}/withdraw")
+    @PreAuthorize("hasAuthority('OVERDUE_CONFIRM_NON_PAYMENT')")
+    public ClaimDetailsResponse withdraw(
+        @PathVariable UUID claimId,
+        @RequestBody(required = false) StatusChangeRequest request
+    ) {
+        log.info("Отзыв претензии бухгалтером до отправки: claimId={}", claimId);
+        return claimService.withdraw(
+            currentUserProvider.getRequiredUser(),
+            claimId,
+            request
+        );
     }
 
     @PostMapping("/{claimId}/mark-paid")

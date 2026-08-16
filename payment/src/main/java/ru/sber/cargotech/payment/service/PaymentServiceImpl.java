@@ -14,6 +14,7 @@ import ru.sber.cargotech.payment.dto.CreatePaymentRequest;
 import ru.sber.cargotech.payment.dto.PaymentDetailsResponse;
 import ru.sber.cargotech.payment.dto.PaymentMatchResponse;
 import ru.sber.cargotech.payment.dto.PaymentResponse;
+import ru.sber.cargotech.payment.entity.OrganizationRecipient;
 import ru.sber.cargotech.payment.entity.Payment;
 import ru.sber.cargotech.payment.entity.PaymentMatch;
 import ru.sber.cargotech.payment.enums.PaymentCheckStatus;
@@ -22,6 +23,7 @@ import ru.sber.cargotech.payment.enums.PaymentStatus;
 import ru.sber.cargotech.payment.enums.PaymentTargetType;
 import ru.sber.cargotech.payment.exception.PaymentException;
 import ru.sber.cargotech.payment.repository.ClaimPaymentData;
+import ru.sber.cargotech.payment.repository.OrganizationRecipientRepository;
 import ru.sber.cargotech.payment.repository.PaymentMatchRepository;
 import ru.sber.cargotech.payment.repository.PaymentOutboxWriter;
 import ru.sber.cargotech.payment.repository.PaymentRepository;
@@ -45,6 +47,8 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentMatchRepository matchRepository;
     private final PaymentOutboxWriter outboxWriter;
     private final ClaimClient claimClient;
+    private final OrganizationRecipientRepository organizationRecipientRepository;
+    private final ClaimPaymentSynchronizationService claimSynchronizationService;
 
     @Transactional
     public PaymentResponse create(
@@ -79,6 +83,10 @@ public class PaymentServiceImpl implements PaymentService {
             );
         }
 
+        OrganizationRecipient recipient = requireOrganizationRecipient(
+                user.organizationId()
+        );
+
         Payment payment = new Payment();
         payment.setOrganizationId(user.organizationId());
         payment.setSourceSystem(PaymentSourceSystem.MANUAL_EXCEL);
@@ -87,8 +95,8 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setPaymentDate(request.paymentDate());
         payment.setPayerInn(normalizeOptional(request.payerInn()));
         payment.setPayerName(normalizeOptional(request.payerName()));
-        payment.setRecipientInn(normalizeOptional(request.recipientInn()));
-        payment.setRecipientName(normalizeOptional(request.recipientName()));
+        payment.setRecipientInn(normalizeOptional(recipient.getInn()));
+        payment.setRecipientName(recipient.getName());
         payment.setAmount(request.amount());
         payment.setCurrency(normalizeCurrency(request.currency()));
         payment.setPurpose(normalizeOptional(request.purpose()));
@@ -157,18 +165,20 @@ public class PaymentServiceImpl implements PaymentService {
                 .toList();
 
         BigDecimal paid = paidAmount(claim);
-        BigDecimal remaining = claim.serviceAmount()
-                .subtract(paid)
-                .max(BigDecimal.ZERO);
+        BigDecimal remaining = ClaimOutstandingAmountCalculator.calculate(
+                claim,
+                paid
+        );
+        BigDecimal expected = paid.add(remaining);
 
         return new ClaimPaymentsResponse(
                 claim.id(),
                 claim.shipmentId(),
                 claim.claimNumber(),
-                claim.serviceAmount(),
+                expected,
                 paid,
                 remaining,
-                resolvePaymentStatus(claim.serviceAmount(), paid),
+                resolvePaymentStatus(expected, paid),
                 lastPaymentDate(claim, user.organizationId()),
                 payments
         );
@@ -253,12 +263,19 @@ public class PaymentServiceImpl implements PaymentService {
     public void updateLastPaymentCheck(
             UUID claimId,
             UUID organizationId,
-            UUID checkId
+            UUID checkId,
+            BigDecimal remainingPrincipalAmount,
+            BigDecimal remainingPenaltyAmount
     ) {
         log.debug("Передача проверки оплаты в claim: claimId={}, checkId={}, organizationId={}", claimId, checkId, organizationId);
 
         try {
-            claimClient.updateLastPaymentCheck(claimId, checkId);
+            claimClient.updateLastPaymentCheck(
+                    claimId,
+                    checkId,
+                    remainingPrincipalAmount,
+                    remainingPenaltyAmount
+            );
         } catch (RestClientResponseException exception) {
             throw PaymentException.conflict(
                     "Не удалось привязать проверку оплаты к претензии: "
@@ -356,6 +373,15 @@ public class PaymentServiceImpl implements PaymentService {
 
     public PaymentResponse toResponse(Payment payment) {
         BigDecimal matched = matchedAmount(payment.getId());
+        OrganizationRecipient recipient = organizationRecipientRepository
+                .findById(payment.getOrganizationId())
+                .orElse(null);
+        String recipientInn = recipient == null
+                ? payment.getRecipientInn()
+                : recipient.getInn();
+        String recipientName = recipient == null
+                ? payment.getRecipientName()
+                : recipient.getName();
 
         return new PaymentResponse(
                 payment.getId(),
@@ -365,8 +391,8 @@ public class PaymentServiceImpl implements PaymentService {
                 payment.getPaymentDate(),
                 payment.getPayerInn(),
                 payment.getPayerName(),
-                payment.getRecipientInn(),
-                payment.getRecipientName(),
+                recipientInn,
+                recipientName,
                 payment.getAmount(),
                 payment.getCurrency(),
                 payment.getPurpose(),
@@ -406,7 +432,64 @@ public class PaymentServiceImpl implements PaymentService {
                 response.debtorInn(),
                 response.shipmentOrderNumber(),
                 response.serviceAmount(),
+                response.calculatedPaidAmount(),
+                response.remainingPrincipalAmount(),
+                response.remainingPenaltyAmount(),
                 response.status()
+        );
+    }
+
+    @Transactional
+    public void delete(
+            UUID paymentId,
+            String reason,
+            CurrentPaymentUser user
+    ) {
+        log.debug(
+                "Удаление платежа: paymentId={}, organizationId={}, userId={}",
+                paymentId,
+                user.organizationId(),
+                user.userId()
+        );
+
+        String normalizedReason = normalizeOptional(reason);
+        if (normalizedReason == null) {
+            throw PaymentException.unprocessable(
+                "Укажите причину удаления платежа"
+            );
+        }
+        if (normalizedReason.length() > 2000) {
+            throw PaymentException.unprocessable(
+                "Причина удаления платежа не должна превышать 2000 символов"
+            );
+        }
+
+        Payment payment = getPayment(paymentId, user.organizationId());
+        List<UUID> affectedClaimIds = matchRepository
+                .findActiveTargetIdsByPaymentIdAndType(
+                        paymentId,
+                        PaymentTargetType.CLAIM
+                );
+
+        paymentRepository.delete(payment);
+        outboxWriter.write(
+                "PAYMENT",
+                paymentId,
+                "PAYMENT_DELETED",
+                user.organizationId(),
+                user.userId(),
+                Map.of(
+                    "paymentId", paymentId,
+                    "reason", normalizedReason
+                )
+        );
+
+        affectedClaimIds.forEach(
+            claimId -> claimSynchronizationService.synchronizeAfterCommit(
+                claimId,
+                "Удалён сопоставленный платёж %s: %s"
+                    .formatted(paymentId, normalizedReason)
+            )
         );
     }
 
@@ -417,5 +500,15 @@ public class PaymentServiceImpl implements PaymentService {
 
     private String normalizeOptional(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private OrganizationRecipient requireOrganizationRecipient(
+            UUID organizationId
+    ) {
+        return organizationRecipientRepository.findById(organizationId)
+                .orElseThrow(() -> PaymentException.notFound(
+                        "Организация-экспедитор %s не найдена"
+                                .formatted(organizationId)
+                ));
     }
 }

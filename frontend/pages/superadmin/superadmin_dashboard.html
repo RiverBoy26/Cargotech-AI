@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Суперадмин</title>
-    <link rel="stylesheet" href="../../styles/superadmin_dashboard.css">
+    <link rel="stylesheet" href="../../styles/superadmin_dashboard.css?v=20260814-click-lock-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
@@ -39,16 +39,24 @@
                 <div class="add_user_form_title">Новый пользователь</div>
                 <div class="add_user_form_fields">
                     <div class="form_field">
-                        <label class="form_label" for="field_fullname">ФИО *</label>
-                        <input class="form_input" id="field_fullname" type="text" required placeholder="Иванов Иван Иванович">
+                        <label class="form_label" for="field_first_name">Имя *</label>
+                        <input class="form_input" id="field_first_name" name="new_user_first_name" autocomplete="off" type="text" required maxlength="100" placeholder="Иван">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="field_last_name">Фамилия *</label>
+                        <input class="form_input" id="field_last_name" name="new_user_last_name" autocomplete="off" type="text" required maxlength="100" placeholder="Иванов">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="field_middle_name">Отчество</label>
+                        <input class="form_input" id="field_middle_name" name="new_user_middle_name" autocomplete="off" type="text" maxlength="100" placeholder="Иванович">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="field_email">Email *</label>
-                        <input class="form_input" id="field_email" type="email" required placeholder="ivanov@expeditor.ru">
+                        <input class="form_input" id="field_email" name="new_user_email" autocomplete="off" type="email" required placeholder="ivanov@expeditor.ru">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="field_password">Пароль *</label>
-                        <input class="form_input" id="field_password" type="password" required minlength="8" placeholder="••••••••">
+                        <input class="form_input" id="field_password" name="new_user_password" type="password" autocomplete="new-password" required minlength="8" placeholder="••••••••">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="field_role">Роль *</label>
@@ -57,7 +65,6 @@
                             <option value="LAWYER">Юрист</option>
                             <option value="ACCOUNTANT">Бухгалтер</option>
                             <option value="EXPEDITOR_ADMIN">Администратор экспедитора</option>
-                            <option value="SUPER_ADMIN">Суперадмин</option>
                         </select>
                     </div>
                     <!-- Суперадмин добавляет пользователя к любому экспедитору.
@@ -90,35 +97,35 @@
                 <div class="add_user_form_fields">
                     <div class="form_field">
                         <label class="form_label" for="organization_name">Название *</label>
-                        <input class="form_input" id="organization_name" type="text" required maxlength="255" placeholder="ООО «Экспедитор»">
+                        <input class="form_input" id="organization_name" name="organization_name" autocomplete="off" type="text" required maxlength="255" placeholder="ООО «Экспедитор»">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="organization_inn">ИНН *</label>
-                        <input class="form_input" id="organization_inn" type="text" required maxlength="12">
+                        <input class="form_input" id="organization_inn" name="organization_inn" autocomplete="off" type="text" required maxlength="12">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="organization_kpp">КПП</label>
-                        <input class="form_input" id="organization_kpp" type="text" maxlength="9">
+                        <input class="form_input" id="organization_kpp" name="organization_kpp" autocomplete="off" type="text" maxlength="9">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="organization_ogrn">ОГРН</label>
-                        <input class="form_input" id="organization_ogrn" type="text" maxlength="15">
+                        <input class="form_input" id="organization_ogrn" name="organization_ogrn" autocomplete="off" type="text" maxlength="15">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="organization_legal_address">Юридический адрес</label>
-                        <input class="form_input" id="organization_legal_address" type="text">
+                        <input class="form_input" id="organization_legal_address" name="organization_legal_address" autocomplete="off" type="text">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="organization_postal_address">Почтовый адрес</label>
-                        <input class="form_input" id="organization_postal_address" type="text">
+                        <input class="form_input" id="organization_postal_address" name="organization_postal_address" autocomplete="off" type="text">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="organization_email">Email</label>
-                        <input class="form_input" id="organization_email" type="email">
+                        <input class="form_input" id="organization_email" name="organization_email" autocomplete="off" type="email">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="organization_phone">Телефон</label>
-                        <input class="form_input" id="organization_phone" type="text">
+                        <input class="form_input" id="organization_phone" name="organization_phone" autocomplete="off" type="text">
                     </div>
                 </div>
                 <div class="add_user_form_actions">
@@ -150,9 +157,25 @@
             </div>
             <div class="modal_body">
                 <div class="modal_field_grid">
-                    <div class="modal_field">
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Имя</div>
+                        <div class="modal_field_value" id="modal_user_firstname_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_firstname_input" name="modal_user_firstname" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Фамилия</div>
+                        <div class="modal_field_value" id="modal_user_lastname_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_lastname_input" name="modal_user_lastname" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Отчество</div>
+                        <div class="modal_field_value" id="modal_user_middlename_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_middlename_input" name="modal_user_middlename" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
                         <div class="modal_field_label">Email</div>
-                        <div class="modal_field_value" id="modal_user_email">—</div>
+                        <div class="modal_field_value" id="modal_user_email_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_email_input" name="modal_user_email" autocomplete="off" type="email">
                     </div>
                     <div class="modal_field">
                         <div class="modal_field_label">Роль</div>
@@ -167,16 +190,21 @@
                         <div class="modal_field_value" id="modal_user_expeditor">—</div>
                     </div>
                 </div>
+                <p class="form_message form_error" id="modal_edit_message" role="alert"></p>
                 <div class="modal_loading" id="modal_loading">Загрузка...</div>
                 <div class="modal_error" id="modal_error"></div>
             </div>
             <div class="modal_footer">
+                <button class="secondary_btn" id="modal_block_btn"></button>
+                <button class="secondary_btn" id="modal_edit_btn">Редактировать</button>
+                <button class="primary_btn" id="modal_save_btn" style="display:none;">Сохранить</button>
+                <button class="secondary_btn" id="modal_cancel_edit_btn" style="display:none;">Отмена</button>
                 <button class="secondary_btn" id="modal_close_footer_btn">Закрыть</button>
             </div>
         </div>
     </div>
     
-    <script src="../../scripts/api.js"></script>
-    <script src="../../scripts/superadmin_script.js"></script>
+    <script src="../../scripts/api.js?v=20260804-user-name-fields-2"></script>
+    <script src="../../scripts/superadmin_script.js?v=20260814-click-lock-1"></script>
 </body>
 </html>

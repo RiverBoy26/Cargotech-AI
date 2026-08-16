@@ -17,7 +17,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import ru.sber.cargotech.claim.dto.ContractRequest;
+import ru.sber.cargotech.claim.dto.ContractIntakeRequest;
 import ru.sber.cargotech.claim.dto.ContractResponse;
+import ru.sber.cargotech.claim.dto.ContractExtractionResponse;
+import ru.sber.cargotech.claim.dto.SubmitContractExtractionRequest;
 import ru.sber.cargotech.claim.dto.PageResponse;
 import ru.sber.cargotech.claim.security.CurrentClaimUserProvider;
 import ru.sber.cargotech.claim.service.ContractService;
@@ -46,10 +49,37 @@ public class ContractController {
         return contractService.get(currentUserProvider.getRequiredUser(), contractId);
     }
 
+    @GetMapping("/{contractId}/extraction")
+    @PreAuthorize("hasAuthority('CONTRACT_READ')")
+    public ContractExtractionResponse getExtraction(@PathVariable UUID contractId) {
+        return contractService.getExtraction(currentUserProvider.getRequiredUser(), contractId);
+    }
+
+    @PostMapping("/{contractId}/extraction/results")
+    @PreAuthorize("hasAuthority('CONTRACT_UPDATE')")
+    public ContractExtractionResponse submitExtraction(
+        @PathVariable UUID contractId,
+        @Valid @RequestBody SubmitContractExtractionRequest request
+    ) {
+        return contractService.submitExtraction(currentUserProvider.getRequiredUser(), contractId, request);
+    }
+
+    @PostMapping("/{contractId}/extraction/confirm")
+    @PreAuthorize("hasAuthority('CONTRACT_UPDATE')")
+    public ContractExtractionResponse confirmExtraction(@PathVariable UUID contractId) {
+        return contractService.confirmExtraction(currentUserProvider.getRequiredUser(), contractId);
+    }
+
+    @PostMapping("/{contractId}/rag/reindex")
+    @PreAuthorize("hasAuthority('CONTRACT_UPDATE')")
+    public ContractResponse reindexContractRag(@PathVariable UUID contractId) {
+        return contractService.requestRagReindex(currentUserProvider.getRequiredUser(), contractId);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('CONTRACT_CREATE')")
-    public ContractResponse create(@Valid @RequestBody ContractRequest request) {
+    public ContractResponse create(@Valid @RequestBody ContractIntakeRequest request) {
         log.info("Вызов endpoint: create");
         return contractService.create(currentUserProvider.getRequiredUser(), request);
     }

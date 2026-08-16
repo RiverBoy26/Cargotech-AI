@@ -1,0 +1,240 @@
+{
+  "source_batch_id": "legal-core-v3-2026-08-13",
+  "source_system": "CARGOTECH_LEGAL_VERIFIED_2026_08_13",
+  "chunks": [
+    {
+      "chunk_id": "chunk_legal_gk_309",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "ALL",
+      "source_id": "gk_rf_part_1",
+      "source_title": "ГК РФ, статья 309",
+      "text": "Общее правило: обязательства исполняются надлежащим образом в соответствии с условиями обязательства и требованиями применимого права.",
+      "citation": "ст. 309 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "309",
+        "purpose": "надлежащее исполнение обязательств",
+        "topic": "исполнение договорных обязательств",
+        "applicability": "ALL",
+        "verified_at": "2026-08-13",
+        "source_revision": "ГК РФ ч. 1, ред. от 10.06.2026",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_310",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "ALL",
+      "source_id": "gk_rf_part_1",
+      "source_title": "ГК РФ, статья 310",
+      "text": "Общее правило запрещает односторонний отказ от исполнения обязательства и одностороннее изменение его условий, кроме случаев, допускаемых законом или договором.",
+      "citation": "ст. 310 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "310",
+        "purpose": "недопустимость одностороннего отказа от исполнения обязательства",
+        "topic": "исполнение договорных обязательств",
+        "applicability": "ALL",
+        "verified_at": "2026-08-13",
+        "source_revision": "ГК РФ ч. 1, ред. от 10.06.2026",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_314",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "ALL",
+      "source_id": "gk_rf_part_1",
+      "source_title": "ГК РФ, статья 314",
+      "text": "Если обязательство предусматривает определенный день или определимый период исполнения, оно должно быть исполнено в этот день либо в пределах такого периода.",
+      "citation": "ст. 314 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "314",
+        "purpose": "срок исполнения обязательства",
+        "topic": "срок исполнения и просрочка",
+        "applicability": "ALL",
+        "verified_at": "2026-08-13",
+        "source_revision": "ГК РФ ч. 1, ред. от 10.06.2026",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_330",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "ALL",
+      "source_id": "gk_rf_part_1",
+      "source_title": "ГК РФ, статья 330",
+      "text": "Неустойка является установленной законом или договором денежной суммой, подлежащей уплате при неисполнении или ненадлежащем исполнении обязательства, в том числе при просрочке.",
+      "citation": "ст. 330 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "330",
+        "purpose": "правовая природа договорной или законной неустойки",
+        "topic": "неустойка штраф пени",
+        "applicability": "ALL",
+        "verified_at": "2026-08-13",
+        "source_revision": "ГК РФ ч. 1, ред. от 10.06.2026",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_395",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "gk_rf_part_1",
+      "source_title": "ГК РФ, статья 395",
+      "text": "При просрочке денежного обязательства на сумму долга начисляются проценты; размер по общему правилу определяется ключевой ставкой Банка России, действовавшей в соответствующие периоды, если иной размер не установлен законом или договором.",
+      "citation": "ст. 395 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "395",
+        "purpose": "проценты за просрочку денежного обязательства",
+        "topic": "проценты пользование чужими денежными средствами просрочка оплаты",
+        "applicability": "PAYMENT_DELAY",
+        "verified_at": "2026-08-13",
+        "source_revision": "ГК РФ ч. 1, ред. от 10.06.2026",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "chunk_legal_gk_801",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "gk_rf_part_2",
+      "source_title": "ГК РФ, статья 801",
+      "text": "Договор транспортной экспедиции предусматривает выполнение или организацию экспедитором за вознаграждение и за счет клиента услуг, связанных с перевозкой груза.",
+      "citation": "ст. 801 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "801",
+        "purpose": "квалификация договора транспортной экспедиции",
+        "topic": "транспортная экспедиция услуги экспедитора клиент вознаграждение",
+        "applicability": "PAYMENT_DELAY_TRANSPORT_EXPEDITION",
+        "verified_at": "2026-08-13",
+        "source_revision": "ГК РФ ч. 2, ред. от 24.06.2025, с изм. от 09.06.2026",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "legal_uat_28_v3",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "ALL",
+      "source_id": "259_fz_uat",
+      "source_title": "259-ФЗ УАТ, статья 28",
+      "text": "Статья 28 УАТ регулирует определение маршрута перевозки пассажиров и багажа по заказу. Для претензий по грузовым перевозкам и транспортной экспедиции эта статья сама по себе не является основанием требования.",
+      "citation": "ст. 28 Федерального закона № 259-ФЗ (УАТ)",
+      "is_current": true,
+      "extra": {
+        "law_code": "259-ФЗ УАТ",
+        "article": "28",
+        "purpose": "маршрут перевозки пассажиров и багажа по заказу",
+        "topic": "пассажиры багаж маршрут по заказу",
+        "applicability": "PASSENGER_CHARTER_ONLY",
+        "verified_at": "2026-08-13",
+        "source_revision": "Федеральный закон № 259-ФЗ, ред. от 31.07.2025",
+        "auto_use": false,
+        "review_note": "Указана в обратной связи заказчика, но для грузовой претензии не применять автоматически"
+      }
+    },
+    {
+      "chunk_id": "legal_gk_797_v3",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "LOADING_FAILURE",
+      "source_id": "gk_rf_part_2",
+      "source_title": "ГК РФ, статья 797",
+      "text": "До предъявления к перевозчику иска по спору из перевозки груза требуется предъявить перевозчику претензию в порядке, установленном соответствующим транспортным уставом или кодексом.",
+      "citation": "п. 1 ст. 797 ГК РФ",
+      "is_current": true,
+      "extra": {
+        "law_code": "ГК РФ",
+        "article": "797",
+        "purpose": "обязательный претензионный порядок по перевозке груза",
+        "topic": "претензия перевозчику груз досудебный порядок",
+        "applicability": "LOADING_FAILURE_CARRIER",
+        "verified_at": "2026-08-13",
+        "source_revision": "ГК РФ ч. 2, действующая редакция на 13.08.2026",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "legal_uat_39_v3",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "LOADING_FAILURE",
+      "source_id": "259_fz_uat",
+      "source_title": "259-ФЗ УАТ, статья 39",
+      "text": "Статья 39 УАТ определяет порядок и круг лиц, имеющих право предъявлять перевозчикам и фрахтовщикам претензии в досудебном порядке по перевозкам и предоставлению транспортных средств.",
+      "citation": "ст. 39 Федерального закона № 259-ФЗ (УАТ)",
+      "is_current": true,
+      "extra": {
+        "law_code": "259-ФЗ УАТ",
+        "article": "39",
+        "purpose": "порядок предъявления претензии перевозчику или фрахтовщику",
+        "topic": "претензия перевозчику фрахтовщику непредоставление транспортного средства",
+        "applicability": "LOADING_FAILURE_CARRIER",
+        "verified_at": "2026-08-13",
+        "source_revision": "Федеральный закон № 259-ФЗ, ред. от 31.07.2025",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "legal_uat_40_v3",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "LOADING_FAILURE",
+      "source_id": "259_fz_uat",
+      "source_title": "259-ФЗ УАТ, статья 40",
+      "text": "Перевозчик или фрахтовщик обязан рассмотреть предъявленную претензию и письменно уведомить заявителя о результате ее рассмотрения в течение тридцати дней со дня получения претензии.",
+      "citation": "ч. 1 ст. 40 Федерального закона № 259-ФЗ (УАТ)",
+      "is_current": true,
+      "extra": {
+        "law_code": "259-ФЗ УАТ",
+        "article": "40",
+        "purpose": "срок рассмотрения претензии перевозчиком или фрахтовщиком",
+        "topic": "ответ на претензию тридцать дней перевозчик",
+        "applicability": "LOADING_FAILURE_CARRIER",
+        "verified_at": "2026-08-13",
+        "source_revision": "Федеральный закон № 259-ФЗ, ред. от 31.07.2025",
+        "auto_use": true
+      }
+    },
+    {
+      "chunk_id": "legal_87fz_10_v3",
+      "rag_collection": "LEGAL_CONTEXT",
+      "chunk_type": "LEGAL_ARTICLE",
+      "claim_type": "PAYMENT_DELAY",
+      "source_id": "87_fz_transport_expedition",
+      "source_title": "87-ФЗ о транспортно-экспедиционной деятельности, статья 10",
+      "text": "Для транспортной экспедиции закон отдельно устанавливает ответственность клиента за несвоевременную уплату вознаграждения экспедитору и возмещение расходов в виде законной неустойки 0,1 процента за каждый день просрочки с установленным законом пределом.",
+      "citation": "п. 2 ст. 10 Федерального закона № 87-ФЗ",
+      "is_current": true,
+      "extra": {
+        "law_code": "87-ФЗ",
+        "article": "10",
+        "purpose": "законная ответственность клиента за просрочку оплаты экспедитору",
+        "topic": "транспортная экспедиция просрочка оплаты законная неустойка 0,1 процента",
+        "applicability": "PAYMENT_DELAY_TRANSPORT_EXPEDITION",
+        "verified_at": "2026-08-13",
+        "source_revision": "Федеральный закон № 87-ФЗ, ред. от 26.07.2026",
+        "auto_use": false,
+        "requires_backend_support": true,
+        "review_note": "Не включать автоматически, пока backend не умеет выбирать законную неустойку вместо ст. 395 для применимых договоров транспортной экспедиции"
+      }
+    }
+  ]
+}

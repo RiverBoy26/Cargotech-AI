@@ -12,6 +12,8 @@ import ru.sber.cargotech.claim.exception.ClaimException;
 
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -62,6 +64,25 @@ public class PaymentClient {
                 )
                 .retrieve()
                 .body(PaymentPreflightResponse.class);
+    }
+
+    public void deleteForClaimAndShipment(UUID claimId, UUID shipmentId) {
+        try {
+            restClient
+                .delete()
+                .uri(
+                    "/internal/api/v1/payments/by-claim/{claimId}/shipment/{shipmentId}",
+                    claimId,
+                    shipmentId
+                )
+                .retrieve()
+                .toBodilessEntity();
+        } catch (org.springframework.web.client.RestClientResponseException exception) {
+            throw ClaimException.conflict(
+                "Не удалось удалить связанные платежи: HTTP "
+                    + exception.getStatusCode().value()
+            );
+        }
     }
 
     private static String currentBearerToken() {
@@ -115,7 +136,14 @@ public class PaymentClient {
             BigDecimal serviceAmount,
             BigDecimal paidAmount,
             BigDecimal remainingAmount,
-            String paymentStatus
+            String paymentStatus,
+            List<PaymentAllocationResponse> allocations
+    ) {
+    }
+
+    public record PaymentAllocationResponse(
+            LocalDate paymentDate,
+            BigDecimal amount
     ) {
     }
 }

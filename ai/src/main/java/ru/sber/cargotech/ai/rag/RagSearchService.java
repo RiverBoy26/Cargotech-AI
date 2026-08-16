@@ -125,6 +125,7 @@ public class RagSearchService {
                 context.legalContext(),
                 context.templateContext(),
                 context.similarExamples(),
+                context.retrievedFragments(),
                 context.warnings()
         );
     }
@@ -133,6 +134,15 @@ public class RagSearchService {
             GenerateClaimRequest.ClaimType claimType,
             String contractId,
             String clientId
+    ) {
+        return retrieveClaimContext(claimType, contractId, clientId, null);
+    }
+
+    public ClaimRagContext retrieveClaimContext(
+            GenerateClaimRequest.ClaimType claimType,
+            String contractId,
+            String clientId,
+            String organizationId
     ) {
         if (claimType == null) {
             throw new IllegalArgumentException("claimType is required");
@@ -147,71 +157,76 @@ public class RagSearchService {
         }
 
         if (claimType == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
-            return retrievePaymentDelayClaimContext(contractId, clientId);
+            return retrievePaymentDelayClaimContext(contractId, clientId, organizationId);
         }
 
         if (claimType == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
-            return retrieveLoadingFailureClaimContext(contractId, clientId);
+            return retrieveLoadingFailureClaimContext(contractId, clientId, organizationId);
         }
 
         throw new IllegalArgumentException("Unsupported claimType for RAG context: " + claimType);
     }
 
-    private ClaimRagContext retrievePaymentDelayClaimContext(String contractId, String clientId) {
+    private ClaimRagContext retrievePaymentDelayClaimContext(String contractId, String clientId, String organizationId) {
         List<RagSearchHit> contractHits = new ArrayList<>();
 
         contractHits.addAll(search(
                 "срок оплаты оказанных услуг дата подписания акта полный пакет документов",
-                filters(
-                        "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
-                        "claim_type", "PAYMENT_DELAY",
-                        "contract_id", contractId,
-                        "client_id", clientId,
-                        "chunk_type", RagChunkType.PAYMENT_TERM.name(),
-                        "is_current", true
-                ),
+                contractFilters("PAYMENT_DELAY", contractId, clientId, organizationId, RagChunkType.PAYMENT_TERM),
                 2,
                 searchProperties.getContractMinScore()
         ));
 
         contractHits.addAll(search(
                 "неустойка пени штраф просрочка оплаты процент за каждый день",
-                filters(
-                        "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
-                        "claim_type", "PAYMENT_DELAY",
-                        "contract_id", contractId,
-                        "client_id", clientId,
-                        "chunk_type", RagChunkType.CONTRACT_PENALTY.name(),
-                        "is_current", true
-                ),
+                contractFilters("PAYMENT_DELAY", contractId, clientId, organizationId, RagChunkType.CONTRACT_PENALTY),
                 2,
                 searchProperties.getContractMinScore()
         ));
 
         contractHits.addAll(search(
                 "претензионный порядок срок ответа на претензию мотивированный ответ",
-                filters(
-                        "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
-                        "claim_type", "PAYMENT_DELAY",
-                        "contract_id", contractId,
-                        "client_id", clientId,
-                        "chunk_type", RagChunkType.PRETRIAL_ORDER.name(),
-                        "is_current", true
-                ),
+                contractFilters("PAYMENT_DELAY", contractId, clientId, organizationId, RagChunkType.PRETRIAL_ORDER),
                 2,
                 searchProperties.getContractMinScore()
         ));
 
+        if (contractHits.size() < 3) {
+            contractHits.addAll(search(
+                    "условия договора об оплате ответственности документах и претензионном порядке",
+                    contractFilters("PAYMENT_DELAY", contractId, clientId, organizationId, null),
+                    4,
+                    searchProperties.getContractMinScore()
+            ));
+        }
+
         List<RagSearchHit> legalHits = search(
-                "ГК РФ надлежащее исполнение обязательств срок оплаты договорная неустойка",
+                "ГК РФ статьи 309 310 314 330 395 801 надлежащее исполнение срок оплаты проценты договорная неустойка транспортная экспедиция",
                 filters(
                         "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
-                        "claim_type", "PAYMENT_DELAY",
-                        "is_current", true
+                        "claim_type", List.of("PAYMENT_DELAY", "ALL"),
+                        "is_current", true,
+                        "auto_use", true
                 ),
-                4,
+                10,
                 searchProperties.getLegalMinScore()
         );
+
+        // Backward compatibility for legal chunks indexed before auto_use metadata
+        // became mandatory. Re-seeding will upgrade the payload, but generation
+        // must not lose legal_context while old data is still present.
+        if (legalHits.isEmpty()) {
+            legalHits = search(
+                    "ГК РФ статьи 309 310 314 330 395 801 надлежащее исполнение срок оплаты проценты договорная неустойка транспортная экспедиция",
+                    filters(
+                            "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
+                            "claim_type", List.of("PAYMENT_DELAY", "ALL"),
+                            "is_current", true
+                    ),
+                    10,
+                    searchProperties.getLegalMinScore()
+            );
+        }
 
         List<RagSearchHit> templateHits = search(
                 "шаблон претензии о просрочке оплаты структура реквизиты договор расчет требование приложения",
@@ -244,61 +259,63 @@ public class RagSearchService {
         );
     }
 
-    private ClaimRagContext retrieveLoadingFailureClaimContext(String contractId, String clientId) {
+    private ClaimRagContext retrieveLoadingFailureClaimContext(String contractId, String clientId, String organizationId) {
         List<RagSearchHit> contractHits = new ArrayList<>();
 
         contractHits.addAll(search(
                 "обязанность подать транспортное средство дата время место погрузки",
-                filters(
-                        "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
-                        "claim_type", "LOADING_FAILURE",
-                        "contract_id", contractId,
-                        "client_id", clientId,
-                        "chunk_type", RagChunkType.VEHICLE_SUPPLY_DUTY.name(),
-                        "is_current", true
-                ),
+                contractFilters("LOADING_FAILURE", contractId, clientId, organizationId, RagChunkType.VEHICLE_SUPPLY_DUTY),
                 2,
                 searchProperties.getContractMinScore()
         ));
 
         contractHits.addAll(search(
                 "штраф неустойка непредоставление транспортного средства срыв погрузки",
-                filters(
-                        "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
-                        "claim_type", "LOADING_FAILURE",
-                        "contract_id", contractId,
-                        "client_id", clientId,
-                        "chunk_type", RagChunkType.LOADING_FAILURE_PENALTY.name(),
-                        "is_current", true
-                ),
+                contractFilters("LOADING_FAILURE", contractId, clientId, organizationId, RagChunkType.LOADING_FAILURE_PENALTY),
                 2,
                 searchProperties.getContractMinScore()
         ));
 
         contractHits.addAll(search(
                 "претензионный порядок срок ответа на претензию мотивированный ответ",
-                filters(
-                        "rag_collection", RagCollection.CONTRACT_CONTEXT.name(),
-                        "claim_type", "LOADING_FAILURE",
-                        "contract_id", contractId,
-                        "client_id", clientId,
-                        "chunk_type", RagChunkType.PRETRIAL_ORDER.name(),
-                        "is_current", true
-                ),
+                contractFilters("LOADING_FAILURE", contractId, clientId, organizationId, RagChunkType.PRETRIAL_ORDER),
                 2,
                 searchProperties.getContractMinScore()
         ));
 
+        if (contractHits.size() < 3) {
+            contractHits.addAll(search(
+                    "условия договора о подаче транспорта погрузке ответственности и претензионном порядке",
+                    contractFilters("LOADING_FAILURE", contractId, clientId, organizationId, null),
+                    4,
+                    searchProperties.getContractMinScore()
+            ));
+        }
+
         List<RagSearchHit> legalHits = search(
-                "ГК РФ надлежащее исполнение обязательств договорная неустойка непредоставление транспортного средства",
+                "ГК РФ статьи 309 310 314 330 797 УАТ статьи 39 40 непредоставление транспортного средства претензионный порядок перевозка груза",
                 filters(
                         "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
-                        "claim_type", "LOADING_FAILURE",
-                        "is_current", true
+                        "claim_type", List.of("LOADING_FAILURE", "ALL"),
+                        "is_current", true,
+                        "auto_use", true
                 ),
-                4,
+                10,
                 searchProperties.getLegalMinScore()
         );
+
+        if (legalHits.isEmpty()) {
+            legalHits = search(
+                    "ГК РФ статьи 309 310 314 330 797 УАТ статьи 39 40 непредоставление транспортного средства претензионный порядок перевозка груза",
+                    filters(
+                            "rag_collection", RagCollection.LEGAL_CONTEXT.name(),
+                            "claim_type", List.of("LOADING_FAILURE", "ALL"),
+                            "is_current", true
+                    ),
+                    10,
+                    searchProperties.getLegalMinScore()
+            );
+        }
 
         List<RagSearchHit> templateHits = search(
                 "шаблон претензии о срыве погрузки непредоставлении транспортного средства структура",
@@ -392,6 +409,24 @@ public class RagSearchService {
 
         List<String> warnings = new ArrayList<>();
 
+        List<RetrievedFragment> retrievedFragments = concatHits(
+                contractHits,
+                legalHits,
+                templateHits,
+                exampleHits
+        ).stream()
+                .filter(Objects::nonNull)
+                .filter(hit -> hit.chunk() != null)
+                .map(hit -> new RetrievedFragment(
+                        firstNotBlank(hit.chunk().sourceId(), hit.chunk().contractId()),
+                        firstNotBlank(hit.chunk().chunkId(), hit.pointId()),
+                        hit.score(),
+                        hit.chunk().text()
+                ))
+                .filter(fragment -> fragment.chunkId() != null)
+                .distinct()
+                .toList();
+
         if (contractContext.isEmpty()) {
             warnings.add("contract_context is empty");
         }
@@ -409,8 +444,27 @@ public class RagSearchService {
                 legalContext,
                 templateContext,
                 similarExamples,
+                retrievedFragments,
                 warnings
         );
+    }
+
+    @SafeVarargs
+    private static List<RagSearchHit> concatHits(List<RagSearchHit>... groups) {
+        List<RagSearchHit> result = new ArrayList<>();
+        for (List<RagSearchHit> group : groups) {
+            if (group != null) {
+                result.addAll(group);
+            }
+        }
+        return result;
+    }
+
+    private static String firstNotBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second == null || second.isBlank() ? null : second;
     }
 
     @SuppressWarnings("unchecked")
@@ -488,6 +542,26 @@ public class RagSearchService {
         return filters;
     }
 
+    private Map<String, Object> contractFilters(
+            String claimType,
+            String contractId,
+            String clientId,
+            String organizationId,
+            RagChunkType chunkType
+    ) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("rag_collection", RagCollection.CONTRACT_CONTEXT.name());
+        result.put("claim_type", List.of(claimType, "ALL"));
+        result.put("contract_id", contractId);
+        result.put("client_id", clientId);
+        if (organizationId != null && !organizationId.isBlank()) {
+            result.put("organization_id", organizationId);
+        }
+        if (chunkType != null) result.put("chunk_type", chunkType.name());
+        result.put("is_current", true);
+        return result;
+    }
+
     private static String str(Object value) {
         return value == null ? null : String.valueOf(value);
     }
@@ -523,7 +597,16 @@ public class RagSearchService {
             List<GenerateClaimRequest.LegalContextItem> legalContext,
             GenerateClaimRequest.TemplateContext templateContext,
             List<GenerateClaimRequest.SimilarExample> similarExamples,
+            List<RetrievedFragment> retrievedFragments,
             List<String> warnings
+    ) {
+    }
+
+    public record RetrievedFragment(
+            String documentId,
+            String chunkId,
+            Double score,
+            String text
     ) {
     }
 
@@ -532,6 +615,7 @@ public class RagSearchService {
             List<GenerateClaimRequest.LegalContextItem> legalContext,
             GenerateClaimRequest.TemplateContext templateContext,
             List<GenerateClaimRequest.SimilarExample> similarExamples,
+            List<RetrievedFragment> retrievedFragments,
             List<String> warnings
     ) {
     }

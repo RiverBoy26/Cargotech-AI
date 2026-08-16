@@ -11,8 +11,13 @@ import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 import ru.sber.cargotech.claim.enums.ContractStatus;
+import ru.sber.cargotech.claim.enums.ContractExtractionStatus;
+import ru.sber.cargotech.claim.enums.ContractRagStatus;
 import ru.sber.cargotech.claim.enums.PaymentStartEvent;
+import ru.sber.cargotech.claim.enums.PaymentScheduleType;
+import ru.sber.cargotech.claim.enums.PenaltyCapBase;
 import ru.sber.cargotech.claim.enums.PenaltyType;
+import ru.sber.cargotech.claim.enums.TermDayType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -30,7 +35,7 @@ public class ClaimContract {
     @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(nullable = false, length = 128)
+    @Column(length = 128)
     private String number;
 
     @Column(name = "client_id", nullable = false)
@@ -56,8 +61,23 @@ public class ClaimContract {
     private Integer paymentDays;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "payment_day_type", length = 32)
+    private TermDayType paymentDayType;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_start_event", length = 64)
     private PaymentStartEvent paymentStartEvent;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_schedule_type", length = 32)
+    private PaymentScheduleType paymentScheduleType;
+
+    /**
+     * Comma-separated java.time.DayOfWeek names, e.g. "TUESDAY,THURSDAY".
+     * Kept in one column because a contract has at most seven configured weekdays.
+     */
+    @Column(name = "payment_week_days", length = 128)
+    private String paymentWeekDays;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "penalty_type", length = 64)
@@ -66,13 +86,47 @@ public class ClaimContract {
     @Column(name = "penalty_rate", precision = 12, scale = 6)
     private BigDecimal penaltyRate;
 
+    @Column(name = "penalty_cap_percent", precision = 12, scale = 6)
+    private BigDecimal penaltyCapPercent;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "penalty_cap_base", length = 32)
+    private PenaltyCapBase penaltyCapBase;
+
     @Column(name = "claim_response_days")
     private Integer claimResponseDays;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "claim_response_day_type", length = 32)
+    private TermDayType claimResponseDayType;
 
     private String jurisdiction;
 
     @Column(name = "document_id")
     private UUID documentId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "extraction_status", nullable = false, length = 32)
+    private ContractExtractionStatus extractionStatus = ContractExtractionStatus.NOT_STARTED;
+
+    @Column(name = "extraction_confirmed_at")
+    private OffsetDateTime extractionConfirmedAt;
+
+    @Column(name = "extraction_confirmed_by")
+    private UUID extractionConfirmedBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rag_index_status", nullable = false, length = 32)
+    private ContractRagStatus ragIndexStatus = ContractRagStatus.NOT_INDEXED;
+
+    @Column(name = "rag_indexed_at")
+    private OffsetDateTime ragIndexedAt;
+
+    @Column(name = "rag_index_error", length = 1000)
+    private String ragIndexError;
+
+    @Column(name = "rag_source_document_id")
+    private UUID ragSourceDocumentId;
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;

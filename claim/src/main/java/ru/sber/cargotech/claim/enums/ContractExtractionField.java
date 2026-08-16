@@ -1,0 +1,22 @@
+package ru.sber.cargotech.claim.enums;
+
+public enum ContractExtractionField {
+    CONTRACT_NUMBER,
+    SIGNED_AT,
+    PAYMENT_DAYS,
+    PAYMENT_DAY_TYPE,
+    PAYMENT_START_EVENT,
+    PAYMENT_SCHEDULE_TYPE,
+    PAYMENT_WEEK_DAYS,
+    PENALTY_TYPE,
+    PENALTY_RATE,
+    PENALTY_CAP_PERCENT,
+    PENALTY_CAP_BASE,
+    CLAIM_RESPONSE_DAYS,
+    CLAIM_RESPONSE_DAY_TYPE,
+    JURISDICTION,
+    // Safety-only identity fields extracted from requisites; they are not editable contract terms.
+    CLIENT_INN,
+    EXPEDITOR_INN,
+    EXACT_CLAUSE
+}

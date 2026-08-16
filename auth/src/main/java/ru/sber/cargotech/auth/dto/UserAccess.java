@@ -6,7 +6,9 @@ import java.util.UUID;
 public record UserAccess(
         UUID userId,
         UUID organizationId,
-        String fullName,
+        String firstName,
+        String lastName,
+        String middleName,
         String email,
         Set<String> roles,
         Set<String> permissions

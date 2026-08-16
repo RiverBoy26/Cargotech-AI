@@ -12,7 +12,7 @@ const expeditors = [
     users: [
       {
         id: "u1",
-        fullName: "Иванов Иван Иванович",
+        lastName: "Иванов", firstName: "Иван", middleName: "Иванович",
         email: "ivanov@trans-exp.ru",
         role: "Юрист",
         roleClass: "role-pill--lawyer",
@@ -21,7 +21,7 @@ const expeditors = [
       },
       {
         id: "u2",
-        fullName: "Соколова Мария Андреевна",
+        lastName: "Соколова", firstName: "Мария", middleName: "Андреевна",
         email: "sokolova@trans-exp.ru",
         role: "Бухгалтер",
         roleClass: "role-pill--accountant",
@@ -30,7 +30,7 @@ const expeditors = [
       },
       {
         id: "u3",
-        fullName: "Громова Елена Викторовна",
+        lastName: "Громова", firstName: "Елена", middleName: "Викторовна",
         email: "gromova@trans-exp.ru",
         role: "Юрист",
         roleClass: "role-pill--lawyer",
@@ -39,7 +39,7 @@ const expeditors = [
       },
       {
         id: "u4",
-        fullName: "Петров Петр Петрович",
+        lastName: "Петров", firstName: "Петр", middleName: "Петрович",
         email: "petrov@trans-exp.ru",
         role: "Бухгалтер",
         roleClass: "role-pill--accountant",
@@ -54,7 +54,7 @@ const expeditors = [
     users: [
       {
         id: "u5",
-        fullName: "Орлов Дмитрий Сергеевич",
+        lastName: "Орлов", firstName: "Дмитрий", middleName: "Сергеевич",
         email: "orlov@logplus.ru",
         role: "Юрист",
         roleClass: "role-pill--lawyer",
@@ -63,7 +63,7 @@ const expeditors = [
       },
       {
         id: "u6",
-        fullName: "Краснова Анна Павловна",
+        lastName: "Краснова", firstName: "Анна", middleName: "Павловна",
         email: "krasnova@logplus.ru",
         role: "Бухгалтер",
         roleClass: "role-pill--accountant",
@@ -72,7 +72,7 @@ const expeditors = [
       },
       {
         id: "u7",
-        fullName: "Фёдоров Игорь Николаевич",
+        lastName: "Фёдоров", firstName: "Игорь", middleName: "Николаевич",
         email: "fedorov@logplus.ru",
         role: "Администратор",
         roleClass: "role-pill--admin",
@@ -87,7 +87,7 @@ const expeditors = [
     users: [
       {
         id: "u8",
-        fullName: "Власова Татьяна Игоревна",
+        lastName: "Власова", firstName: "Татьяна", middleName: "Игоревна",
         email: "vlasova@magistral.ru",
         role: "Юрист",
         roleClass: "role-pill--lawyer",
@@ -96,7 +96,7 @@ const expeditors = [
       },
       {
         id: "u9",
-        fullName: "Зайцев Константин Юрьевич",
+        lastName: "Зайцев", firstName: "Константин", middleName: "Юрьевич",
         email: "zaitsev@magistral.ru",
         role: "Администратор",
         roleClass: "role-pill--admin",

@@ -46,6 +46,7 @@ spring:
           writetimeout: ${MAILTRAP_WRITE_TIMEOUT_MS:10000}
 
 document:
+  internal-api-key: ${INTERNAL_API_KEY:cargotech-local-internal-key}
   security:
     jwt-secret-base64: ${JWT_SECRET_BASE64}
     jwt-issuer: ${JWT_ISSUER:http://localhost:8081}
@@ -61,6 +62,10 @@ document:
   mail:
     from: ${DOCUMENT_MAIL_FROM:no-reply@cargotech.local}
     from-name: ${DOCUMENT_MAIL_FROM_NAME:CargoTech}
+
+services:
+  claim:
+    base-url: ${CLAIM_SERVICE_URL:http://localhost:8083}
 
 management:
   endpoints:

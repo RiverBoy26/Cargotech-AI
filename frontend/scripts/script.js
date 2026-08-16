@@ -68,7 +68,7 @@ async function loadClaims() {
 
   try {
     const page = await getClaims({ size: 100 });
-    lawyerClaims = page.content || [];
+    lawyerClaims = (page.content || []).filter((claim) => claim.status !== 'DRAFT');
 
     if (lawyerClaims.length === 0) {
       listEl.innerHTML = '<div class="claim_row">Претензий пока нет</div>';
@@ -97,87 +97,6 @@ async function initClaimsPage() {
   document.getElementById('claim_status_filter').addEventListener('change', renderClaims);
 
   await loadClaims();
-  await loadShipmentOptions();
 }
 
 initClaimsPage();
-
-const addClaimForm = document.getElementById('add_claim_form');
-const claimFormError = document.getElementById('claim_form_error');
-
-// Показать / скрыть форму
-document.getElementById('create_claim_btn').addEventListener('click', () => {
-  addClaimForm.classList.add('add_claim_form_visible');
-  claimFormError.textContent = '';
-});
-
-async function loadShipmentOptions() {
-  const select = document.getElementById('claim_shipment_id');
-  try {
-    const page = await getShipments();
-    const shipments = page.content || [];
-    select.innerHTML = '<option value="">— выберите перевозку —</option>' +
-      shipments.map((item) =>
-        `<option value="${item.id}">${item.orderNumber} — ${item.clientName || 'клиент не указан'}</option>`
-      ).join('');
-  } catch (err) {
-    select.innerHTML = '<option value="">Не удалось загрузить перевозки</option>';
-  }
-}
-
-function resetClaimForm() {
-  addClaimForm.classList.remove('add_claim_form_visible');
-  document.getElementById('claim_shipment_id').value = '';
-  document.getElementById('claim_type').value = '';
-  document.getElementById('claim_number').value = '';
-  document.getElementById('claim_principal_debt').value = '';
-  document.getElementById('claim_reason').value = '';
-  claimFormError.textContent = '';
-}
-
-document.getElementById('cancel_claim_btn').addEventListener('click', resetClaimForm);
-
-// Отправка формы
-document.getElementById('save_claim_btn').addEventListener('click', async () => {
-  const shipmentId = document.getElementById('claim_shipment_id').value.trim();
-  const claimType  = document.getElementById('claim_type').value;
-  const reason     = document.getElementById('claim_reason').value.trim();
-
-  // Обязательные поля
-  if (!shipmentId || !claimType || !reason) {
-    claimFormError.textContent = 'Заполните обязательные поля: ID рейса, тип претензии, основание';
-    return;
-  }
-
-  const payload = {
-    shipmentId,
-    claimType,
-    reason,
-    nonPaymentConfirmed: false,
-  };
-
-  const claimNumber    = document.getElementById('claim_number').value.trim();
-  const principalDebt  = document.getElementById('claim_principal_debt').value;
-
-  if (claimNumber)   payload.claimNumber   = claimNumber;
-  if (principalDebt) payload.principalDebt = parseFloat(principalDebt);
-
-  const saveBtn = document.getElementById('save_claim_btn');
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Создание...';
-  claimFormError.textContent = '';
-
-  try {
-    await createClaim(payload);
-
-    resetClaimForm();
-
-    if (typeof loadClaims === 'function') await loadClaims();
-
-  } catch (err) {
-    claimFormError.textContent = err.message || 'Не удалось создать претензию';
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Создать';
-  }
-});

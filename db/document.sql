@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS cargotech.document_generation_logs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id uuid NOT NULL,
     claim_id uuid NOT NULL,
+    claim_version_id uuid,
     document_id uuid
         REFERENCES cargotech.document_documents(id),
     output_type varchar(64) NOT NULL,
@@ -192,6 +193,18 @@ CREATE INDEX IF NOT EXISTS idx_document_generation_claim
         claim_id,
         generated_at DESC
     );
+
+DROP INDEX IF EXISTS cargotech.uq_document_generation_claim_version;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_document_generation_claim_version_format
+    ON cargotech.document_generation_logs(
+        organization_id,
+        claim_id,
+        claim_version_id,
+        output_type
+    )
+    WHERE claim_version_id IS NOT NULL
+      AND status IN ('PROCESSING', 'COMPLETED');
 
 CREATE TABLE IF NOT EXISTS cargotech.document_email_deliveries (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -310,7 +323,7 @@ VALUES (
       "signer.fullName"
     ]'::jsonb,
     'Первая демонстрационная версия',
-    true,
+    false,
     '00000000-0000-0000-0000-000000000000'
 )
 ON CONFLICT (id) DO UPDATE
@@ -318,4 +331,65 @@ SET
     encrypted_content = EXCLUDED.encrypted_content,
     content_sha256 = EXCLUDED.content_sha256,
     variables = EXCLUDED.variables,
+    active = EXCLUDED.active;
+
+-- The original demo version is retained for history, but it must not be used:
+-- its ciphertext was created with a key that does not match dev-seed-v1.
+UPDATE cargotech.document_claim_template_versions
+SET active = false
+WHERE template_id = '00000000-0000-0000-0000-00000000d001';
+
+-- Base template recreated with DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID=dev-seed-v1
+-- and Base64("0123456789abcdef0123456789abcdef").
+INSERT INTO cargotech.document_claim_template_versions (
+    id,
+    template_id,
+    version_number,
+    encrypted_content,
+    content_sha256,
+    encryption_key_id,
+    encryption_algorithm,
+    content_format,
+    variables,
+    change_comment,
+    active,
+    created_by
+)
+VALUES (
+    '00000000-0000-0000-0000-00000000d102',
+    '00000000-0000-0000-0000-00000000d001',
+    2,
+    '56OQbmYsr4eNhhJCXNyKL3l8o5thzZZUV+oSv21n3hSV0+6CodCU02acNO/6tmESs6f0vumeoiNWbqQ9al5a1d4ZqJrTFRmPUcz5OlsjRygl0cwyDdHHGbBHbppF0x1uNJVZ72cD27Iav6+Jq2AVBTiYD3JuxU1AuQeaJuRWO596vhypHWpJfYXdQ5FvHgJdnXScrxGpnXLi5voWH8dgUZCMckEDmz+GbpWOrd7/KZx/Rlj527cUaslEj1s/9F/PnjL8bCDnnsyq67PVajPjEjtm5bXfRcKGWNtR3eZwAGyS6n/2WPG6z4zIN4PzE7CCNQZ+0fGWtYDeGcsBeznynOtqri7yKlaeGccwCdIk3InShV5LA7pIJNWf1wd2+nzdMnmragPSFIAUKPF3qGcGUn2gnAqcYpB28hAwhPoU7DwzvIrjXkD0uP1MaskDcj1M3CVbvGwQA3evKG0lFg86p+yX72XhmYEj0eZcOGfXptwK5arhZ3eNylxSyOEmjcNYDm6f5OQ0JeSmo2umjI2pbJXDCMrrJ0JDXUY9z9HilTvESPr4tFdeZOjGLy9zU7yhyOMx8XPRSBKz06b2fwf74PujxyUYkw6KFHpgTW+0QJMhnvyAzKEQWHpTAP4BYDvkZrw/MpX/BNoTWSFquSsj4pDsa/nh3d5EBk8EIjL9MqpIoNbjkMI784vk',
+    '9384d668d7c288d50296e1ac7a46a106506a787210113b91ba0773a5f5b80d3e',
+    'dev-seed-v1',
+    'AES-256-GCM',
+    'MUSTACHE_TEXT',
+    '[
+      "claim.number",
+      "debtor.name",
+      "debtor.inn",
+      "creditor.name",
+      "creditor.inn",
+      "contract.number",
+      "claim.generatedText",
+      "calculation.principalDebt",
+      "calculation.currency",
+      "calculation.penaltyAmount",
+      "calculation.totalAmount",
+      "signer.position",
+      "signer.fullName"
+    ]'::jsonb,
+    'Пересоздание шаблона с ключом dev-seed-v1',
+    true,
+    '00000000-0000-0000-0000-000000000000'
+)
+ON CONFLICT (id) DO UPDATE
+SET
+    encrypted_content = EXCLUDED.encrypted_content,
+    content_sha256 = EXCLUDED.content_sha256,
+    encryption_key_id = EXCLUDED.encryption_key_id,
+    encryption_algorithm = EXCLUDED.encryption_algorithm,
+    content_format = EXCLUDED.content_format,
+    variables = EXCLUDED.variables,
+    change_comment = EXCLUDED.change_comment,
     active = EXCLUDED.active;

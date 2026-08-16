@@ -26,6 +26,25 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
         UUID organizationId
     );
 
+    @Query("""
+        select distinct payment
+        from Payment payment
+        where payment.organizationId = :organizationId
+          and payment.id in (
+              select match.paymentId
+              from PaymentMatch match
+              where (match.targetType = :claimType and match.targetId = :claimId)
+                 or (match.targetType = :shipmentType and match.targetId = :shipmentId)
+          )
+        """)
+    List<Payment> findAllLinkedToClaimOrShipment(
+        UUID organizationId,
+        PaymentTargetType claimType,
+        UUID claimId,
+        PaymentTargetType shipmentType,
+        UUID shipmentId
+    );
+
     List<Payment> findAllByOrganizationIdAndStatusOrderByPaymentDateAsc(
         UUID organizationId,
         PaymentStatus status

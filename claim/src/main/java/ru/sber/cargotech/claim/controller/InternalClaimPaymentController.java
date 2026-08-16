@@ -90,6 +90,8 @@ public class InternalClaimPaymentController {
                 user.organizationId(),
                 claimId,
                 request.checkId(),
+                request.remainingPrincipalAmount(),
+                request.remainingPenaltyAmount(),
                 user.userId()
         );
 
@@ -108,5 +110,18 @@ public class InternalClaimPaymentController {
                 "PAYMENT_CONFIRMED"
             )
         );
+    }
+
+    @PostMapping("/{claimId}/sync-payment-state")
+    @PreAuthorize(
+            "hasAuthority('PAYMENT_READ') or hasAuthority('CLAIM_UPDATE')"
+    )
+    public ResponseEntity<Void> syncPaymentState(
+            @PathVariable UUID claimId,
+            @RequestParam(required = false) String reason
+    ) {
+        CurrentClaimUser user = currentUserProvider.getRequiredUser();
+        claimService.synchronizePaymentState(user, claimId, reason);
+        return ResponseEntity.noContent().build();
     }
 }

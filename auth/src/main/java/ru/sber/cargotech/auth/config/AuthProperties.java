@@ -25,7 +25,9 @@ public record AuthProperties(
         boolean enabled,
         String email,
         String password,
-        String fullName,
+        String firstName,
+        String lastName,
+        String middleName,
         String organizationName,
         String organizationInn
     ) {

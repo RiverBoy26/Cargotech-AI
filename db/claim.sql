@@ -46,7 +46,7 @@ UPDATE
 
 -- DROP TABLE cargotech.outbox_events;
 
-CREATE TABLE cargotech.outbox_events (
+CREATE TABLE IF NOT EXISTS cargotech.outbox_events (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	module_name varchar(64) NOT NULL,
 	aggregate_type varchar(128) NOT NULL,
@@ -63,11 +63,46 @@ CREATE TABLE cargotech.outbox_events (
 	CONSTRAINT outbox_events_pkey PRIMARY KEY (id),
 	CONSTRAINT outbox_events_status_check CHECK (((status)::text = ANY ((ARRAY['NEW'::character varying, 'PUBLISHED'::character varying, 'FAILED'::character varying])::text[])))
 );
-CREATE INDEX idx_outbox_aggregate ON cargotech.outbox_events USING btree (aggregate_id);
-CREATE INDEX idx_outbox_pending ON cargotech.outbox_events USING btree (status, created_at) WHERE ((status)::text = ANY ((ARRAY['NEW'::character varying, 'FAILED'::character varying])::text[]));
+CREATE INDEX IF NOT EXISTS idx_outbox_aggregate ON cargotech.outbox_events USING btree (aggregate_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON cargotech.outbox_events USING btree (status, created_at) WHERE ((status)::text = ANY ((ARRAY['NEW'::character varying, 'FAILED'::character varying])::text[]));
 
 
 -- cargotech.claim_contracts определение
+
+CREATE TABLE IF NOT EXISTS cargotech.article_395_rates (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	effective_from date NOT NULL,
+	rate numeric(8, 4) NOT NULL,
+	source varchar(500) NOT NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	CONSTRAINT article_395_rates_pkey PRIMARY KEY (id),
+	CONSTRAINT article_395_rates_effective_from_key UNIQUE (effective_from),
+	CONSTRAINT article_395_rates_rate_check CHECK (rate > 0)
+);
+
+INSERT INTO cargotech.article_395_rates (effective_from, rate, source)
+VALUES
+	('2023-01-01', 7.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-07-24', 8.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-08-15', 12.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-09-18', 13.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-10-30', 15.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2023-12-18', 16.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2024-07-29', 18.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2024-09-16', 19.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2024-10-28', 21.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-06-09', 20.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-07-28', 18.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-09-15', 17.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-10-27', 16.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2025-12-22', 16.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-02-16', 15.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-03-23', 15.0000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-04-27', 14.5000, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-06-22', 14.2500, 'https://www.cbr.ru/hd_base/KeyRate/'),
+	('2026-07-27', 14.0000, 'https://www.cbr.ru/hd_base/KeyRate/')
+ON CONFLICT (effective_from) DO UPDATE
+SET rate = EXCLUDED.rate, source = EXCLUDED.source;
 
 -- Drop table
 
@@ -76,7 +111,7 @@ CREATE INDEX idx_outbox_pending ON cargotech.outbox_events USING btree (status, 
 CREATE TABLE cargotech.claim_contracts (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	organization_id uuid NOT NULL,
-	"number" varchar(128) NOT NULL,
+	"number" varchar(128) NULL,
 	client_id uuid NOT NULL,
 	expeditor_id uuid NOT NULL,
 	signed_at date NULL,
@@ -84,12 +119,25 @@ CREATE TABLE cargotech.claim_contracts (
 	valid_to date NULL,
 	status varchar(32) DEFAULT 'ACTIVE'::character varying NOT NULL,
 	payment_days int4 NULL,
+	payment_day_type varchar(32) NULL,
 	payment_start_event varchar(64) NULL,
+	payment_schedule_type varchar(32) NULL,
+	payment_week_days varchar(128) NULL,
 	penalty_type varchar(64) NULL,
 	penalty_rate numeric(12, 6) NULL,
+	penalty_cap_percent numeric(12, 6) NULL,
+	penalty_cap_base varchar(32) NULL,
 	claim_response_days int4 NULL,
+	claim_response_day_type varchar(32) NULL,
 	jurisdiction text NULL,
 	document_id uuid NULL,
+	extraction_status varchar(32) DEFAULT 'NOT_STARTED' NOT NULL,
+	extraction_confirmed_at timestamptz NULL,
+	extraction_confirmed_by uuid NULL,
+	rag_index_status varchar(32) DEFAULT 'NOT_INDEXED' NOT NULL,
+	rag_indexed_at timestamptz NULL,
+	rag_index_error varchar(1000) NULL,
+	rag_source_document_id uuid NULL,
 	deleted_at timestamptz NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	created_by uuid NULL,
@@ -97,10 +145,20 @@ CREATE TABLE cargotech.claim_contracts (
 	updated_by uuid NULL,
 	"version" int8 DEFAULT 0 NOT NULL,
 	CONSTRAINT chk_contract_dates CHECK (((valid_to IS NULL) OR (valid_from IS NULL) OR (valid_to >= valid_from))),
+	CONSTRAINT chk_contract_number_required_when_active CHECK (((status)::text = 'DRAFT'::text OR number IS NOT NULL)),
 	CONSTRAINT claim_contracts_claim_response_days_check CHECK (((claim_response_days IS NULL) OR (claim_response_days >= 0))),
+	CONSTRAINT claim_contracts_extraction_status_check CHECK (((extraction_status)::text = ANY ((ARRAY['NOT_STARTED'::character varying, 'PENDING'::character varying, 'REVIEW_REQUIRED'::character varying, 'CONFIRMED'::character varying, 'FAILED'::character varying])::text[]))),
+	CONSTRAINT claim_contracts_rag_index_status_check CHECK (((rag_index_status)::text = ANY ((ARRAY['NOT_INDEXED'::character varying, 'PENDING'::character varying, 'INDEXED'::character varying, 'FAILED'::character varying])::text[]))),
 	CONSTRAINT claim_contracts_payment_days_check CHECK (((payment_days IS NULL) OR (payment_days >= 0))),
-	CONSTRAINT claim_contracts_payment_start_event_check CHECK (((payment_start_event IS NULL) OR ((payment_start_event)::text = ANY ((ARRAY['ACT_SIGNED'::character varying, 'UNLOADING_DATE'::character varying, 'TTN_SIGNED'::character varying, 'INVOICE_DATE'::character varying])::text[])))),
+	CONSTRAINT claim_contracts_payment_day_type_check CHECK (((payment_day_type IS NULL) OR ((payment_day_type)::text = ANY ((ARRAY['CALENDAR_DAYS'::character varying, 'WORKING_DAYS'::character varying, 'BANKING_DAYS'::character varying])::text[])))),
+	CONSTRAINT claim_contracts_claim_response_day_type_check CHECK (((claim_response_day_type IS NULL) OR ((claim_response_day_type)::text = ANY ((ARRAY['CALENDAR_DAYS'::character varying, 'WORKING_DAYS'::character varying, 'BANKING_DAYS'::character varying])::text[])))),
+	CONSTRAINT claim_contracts_payment_start_event_check CHECK (((payment_start_event IS NULL) OR ((payment_start_event)::text = ANY ((ARRAY['ACT_SIGNED'::character varying, 'UNLOADING_DATE'::character varying, 'TTN_SIGNED'::character varying, 'INVOICE_DATE'::character varying, 'REGISTRY_INCLUDED'::character varying, 'DOCUMENT_PACKAGE_RECEIVED'::character varying, 'LATEST_ACT_OR_DOCUMENT_PACKAGE'::character varying, 'ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE'::character varying])::text[])))),
+	CONSTRAINT claim_contracts_payment_schedule_type_check CHECK (((payment_schedule_type IS NULL) OR ((payment_schedule_type)::text = ANY ((ARRAY['NEXT_PAYMENT_DAY'::character varying, 'NEXT_PAYMENT_DAY_AFTER_TERM'::character varying])::text[])))),
+	CONSTRAINT claim_contracts_payment_schedule_pair_check CHECK (((payment_schedule_type IS NULL AND payment_week_days IS NULL) OR (payment_schedule_type IS NOT NULL AND payment_week_days IS NOT NULL))),
 	CONSTRAINT claim_contracts_penalty_rate_check CHECK (((penalty_rate IS NULL) OR (penalty_rate >= (0)::numeric))),
+	CONSTRAINT claim_contracts_penalty_cap_percent_check CHECK (((penalty_cap_percent IS NULL) OR (penalty_cap_percent >= (0)::numeric))),
+	CONSTRAINT claim_contracts_penalty_cap_base_check CHECK (((penalty_cap_base IS NULL) OR ((penalty_cap_base)::text = ANY ((ARRAY['PRINCIPAL_DEBT'::character varying, 'OUTSTANDING_DEBT'::character varying, 'SHIPMENT_COST'::character varying, 'INVOICE_AMOUNT'::character varying])::text[])))),
+	CONSTRAINT claim_contracts_penalty_cap_pair_check CHECK (((penalty_cap_percent IS NULL AND penalty_cap_base IS NULL) OR (penalty_cap_percent IS NOT NULL AND penalty_cap_base IS NOT NULL))),
 	CONSTRAINT claim_contracts_penalty_type_check CHECK (((penalty_type IS NULL) OR ((penalty_type)::text = ANY ((ARRAY['CONTRACT_PENALTY'::character varying, 'ARTICLE_395'::character varying, 'NONE'::character varying])::text[])))),
 	CONSTRAINT claim_contracts_pkey PRIMARY KEY (id),
 	CONSTRAINT claim_contracts_status_check CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'ACTIVE'::character varying, 'EXPIRED'::character varying, 'TERMINATED'::character varying, 'ARCHIVED'::character varying])::text[]))),
@@ -112,6 +170,7 @@ CREATE INDEX idx_claim_contracts_deleted ON cargotech.claim_contracts USING btre
 CREATE INDEX idx_claim_contracts_expeditor ON cargotech.claim_contracts USING btree (expeditor_id);
 CREATE INDEX idx_claim_contracts_number_trgm ON cargotech.claim_contracts USING gin (number gin_trgm_ops);
 CREATE INDEX idx_claim_contracts_org ON cargotech.claim_contracts USING btree (organization_id);
+CREATE INDEX idx_claim_contracts_rag_status ON cargotech.claim_contracts USING btree (organization_id, rag_index_status) WHERE (deleted_at IS NULL);
 CREATE INDEX idx_claim_contracts_status ON cargotech.claim_contracts USING btree (status);
 CREATE UNIQUE INDEX uq_claim_contracts_number ON cargotech.claim_contracts USING btree (organization_id, number);
 
@@ -138,6 +197,7 @@ CREATE TABLE cargotech.claim_contract_clauses (
 	text text NOT NULL,
 	source_page int4 NULL,
 	active bool DEFAULT true NOT NULL,
+	extracted bool DEFAULT false NOT NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	created_by uuid NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -156,6 +216,26 @@ CREATE TRIGGER trg_claim_contract_clauses_touch BEFORE
 UPDATE
     ON
     cargotech.claim_contract_clauses FOR EACH ROW EXECUTE FUNCTION cargotech.touch_updated_at();
+
+CREATE TABLE cargotech.claim_contract_extractions (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	contract_id uuid NOT NULL,
+	field_name varchar(64) NOT NULL,
+	extracted_value text NULL,
+	source_text text NULL,
+	source_page int4 NULL,
+	confidence numeric(5, 4) NULL,
+	clause_number varchar(64) NULL,
+	clause_type varchar(64) NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	created_by uuid NULL,
+	manually_edited bool DEFAULT false NOT NULL,
+	CONSTRAINT claim_contract_extractions_pkey PRIMARY KEY (id),
+	CONSTRAINT claim_contract_extractions_contract_fkey FOREIGN KEY (contract_id) REFERENCES cargotech.claim_contracts(id) ON DELETE CASCADE,
+	CONSTRAINT claim_contract_extractions_confidence_check CHECK (confidence >= 0 AND confidence <= 1),
+	CONSTRAINT claim_contract_extractions_page_check CHECK (source_page IS NULL OR source_page > 0)
+);
+CREATE INDEX idx_contract_extractions_contract ON cargotech.claim_contract_extractions USING btree (contract_id);
 
 
 -- cargotech.claim_shipments определение
@@ -176,6 +256,9 @@ CREATE TABLE cargotech.claim_shipments (
 	loading_date date NULL,
 	unloading_date date NULL,
 	act_signed_at date NULL,
+	ttn_signed_at date NULL,
+	invoice_date date NULL,
+	payment_start_event_date date NULL,
 	service_amount numeric(19, 2) NOT NULL,
 	currency varchar(10) DEFAULT 'RUB'::character varying NOT NULL,
 	status varchar(32) DEFAULT 'CREATED'::character varying NOT NULL,
@@ -279,7 +362,7 @@ CREATE TABLE cargotech.claim_versions (
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	CONSTRAINT claim_versions_claim_id_version_number_key UNIQUE (claim_id, version_number),
 	CONSTRAINT claim_versions_pkey PRIMARY KEY (id),
-	CONSTRAINT claim_versions_source_check CHECK (((source)::text = ANY ((ARRAY['AI'::character varying, 'LAWYER'::character varying, 'RESTORED'::character varying])::text[])))
+	CONSTRAINT claim_versions_source_check CHECK (((source)::text = ANY ((ARRAY['AI'::character varying, 'LAWYER'::character varying, 'ACCOUNTANT'::character varying, 'RESTORED'::character varying])::text[])))
 );
 CREATE INDEX idx_claim_versions_claim ON cargotech.claim_versions USING btree (claim_id);
 CREATE UNIQUE INDEX uq_final_claim_version ON cargotech.claim_versions USING btree (claim_id) WHERE (is_final = true);
@@ -302,6 +385,14 @@ CREATE TABLE cargotech.claim_claims (
 	claim_type varchar(64) DEFAULT 'PAYMENT_DELAY'::character varying NOT NULL,
 	status varchar(64) DEFAULT 'DRAFT'::character varying NOT NULL,
 	reason text NULL,
+	recipient_name text NULL,
+	recipient_email text NULL,
+	recipient_address text NULL,
+	bank_details text NULL,
+	response_deadline_days int4 NULL,
+	signer_full_name text NULL,
+	signer_position text NULL,
+	signer_authority text NULL,
 	principal_debt numeric(19, 2) DEFAULT 0 NOT NULL,
 	penalty_amount numeric(19, 2) DEFAULT 0 NOT NULL,
 	total_amount numeric(19, 2) DEFAULT 0 NOT NULL,
@@ -309,6 +400,16 @@ CREATE TABLE cargotech.claim_claims (
 	non_payment_confirmed_at timestamptz NULL,
 	non_payment_confirmed_by uuid NULL,
 	non_payment_confirmation_comment text NULL,
+	non_payment_confirmation_requested_at timestamptz NULL,
+	non_payment_confirmation_requested_by uuid NULL,
+	document_validation_status varchar(32) DEFAULT 'PENDING'::character varying NOT NULL,
+	document_validation_errors text NULL,
+	manual_review_required bool DEFAULT false NOT NULL,
+	manual_review_reason text NULL,
+	used_sources text NULL,
+	validation_overridden_at timestamptz NULL,
+	validation_overridden_by uuid NULL,
+	validation_override_reason text NULL,
 	last_payment_check_id uuid NULL,
 	assigned_lawyer_id uuid NULL,
 	final_version_id uuid NULL,
@@ -326,10 +427,12 @@ CREATE TABLE cargotech.claim_claims (
 	updated_by uuid NULL,
 	"version" int8 DEFAULT 0 NOT NULL,
 	CONSTRAINT chk_claim_parties CHECK ((creditor_id <> debtor_id)),
+	CONSTRAINT chk_claim_response_deadline CHECK (((response_deadline_days IS NULL) OR (response_deadline_days >= 0))),
+	CONSTRAINT claim_document_validation_status_check CHECK (((document_validation_status)::text = ANY ((ARRAY['PENDING'::character varying, 'PASSED'::character varying, 'FAILED'::character varying, 'OVERRIDDEN'::character varying])::text[]))),
 	CONSTRAINT chk_claim_total CHECK ((total_amount = (principal_debt + penalty_amount))),
 	CONSTRAINT chk_non_payment_confirmation CHECK (((non_payment_confirmed = false) OR ((non_payment_confirmed_at IS NOT NULL) AND (non_payment_confirmed_by IS NOT NULL)))),
 	CONSTRAINT claim_claims_pkey PRIMARY KEY (id),
-	CONSTRAINT claim_claims_status_check CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'PENDING_LEGAL_REVIEW'::character varying, 'LEGAL_APPROVED'::character varying, 'SENT'::character varying, 'AWAITING_RESPONSE'::character varying, 'PAID'::character varying, 'ESCALATED_TO_COURT'::character varying, 'CANCELLED'::character varying, 'CLOSED_IN_COURT'::character varying])::text[])))
+	CONSTRAINT claim_claims_status_check CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'PENDING_LEGAL_REVIEW'::character varying, 'LEGAL_APPROVED'::character varying, 'SENT'::character varying, 'AWAITING_RESPONSE'::character varying, 'PAID'::character varying, 'ESCALATED_TO_COURT'::character varying, 'CANCELLED'::character varying, 'CANCELLED_PAID'::character varying, 'CLOSED_IN_COURT'::character varying])::text[])))
 );
 CREATE INDEX idx_claim_created_by ON cargotech.claim_claims USING btree (created_by);
 CREATE INDEX idx_claim_lawyer ON cargotech.claim_claims USING btree (assigned_lawyer_id);
@@ -338,7 +441,7 @@ CREATE INDEX idx_claim_org_creditor ON cargotech.claim_claims USING btree (organ
 CREATE INDEX idx_claim_org_debtor ON cargotech.claim_claims USING btree (organization_id, debtor_id);
 CREATE INDEX idx_claim_status ON cargotech.claim_claims USING btree (organization_id, status);
 CREATE INDEX idx_claim_updated_at ON cargotech.claim_claims USING btree (updated_at DESC);
-CREATE UNIQUE INDEX uq_active_claim_per_shipment ON cargotech.claim_claims USING btree (shipment_id) WHERE ((status)::text <> ALL ((ARRAY['PAID'::character varying, 'CANCELLED'::character varying, 'CLOSED_IN_COURT'::character varying])::text[]));
+CREATE UNIQUE INDEX uq_active_claim_per_shipment ON cargotech.claim_claims USING btree (shipment_id) WHERE ((status)::text <> ALL ((ARRAY['PAID'::character varying, 'CANCELLED'::character varying, 'CANCELLED_PAID'::character varying, 'CLOSED_IN_COURT'::character varying])::text[]));
 CREATE UNIQUE INDEX uq_claim_number ON cargotech.claim_claims USING btree (organization_id, claim_number);
 
 -- Table Triggers

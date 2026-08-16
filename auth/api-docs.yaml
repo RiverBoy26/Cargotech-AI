@@ -255,10 +255,17 @@ components:
         organizationId:
           type: string
           format: uuid
-        fullName:
+        firstName:
           type: string
-          maxLength: 255
+          maxLength: 100
           minLength: 0
+        lastName:
+          type: string
+          maxLength: 100
+          minLength: 0
+        middleName:
+          type: string
+          maxLength: 100
         email:
           type: string
           maxLength: 320
@@ -283,7 +290,11 @@ components:
         organizationId:
           type: string
           format: uuid
-        fullName:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        middleName:
           type: string
         email:
           type: string
@@ -364,10 +375,17 @@ components:
     UpdateUserRequest:
       type: object
       properties:
-        fullName:
+        firstName:
           type: string
-          maxLength: 255
+          maxLength: 100
           minLength: 1
+        lastName:
+          type: string
+          maxLength: 100
+          minLength: 1
+        middleName:
+          type: string
+          maxLength: 100
         email:
           type: string
           maxLength: 320
@@ -437,7 +455,11 @@ components:
         organizationId:
           type: string
           format: uuid
-        fullName:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        middleName:
           type: string
         email:
           type: string
