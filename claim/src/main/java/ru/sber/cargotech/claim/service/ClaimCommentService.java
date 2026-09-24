@@ -2,6 +2,8 @@ package ru.sber.cargotech.claim.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.dto.ClaimCommentResponse;
@@ -27,6 +29,7 @@ public class ClaimCommentService {
     private final ClaimRepository claimRepository;
     private final ClaimCommentRepository commentRepository;
     private final ClaimOutboxWriter outboxWriter;
+    private final JdbcTemplate jdbcTemplate;
 
     @Transactional(readOnly = true)
     public List<ClaimCommentResponse> list(CurrentClaimUser user, UUID claimId) {
@@ -125,9 +128,26 @@ public class ClaimCommentService {
             comment.getId(),
             comment.getClaimId(),
             comment.getAuthorId(),
+            authorFullName(comment.getAuthorId()),
             comment.getText(),
             comment.getCreatedAt(),
             comment.getUpdatedAt()
         );
+    }
+
+    private String authorFullName(UUID authorId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                """
+                select concat_ws(' ', last_name, first_name, middle_name)
+                from cargotech.auth_users
+                where id = ?
+                """,
+                String.class,
+                authorId
+            );
+        } catch (EmptyResultDataAccessException exception) {
+            return "Пользователь " + authorId;
+        }
     }
 }

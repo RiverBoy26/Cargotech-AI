@@ -2,6 +2,8 @@ package ru.sber.cargotech.document.service;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import ru.sber.cargotech.document.client.ClaimCalculationClient;
 import ru.sber.cargotech.document.dto.GenerateClaimDocumentRequest;
 import ru.sber.cargotech.document.dto.GenerateDocumentResponse;
 import ru.sber.cargotech.document.dto.StoreGeneratedFileCommand;
@@ -18,6 +20,7 @@ import ru.sber.cargotech.document.repository.DocumentLinkRepository;
 import ru.sber.cargotech.document.security.CurrentDocumentUser;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,6 +37,7 @@ public class ClaimDocumentGenerationService {
     private final DocumentService documentService;
     private final DocumentLinkRepository linkRepository;
     private final DocumentGenerationLogRepository generationLogRepository;
+    private final ClaimCalculationClient calculationClient;
 
     public ClaimDocumentGenerationService(
         ClaimTemplateService templateService,
@@ -41,7 +45,8 @@ public class ClaimDocumentGenerationService {
         ClaimPdfRenderer pdfRenderer,
         DocumentService documentService,
         DocumentLinkRepository linkRepository,
-        DocumentGenerationLogRepository generationLogRepository
+        DocumentGenerationLogRepository generationLogRepository,
+        ClaimCalculationClient calculationClient
     ) {
         this.templateService = templateService;
         this.docxRenderer = docxRenderer;
@@ -49,9 +54,11 @@ public class ClaimDocumentGenerationService {
         this.documentService = documentService;
         this.linkRepository = linkRepository;
         this.generationLogRepository = generationLogRepository;
+        this.calculationClient = calculationClient;
     }
 
     @PreAuthorize("hasAuthority('DOCUMENT_GENERATE')")
+    @Transactional
     public GenerateDocumentResponse generateClaimDocument(
         GenerateClaimDocumentRequest request,
         CurrentDocumentUser user
@@ -64,6 +71,20 @@ public class ClaimDocumentGenerationService {
             && outputType != GeneratedDocumentType.CLAIM_PDF) {
             throw DocumentException.badRequest(
                 "Поддерживается генерация только CLAIM_DOCX и CLAIM_PDF"
+            );
+        }
+
+        if (generationLogRepository
+            .existsByOrganizationIdAndClaimIdAndClaimVersionIdAndOutputTypeAndStatusIn(
+                user.organizationId(),
+                request.claimId(),
+                request.claimVersionId(),
+                outputType,
+                List.of(GenerationStatus.PROCESSING, GenerationStatus.COMPLETED)
+            )) {
+            throw DocumentException.conflict(
+                "Документ " + formatName(outputType) +
+                    " для этой версии претензии уже сформирован"
             );
         }
 
@@ -98,6 +119,8 @@ public class ClaimDocumentGenerationService {
             );
 
             linkDocumentToClaim(document, request.claimId(), user.userId());
+            storeCalculationAppendix(request, user, "pdf");
+            storeCalculationAppendix(request, user, "xlsx");
             log.setDocument(document);
             log.setStatus(GenerationStatus.COMPLETED);
             generationLogRepository.save(log);
@@ -119,6 +142,35 @@ public class ClaimDocumentGenerationService {
             generationLogRepository.save(log);
             throw exception;
         }
+    }
+
+    private void storeCalculationAppendix(
+        GenerateClaimDocumentRequest request,
+        CurrentDocumentUser user,
+        String format
+    ) {
+        ClaimCalculationClient.CalculationAttachment attachment =
+            calculationClient.download(request.claimId(), format);
+        Document appendix = documentService.storeGenerated(
+            new StoreGeneratedFileCommand(
+                user.organizationId(),
+                user.userId(),
+                attachment.content(),
+                attachment.filename(),
+                attachment.contentType(),
+                DocumentType.CALCULATION_APPENDIX,
+                request.documentNumber(),
+                request.documentDate(),
+                "Расчёт суммы претензии (" + format.toUpperCase() + ")"
+            )
+        );
+        DocumentLink link = new DocumentLink();
+        link.setDocument(appendix);
+        link.setEntityType(DocumentEntityType.CLAIM);
+        link.setEntityId(request.claimId());
+        link.setLinkType("CALCULATION_" + format.toUpperCase());
+        link.setCreatedBy(user.userId());
+        linkRepository.save(link);
     }
 
     private DocumentSource resolveSource(
@@ -180,6 +232,7 @@ public class ClaimDocumentGenerationService {
         DocumentGenerationLog log = new DocumentGenerationLog();
         log.setOrganizationId(user.organizationId());
         log.setClaimId(request.claimId());
+        log.setClaimVersionId(request.claimVersionId());
         log.setOutputType(outputType);
         log.setSourceVersionId(templateVersionId);
         log.setRequestSnapshot(safeSnapshot(request));
@@ -208,6 +261,7 @@ public class ClaimDocumentGenerationService {
         snapshot.put("templateVersionId", request.templateVersionId());
         snapshot.put("templateCode", request.templateCode());
         snapshot.put("claimId", request.claimId());
+        snapshot.put("claimVersionId", request.claimVersionId());
         snapshot.put("outputType", request.outputType());
         snapshot.put("documentNumber", request.documentNumber());
         snapshot.put("rawClaimText", request.claimText() != null);
@@ -239,6 +293,10 @@ public class ClaimDocumentGenerationService {
         return outputType == GeneratedDocumentType.CLAIM_PDF
             ? DocumentType.CLAIM_PDF
             : DocumentType.CLAIM_DOCX;
+    }
+
+    private String formatName(GeneratedDocumentType outputType) {
+        return outputType == GeneratedDocumentType.CLAIM_PDF ? "PDF" : "DOCX";
     }
 
     private String safeError(RuntimeException exception) {

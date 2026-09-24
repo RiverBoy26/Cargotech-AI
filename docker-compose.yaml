@@ -1,0 +1,295 @@
+name: cargotech
+
+x-database-environment: &database-environment
+  POSTGRES_USER: ${POSTGRES_USER:-cargotech}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  POSTGRES_DB: ${POSTGRES_DB:-cargotech}
+
+x-app-database-environment: &app-database-environment
+  AUTH_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  AUTH_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  AUTH_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  CLAIM_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  CLAIM_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  CLAIM_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  PAYMENT_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  PAYMENT_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  PAYMENT_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  AI_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  AI_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  AI_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+  DOCUMENT_DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-cargotech}
+  DOCUMENT_DB_USERNAME: ${POSTGRES_USER:-cargotech}
+  DOCUMENT_DB_PASSWORD: ${POSTGRES_PASSWORD:-cargotech}
+
+x-jwt-environment: &jwt-environment
+  JWT_ISSUER: ${JWT_ISSUER:-cargotech-auth}
+  JWT_SECRET_BASE64: ${JWT_SECRET_BASE64:-}
+
+services:
+  database:
+    image: postgres:17-alpine
+    environment: *database-environment
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/00-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+      - ./db/auth.sql:/docker-entrypoint-initdb.d/10-auth.sql:ro
+      - ./db/claim.sql:/docker-entrypoint-initdb.d/20-claim.sql:ro
+      - ./db/payment.sql:/docker-entrypoint-initdb.d/30-payment.sql:ro
+      - ./db/document.sql:/docker-entrypoint-initdb.d/40-document.sql:ro
+      - ./db/ai.sql:/docker-entrypoint-initdb.d/50-ai.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cargotech} -d ${POSTGRES_DB:-cargotech}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  qdrant-init:
+    image: curlimages/curl:8.12.1
+    depends_on:
+      qdrant:
+        condition: service_started
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until curl --fail --silent http://qdrant:6333/readyz; do
+          echo "Waiting for Qdrant..."
+          sleep 2
+        done
+
+        if curl --fail --silent http://qdrant:6333/collections/cargotech_rag_chunks >/dev/null; then
+          echo "Qdrant collection cargotech_rag_chunks already exists"
+          exit 0
+        fi
+
+        curl --fail --show-error --silent \
+          --request PUT \
+          http://qdrant:6333/collections/cargotech_rag_chunks \
+          --header "Content-Type: application/json" \
+          --data '{"vectors":{"size":2560,"distance":"Cosine"}}'
+
+        echo "Qdrant collection cargotech_rag_chunks created"
+
+  qdrant-seed:
+    image: curlimages/curl:8.12.1
+    profiles: ["seed"]
+    depends_on:
+      ai:
+        condition: service_started
+      qdrant:
+        condition: service_started
+    environment:
+      RAG_SEED_RESET_COLLECTION: ${RAG_SEED_RESET_COLLECTION:-false}
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-cargotech_rag_chunks}
+      QDRANT_VECTOR_SIZE: ${QDRANT_VECTOR_SIZE:-2560}
+      QDRANT_DISTANCE: ${QDRANT_DISTANCE:-Cosine}
+    volumes:
+      - ./rag-data:/seed:ro
+    restart: "no"
+    entrypoint: [ "/bin/sh", "-ec" ]
+    command:
+      - |
+        attempts=0
+        until curl --silent --output /dev/null http://ai:8084/; do
+          attempts=$$((attempts + 1))
+          if [ "$$attempts" -ge 90 ]; then
+            echo "AI service did not become available in 180 seconds" >&2
+            exit 1
+          fi
+          echo "Waiting for AI service..."
+          sleep 2
+        done
+
+        until curl --fail --silent http://qdrant:6333/readyz >/dev/null; do
+          echo "Waiting for Qdrant..."
+          sleep 2
+        done
+
+        collection="$$QDRANT_COLLECTION_NAME"
+
+        if [ "$$RAG_SEED_RESET_COLLECTION" = "true" ]; then
+          echo "Resetting Qdrant collection $$collection"
+          curl --silent --show-error --request DELETE             "http://qdrant:6333/collections/$$collection" >/dev/null || true
+          curl --fail --silent --show-error --request PUT             "http://qdrant:6333/collections/$$collection"             --header "Content-Type: application/json"             --data "{\"vectors\":{\"size\":$$QDRANT_VECTOR_SIZE,\"distance\":\"$$QDRANT_DISTANCE\"}}" >/dev/null
+        fi
+
+        indexed_files=0
+        for file in /seed/*.json; do
+          [ -f "$$file" ] || continue
+          echo "Indexing $$(basename "$$file")"
+          status=$$(curl --silent --show-error --output /tmp/index-response.json             --write-out '%{http_code}'             --request POST             http://ai:8084/api/ai/rag/index/chunks             --header "Content-Type: application/json"             --data-binary "@$$file")
+
+          if [ "$$status" -lt 200 ] || [ "$$status" -ge 300 ]; then
+            cat /tmp/index-response.json >&2
+            echo "RAG index request failed for $$file with HTTP $$status" >&2
+            exit 1
+          fi
+
+          cat /tmp/index-response.json
+          echo
+          indexed_files=$$((indexed_files + 1))
+        done
+
+        if [ "$$indexed_files" -eq 0 ]; then
+          echo "No JSON seed files found in /seed" >&2
+          exit 1
+        fi
+
+        echo "Indexed $$indexed_files RAG seed files"
+        curl --fail --silent --show-error           "http://qdrant:6333/collections/$$collection"
+        echo
+
+  auth:
+    build:
+      context: ./auth
+    environment:
+      <<: [*app-database-environment, *jwt-environment]
+      SERVER_PORT: 8081
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-PT15M}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-P30D}
+      BCRYPT_STRENGTH: ${BCRYPT_STRENGTH:-12}
+      AUTH_BOOTSTRAP_ENABLED: ${AUTH_BOOTSTRAP_ENABLED:-false}
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@cargotech.local}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-ChangeMe123!}
+      AUTH_BOOTSTRAP_FIRST_NAME: ${AUTH_BOOTSTRAP_FIRST_NAME:-Administrator}
+      AUTH_BOOTSTRAP_LAST_NAME: ${AUTH_BOOTSTRAP_LAST_NAME:-CargoTech}
+      AUTH_BOOTSTRAP_MIDDLE_NAME: ${AUTH_BOOTSTRAP_MIDDLE_NAME:-}
+      AUTH_BOOTSTRAP_ORGANIZATION_NAME: ${AUTH_BOOTSTRAP_ORGANIZATION_NAME:-CargoTech}
+      AUTH_BOOTSTRAP_ORGANIZATION_INN: ${AUTH_BOOTSTRAP_ORGANIZATION_INN:-7700000000}
+      CLAIM_SERVICE_URL: http://claim:8083
+    ports:
+      - "${AUTH_PORT:-8081}:8081"
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  payment:
+    build:
+      context: ./payment
+    environment:
+      <<: [*app-database-environment, *jwt-environment]
+      SERVER_PORT: 8082
+      CLAIM_SERVICE_URL: http://claim:8083
+    ports:
+      - "${PAYMENT_PORT:-8082}:8082"
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ai:
+    build:
+      context: ./ai
+    environment:
+      <<: *app-database-environment
+      QDRANT_URL: http://qdrant:6333
+      GIGACHAT_CLIENT_ID: ${GIGACHAT_CLIENT_ID:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in .env}
+      AI_DIAGNOSTICS_ENDPOINTS_ENABLED: ${AI_DIAGNOSTICS_ENDPOINTS_ENABLED:-false}
+    ports:
+      - "${AI_PORT:-8084}:8084"
+    depends_on:
+      database:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      qdrant-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  claim:
+    build:
+      context: ./claim
+    environment:
+      <<: [*app-database-environment, *jwt-environment]
+      SERVER_PORT: 8083
+      PAYMENT_SERVICE_URL: http://payment:8082
+      AI_SERVICE_URL: http://ai:8084
+      DOCUMENT_SERVICE_URL: http://document:8085
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in .env}
+    ports:
+      - "${CLAIM_PORT:-8083}:8083"
+    depends_on:
+      database:
+        condition: service_healthy
+      payment:
+        condition: service_started
+      ai:
+        condition: service_started
+    restart: unless-stopped
+
+  document:
+    build:
+      context: ./document
+    environment:
+      <<: [*app-database-environment, *jwt-environment]
+      SERVER_PORT: 8085
+      CLAIM_SERVICE_URL: http://claim:8083
+      DOCUMENT_LOCAL_STORAGE_PATH: /app/storage/documents
+      DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_BASE64:-}
+      DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID: ${DOCUMENT_TEMPLATE_ENCRYPTION_KEY_ID:-}
+      MAILTRAP_SMTP_HOST: ${MAILTRAP_SMTP_HOST:-sandbox.smtp.mailtrap.io}
+      MAILTRAP_SMTP_PORT: ${MAILTRAP_SMTP_PORT:-2525}
+      MAILTRAP_SMTP_USERNAME: ${MAILTRAP_SMTP_USERNAME:-}
+      MAILTRAP_SMTP_PASSWORD: ${MAILTRAP_SMTP_PASSWORD:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in .env}
+    ports:
+      - "${DOCUMENT_PORT:-8085}:8085"
+    volumes:
+      - document-storage:/app/storage/documents
+    depends_on:
+      database:
+        condition: service_healthy
+      claim:
+        condition: service_started
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ./gateway
+    environment:
+      SERVER_PORT: 8080
+      AUTH_SERVICE_URL: http://auth:8081
+      PAYMENT_SERVICE_URL: http://payment:8082
+      CLAIM_SERVICE_URL: http://claim:8083
+      DOCUMENT_SERVICE_URL: http://document:8085
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      - auth
+      - payment
+      - claim
+      - document
+    restart: unless-stopped
+
+  frontend:
+    image: cargotech/frontend:local
+    pull_policy: build
+    build:
+      context: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  document-storage:

@@ -21,7 +21,10 @@ function mapUserRow(user) {
   const role = user.roles?.[0] || '—';
   return {
     id: user.id,
-    fullName: user.fullName,
+    fullName: formatUserFullName(user),
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+    middleName: user.middleName || '',
     email: user.email,
     organizationId: user.organizationId,
     role: ROLE_LABELS[role] || role,
@@ -33,6 +36,9 @@ function mapUserRow(user) {
 }
 
 function renderActionButton(user) {
+  if (String(user.id) === String(getStoredUser()?.userId)) {
+    return '<span class="action_btn_done">Текущая учётная запись</span>';
+  }
   if (user.active) {
     return `<button class="action_btn action_btn_block" data-action="block" data-id="${user.id}">Заблокировать</button>`;
   }
@@ -112,7 +118,7 @@ function bindUserActions() {
         if (action === 'unblock') await unblockUser(id);
         await loadAllUsers();
       } catch (err) {
-        alert(err.message);
+        showToast(err.message, 'error');
       }
     });
   });
@@ -158,7 +164,7 @@ function renderOrganization(organization) {
       <div>${escapeSuperAdmin(organization.email)}</div>
       <div class="organization_actions">
         <span class="status-pill ${organization.status === 'ACTIVE' ? 'status-pill-success paid' : 'status-pill-danger escalation'}">
-          ${escapeSuperAdmin(organization.status)}
+          ${escapeSuperAdmin(organization.status === 'ACTIVE' ? 'Активен' : organization.status === 'BLOCKED' ? 'Заблокирован' : organization.status)}
         </span>
         <button class="action_btn organization_sync" data-id="${organization.id}">
           Синхронизировать
@@ -184,9 +190,9 @@ function bindOrganizationActions() {
       button.disabled = true;
       try {
         await synchronizeOrganization(button.dataset.id);
-        alert('Проекция экспедитора обновлена в claim-service');
+        showToast('Данные экспедитора обновлены', 'success');
       } catch (error) {
-        alert(error.message);
+        showToast(error.message, 'error');
       } finally {
         button.disabled = false;
       }
@@ -221,6 +227,8 @@ const modalLoading = document.getElementById('modal_loading');
 const modalError = document.getElementById('modal_error');
 const modalFieldGrid = document.querySelector('.modal_field_grid');
 
+let currentModalUser = null;
+
 function showModal() {
   modal.classList.add('modal_overlay_visible');
 }
@@ -230,15 +238,93 @@ function hideModal() {
   modalLoading.style.display = 'none';
   modalError.textContent = '';
   modalFieldGrid.style.display = 'grid';
+  setModalEditMode(false);
+  currentModalUser = null;
+}
+
+function setModalEditMode(isEditing) {
+  ['firstname', 'lastname', 'middlename', 'email'].forEach((field) => {
+    document.getElementById(`modal_user_${field}_view`).style.display = isEditing ? 'none' : 'block';
+    document.getElementById(`modal_user_${field}_input`).style.display = isEditing ? 'block' : 'none';
+  });
+  document.getElementById('modal_edit_btn').style.display = isEditing ? 'none' : 'inline-block';
+  document.getElementById('modal_save_btn').style.display = isEditing ? 'inline-block' : 'none';
+  document.getElementById('modal_cancel_edit_btn').style.display = isEditing ? 'inline-block' : 'none';
+  document.getElementById('modal_edit_message').textContent = '';
 }
 
 function fillModal(user) {
+  currentModalUser = user;
   document.getElementById('modal_user_name').textContent = user.fullName;
-  document.getElementById('modal_user_email').textContent = user.email;
+
+  document.getElementById('modal_user_firstname_view').textContent = user.firstName || '—';
+  document.getElementById('modal_user_firstname_input').value = user.firstName;
+  document.getElementById('modal_user_lastname_view').textContent = user.lastName || '—';
+  document.getElementById('modal_user_lastname_input').value = user.lastName;
+  document.getElementById('modal_user_middlename_view').textContent = user.middleName || '—';
+  document.getElementById('modal_user_middlename_input').value = user.middleName;
+  document.getElementById('modal_user_email_view').textContent = user.email;
+  document.getElementById('modal_user_email_input').value = user.email;
+
   document.getElementById('modal_user_role').textContent = user.role;
   document.getElementById('modal_user_status').textContent = user.status;
-  document.getElementById('modal_user_expeditor').textContent =
-    user.organizationId || '—';
+  document.getElementById('modal_user_expeditor').textContent = user.organizationId || '—';
+
+  const blockBtn = document.getElementById('modal_block_btn');
+  const isSelf = String(user.id) === String(getStoredUser()?.userId);
+  blockBtn.style.display = isSelf ? 'none' : 'inline-block';
+  blockBtn.textContent = user.active ? 'Заблокировать' : 'Разблокировать';
+
+  setModalEditMode(false);
+}
+
+async function saveUserEdits() {
+  if (!currentModalUser) return;
+  const message = document.getElementById('modal_edit_message');
+  const saveBtn = document.getElementById('modal_save_btn');
+
+  const payload = {
+    firstName: document.getElementById('modal_user_firstname_input').value.trim(),
+    lastName: document.getElementById('modal_user_lastname_input').value.trim(),
+    middleName: document.getElementById('modal_user_middlename_input').value.trim(),
+    email: document.getElementById('modal_user_email_input').value.trim(),
+  };
+
+  if (!payload.firstName || !payload.lastName || !payload.email) {
+    message.textContent = 'Имя, фамилия и email обязательны.';
+    return;
+  }
+
+  saveBtn.disabled = true;
+  message.textContent = '';
+  try {
+    const updated = await updateUser(currentModalUser.id, payload);
+    fillModal(mapUserRow(updated));
+    showToast('Данные пользователя обновлены', 'success');
+    await loadAllUsers();
+  } catch (error) {
+    message.textContent = error.message || 'Не удалось сохранить изменения';
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function toggleUserBlock() {
+  if (!currentModalUser) return;
+  const blockBtn = document.getElementById('modal_block_btn');
+  blockBtn.disabled = true;
+  try {
+    const action = currentModalUser.active ? blockUser : unblockUser;
+    await action(currentModalUser.id);
+    const refreshed = await getUser(currentModalUser.id);
+    fillModal(mapUserRow(refreshed));
+    showToast(currentModalUser.active ? 'Пользователь заблокирован' : 'Пользователь разблокирован', 'success');
+    await loadAllUsers();
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    blockBtn.disabled = false;
+  }
 }
 
 function bindUserRowClicks() {
@@ -266,6 +352,10 @@ function bindUserRowClicks() {
 
 document.getElementById('modal_close_btn').addEventListener('click', hideModal);
 document.getElementById('modal_close_footer_btn').addEventListener('click', hideModal);
+document.getElementById('modal_edit_btn').addEventListener('click', () => setModalEditMode(true));
+document.getElementById('modal_cancel_edit_btn').addEventListener('click', () => fillModal(currentModalUser));
+document.getElementById('modal_save_btn').addEventListener('click', saveUserEdits);
+document.getElementById('modal_block_btn').addEventListener('click', toggleUserBlock);
 modal.addEventListener('click', (event) => {
   if (event.target === modal) hideModal();
 });
@@ -297,7 +387,9 @@ document.getElementById('add_user_btn').addEventListener('click', () => {
 
 document.getElementById('cancel_user_btn').addEventListener('click', () => {
   addUserForm.classList.remove('add_user_form_visible');
-  document.getElementById('field_fullname').value = '';
+  document.getElementById('field_first_name').value = '';
+  document.getElementById('field_last_name').value = '';
+  document.getElementById('field_middle_name').value = '';
   document.getElementById('field_email').value = '';
   document.getElementById('field_password').value = '';
   document.getElementById('field_role').value = '';
@@ -305,22 +397,34 @@ document.getElementById('cancel_user_btn').addEventListener('click', () => {
 });
 
 document.getElementById('save_user_btn').addEventListener('click', async () => {
-  const fullName = document.getElementById('field_fullname').value.trim();
+  const firstName = document.getElementById('field_first_name').value.trim();
+  const lastName = document.getElementById('field_last_name').value.trim();
+  const middleName = document.getElementById('field_middle_name').value.trim();
   const email = document.getElementById('field_email').value.trim();
   const password = document.getElementById('field_password').value;
   const role = document.getElementById('field_role').value;
   const organizationId = document.getElementById('field_expeditor').value;
 
-  if (!fullName || !email || !password || !role || !organizationId) {
-    alert('Заполните все поля');
+  if (!firstName || !lastName || !email || !password || !role || !organizationId) {
+    showToast('Заполните все поля', 'error');
     return;
   }
 
   try {
-    await createUser({ fullName, email, password, roles: [role], organizationId });
+    await createUser({
+      firstName,
+      lastName,
+      middleName: middleName || null,
+      email,
+      password,
+      roles: [role],
+      organizationId,
+    });
 
     addUserForm.classList.remove('add_user_form_visible');
-    document.getElementById('field_fullname').value = '';
+    document.getElementById('field_first_name').value = '';
+    document.getElementById('field_last_name').value = '';
+    document.getElementById('field_middle_name').value = '';
     document.getElementById('field_email').value = '';
     document.getElementById('field_password').value = '';
     document.getElementById('field_role').value = '';
@@ -328,7 +432,7 @@ document.getElementById('save_user_btn').addEventListener('click', async () => {
 
     await loadAllUsers();
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 
@@ -359,7 +463,9 @@ document.getElementById('cancel_organization_btn').addEventListener('click', () 
   clearOrganizationForm();
 });
 
-document.getElementById('save_organization_btn').addEventListener('click', async () => {
+document.getElementById('save_organization_btn').addEventListener('click', async (event) => {
+  const saveButton = event.currentTarget;
+  if (saveButton.disabled) return;
   const payload = {
     name: document.getElementById('organization_name').value.trim(),
     inn: document.getElementById('organization_inn').value.trim(),
@@ -372,9 +478,11 @@ document.getElementById('save_organization_btn').addEventListener('click', async
     status: 'ACTIVE',
   };
   if (!payload.name || !payload.inn) {
-    alert('Название и ИНН обязательны');
+    showToast('Название и ИНН обязательны', 'error');
     return;
   }
+  saveButton.disabled = true;
+  saveButton.textContent = 'Создание...';
   try {
     await createOrganization(payload);
     organizationForm.classList.remove('add_user_form_visible');
@@ -382,7 +490,10 @@ document.getElementById('save_organization_btn').addEventListener('click', async
     await loadOrganizations();
     await loadAllUsers();
   } catch (error) {
-    alert(error.message);
+    showToast(error.message, 'error');
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = 'Создать';
   }
 });
 

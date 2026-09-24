@@ -13,6 +13,7 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.enums.ClaimType;
+import ru.sber.cargotech.claim.enums.DocumentValidationStatus;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -54,6 +55,30 @@ public class ClaimEntity {
 
     private String reason;
 
+    @Column(name = "recipient_name")
+    private String recipientName;
+
+    @Column(name = "recipient_email")
+    private String recipientEmail;
+
+    @Column(name = "recipient_address")
+    private String recipientAddress;
+
+    @Column(name = "bank_details")
+    private String bankDetails;
+
+    @Column(name = "response_deadline_days")
+    private Integer responseDeadlineDays;
+
+    @Column(name = "signer_full_name")
+    private String signerFullName;
+
+    @Column(name = "signer_position")
+    private String signerPosition;
+
+    @Column(name = "signer_authority")
+    private String signerAuthority;
+
     @Column(name = "principal_debt", nullable = false, precision = 19, scale = 2)
     private BigDecimal principalDebt = BigDecimal.ZERO;
 
@@ -74,6 +99,37 @@ public class ClaimEntity {
 
     @Column(name = "non_payment_confirmation_comment")
     private String nonPaymentConfirmationComment;
+
+    @Column(name = "non_payment_confirmation_requested_at")
+    private OffsetDateTime nonPaymentConfirmationRequestedAt;
+
+    @Column(name = "non_payment_confirmation_requested_by")
+    private UUID nonPaymentConfirmationRequestedBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_validation_status", nullable = false, length = 32)
+    private DocumentValidationStatus documentValidationStatus = DocumentValidationStatus.PENDING;
+
+    @Column(name = "document_validation_errors", columnDefinition = "text")
+    private String documentValidationErrors;
+
+    @Column(name = "manual_review_required", nullable = false)
+    private boolean manualReviewRequired = false;
+
+    @Column(name = "manual_review_reason", columnDefinition = "text")
+    private String manualReviewReason;
+
+    @Column(name = "used_sources", columnDefinition = "text")
+    private String usedSources;
+
+    @Column(name = "validation_overridden_at")
+    private OffsetDateTime validationOverriddenAt;
+
+    @Column(name = "validation_overridden_by")
+    private UUID validationOverriddenBy;
+
+    @Column(name = "validation_override_reason", columnDefinition = "text")
+    private String validationOverrideReason;
 
     @Column(name = "last_payment_check_id")
     private UUID lastPaymentCheckId;

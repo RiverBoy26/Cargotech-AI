@@ -44,11 +44,14 @@ public class OrganizationController {
     }
 
     @GetMapping("/{organizationId}")
-    @PreAuthorize("hasAuthority('ORGANIZATION_READ')")
+    @PreAuthorize("isAuthenticated()")
     public OrganizationResponse get(
         @PathVariable UUID organizationId
     ) {
-        return organizationService.get(organizationId);
+        return organizationService.get(
+            organizationId,
+            currentUserProvider.getRequiredUser()
+        );
     }
 
     @PostMapping

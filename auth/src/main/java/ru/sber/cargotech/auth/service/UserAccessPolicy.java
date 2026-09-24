@@ -69,6 +69,24 @@ public class UserAccessPolicy {
         }
     }
 
+    public void checkTargetUserRead(CurrentUser actor, AuthUser target) {
+        log.debug(
+            "Проверка доступа к профилю пользователя: actorUserId={}, targetUserId={}",
+            actor.userId(),
+            target.getId()
+        );
+
+        if (actor.hasRole(SystemRole.SUPER_ADMIN.name())) {
+            return;
+        }
+
+        if (!Objects.equals(actor.organizationId(), target.getOrganizationId())) {
+            throw AuthException.forbidden(
+                "Нельзя просматривать пользователя другой организации"
+            );
+        }
+    }
+
     public void checkRoleAssignment(
         CurrentUser actor,
         Set<String> requestedRoles

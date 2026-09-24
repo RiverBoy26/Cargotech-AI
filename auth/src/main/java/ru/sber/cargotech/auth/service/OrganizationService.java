@@ -68,7 +68,21 @@ public class OrganizationService {
     }
 
     @Transactional(readOnly = true)
-    public OrganizationResponse get(UUID organizationId) {
+    public OrganizationResponse get(
+        UUID organizationId,
+        CurrentUser actor
+    ) {
+        boolean ownOrganization = organizationId.equals(
+            actor.organizationId()
+        );
+        boolean canReadAnyOrganization = actor.permissions().contains(
+            "ORGANIZATION_READ"
+        );
+        if (!ownOrganization && !canReadAnyOrganization) {
+            throw AuthException.forbidden(
+                "Нет доступа к данным другой организации"
+            );
+        }
         return toResponse(requireOrganization(organizationId));
     }
 

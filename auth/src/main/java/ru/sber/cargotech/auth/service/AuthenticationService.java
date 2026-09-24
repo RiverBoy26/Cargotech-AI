@@ -161,7 +161,9 @@ public class AuthenticationService {
         return new CurrentUserResponse(
             user.getId(),
             principal.organizationId(),
-            user.getFullName(),
+            user.getFirstName(),
+            user.getLastName(),
+            user.getMiddleName(),
             user.getEmail(),
             user.isActive(),
             user.getBlockedAt(),

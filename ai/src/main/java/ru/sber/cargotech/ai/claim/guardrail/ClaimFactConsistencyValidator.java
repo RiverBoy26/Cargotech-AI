@@ -19,9 +19,34 @@ public class ClaimFactConsistencyValidator {
     private static final Pattern INN_PATTERN = Pattern.compile("(?<!\\d)(?:\\d{10}|\\d{12})(?!\\d)");
     private static final Pattern RUB_AMOUNT_PATTERN = Pattern.compile(
             "(?iu)(?<!\\d)(\\d[\\d \\u00A0]{0,18}(?:[,.]\\d{1,2})?)\\s*(?:руб(?:лей|ля|ль|\\.)?|₽)"
+                    + "(?:\\s*(\\d{1,2})\\s*коп(?:еек|ейки|ейка|\\.)?)?"
     );
     private static final Pattern CLOCK_TIME_PATTERN = Pattern.compile(
             "(?<!\\d)([01]?\\d|2[0-3])[:.]([0-5]\\d)(?!\\d)"
+    );
+    private static final Pattern DANGLING_ACT_NUMBER_PATTERN = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}_])акт(?:ом|а|у|е|ы)?\\s*№\\s*(?:от(?![\\p{L}\\p{N}_])|[,.;:]|$)"
+    );
+    private static final Pattern BANK_DETAILS_PATTERN = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}_])(?:бик|"
+                    + "корреспондентск\\p{L}*\\s+сч[её]т\\p{L}*|"
+                    + "расч[её]тн\\p{L}*\\s+сч[её]т\\p{L}*|"
+                    + "р\\s*/\\s*с|к\\s*/\\s*с)(?![\\p{L}\\p{N}_])"
+    );
+    private static final Pattern BANK_DETAILS_MENTION_PATTERN = Pattern.compile(
+            "(?iu)банковск\\p{L}*\\s+реквизит\\p{L}*"
+    );
+    private static final Pattern ATTACHMENTS_SECTION_PATTERN = Pattern.compile(
+            "(?imu)^\\s*приложени[ея]\\s*:"
+    );
+    private static final Pattern ISO_DATE_IN_CLAIM_PATTERN = Pattern.compile(
+            "(?<!\\d)\\d{4}-\\d{2}-\\d{2}(?!\\d)"
+    );
+    private static final Pattern TECHNICAL_ENUM_IN_CLAIM_PATTERN = Pattern.compile(
+            "(?<![\\p{L}\\p{N}_])(?:UNPAID|PAID|PARTIALLY_PAID|UNKNOWN|RUB|CONTRACT_PENALTY|NONE)(?![\\p{L}\\p{N}_])"
+    );
+    private static final Pattern MACHINE_RUB_AMOUNT_PATTERN = Pattern.compile(
+            "(?iu)(?<!\\d)\\d[\\d \\u00A0]*\\.\\d{2}\\s*(?:руб(?:лей|ля|ль|\\.)?|₽)"
     );
     private static final Pattern CONFIRMATION_SUBSTITUTION_PATTERN = Pattern.compile(
             "(?iu)(?:неподтверждени\\p{L}*|отсутстви\\p{L}*\\s+подтверждени\\p{L}*)\\s+(?:факт\\p{L}*\\s+)?(?:подач\\p{L}*|предоставлени\\p{L}*)"
@@ -48,10 +73,32 @@ public class ClaimFactConsistencyValidator {
             "на", "в", "во", "у", "д", "дом", "корп", "корпус",
             "стр", "строен"
     );
+    private static final Pattern UNSUPPORTED_CONTACT_FIELD_PATTERN = Pattern.compile(
+            "(?imu)^\\s*(?:телефон|тел\\.?|e-?mail|email|электронная\\s+почта|факс|сайт)\\s*:"
+    );
+    private static final Pattern UNSUPPORTED_REPRESENTATIVE_PATTERN = Pattern.compile(
+            "(?iu)(?:^|[^\\p{L}])в\\s+лице(?:[^\\p{L}]|$)"
+                    + "|(?:^|[^\\p{L}])уполномоченн\\p{L}*\\s+лиц\\p{L}*(?:[^\\p{L}]|$)"
+    );
+    private static final Pattern STANDALONE_DOCUMENT_PLACE_PATTERN = Pattern.compile(
+            "(?imu)^\\s*г\\.\\s*[А-ЯЁ][А-Яа-яЁё .\\-]{1,80}\\s*$"
+    );
+    private static final Pattern ADDRESS_LABEL_PATTERN = Pattern.compile("(?iu)адрес\\s*:");
+    private static final Pattern FIRST_PERSON_SINGULAR_DEMAND_PATTERN = Pattern.compile(
+            "(?imu)(?:^|[.!?]\\s*)требую\\s*:?"
+    );
+    private static final Pattern ORGANIZATION_DEMAND_SECTION_PATTERN = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}_])(?:требует|требуем|просим)(?![\\p{L}\\p{N}_])\\s*:"
+    );
+
     private static final int ADDRESS_TOKEN_WINDOW = 20;
     private static final int TIME_WINDOW_MAX_DISTANCE = 120;
 
-    private static final DateTimeFormatter INPUT_DATE = DateTimeFormatter.ofPattern("dd.MM.uuuu");
+    private static final List<DateTimeFormatter> INPUT_DATE_FORMATTERS = List.of(
+            DateTimeFormatter.ISO_LOCAL_DATE,
+            DateTimeFormatter.ofPattern("dd.MM.uuuu"),
+            DateTimeFormatter.ofPattern("dd-MM-uuuu")
+    );
     private static final String[] MONTHS = {
             "января", "февраля", "марта", "апреля", "мая", "июня",
             "июля", "августа", "сентября", "октября", "ноября", "декабря"
@@ -72,6 +119,10 @@ public class ClaimFactConsistencyValidator {
         String narrative = text + "\n" + summary;
         GenerateClaimRequest.CaseFacts facts = request.caseFacts();
 
+        validateClaimIdentity(facts, text, errors);
+        validateSignatory(facts.signatory(), text, errors);
+        validateExcludedSections(facts, text, errors);
+        validatePresentationQuality(text, errors);
         validateParty("creditor", facts.creditor(), text, errors);
         validateParty("debtor", facts.debtor(), text, errors);
         validateUnknownInns(facts, narrative, errors);
@@ -80,6 +131,9 @@ public class ClaimFactConsistencyValidator {
 
         if (facts.claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
             validatePaymentDelayFacts(facts, text, errors);
+            validatePaymentDelaySemantics(facts, request.backendCalculation(), text, errors);
+            validatePaymentDelayPresentation(text, errors);
+            validatePaymentDelayDemandBreakdown(request.backendCalculation(), text, errors);
         } else if (facts.claimType() == GenerateClaimRequest.ClaimType.LOADING_FAILURE) {
             validateLoadingFailureFacts(facts, request.backendCalculation(), text, narrative, errors, warnings);
         }
@@ -90,6 +144,61 @@ public class ClaimFactConsistencyValidator {
             if (modelWarning != null && !modelWarning.isBlank()) {
                 warnings.add("Model warning: " + modelWarning.trim());
             }
+        }
+    }
+
+    private void validateClaimIdentity(
+            GenerateClaimRequest.CaseFacts facts,
+            String text,
+            List<String> errors
+    ) {
+        if (!hasText(facts.claimNumber())) {
+            return;
+        }
+        requireTextValue(text, facts.claimNumber(), "claim_number", errors);
+        requireDate(text, facts.claimDate(), "claim_date", errors);
+    }
+
+    private void validateSignatory(
+            GenerateClaimRequest.SignatoryFacts signatory,
+            String text,
+            List<String> errors
+    ) {
+        if (signatory == null) {
+            return;
+        }
+        requireTextValue(text, signatory.position(), "signatory.position", errors);
+        requireTextValue(text, signatory.name(), "signatory.name", errors);
+        requireTextValue(text, signatory.authority(), "signatory.authority", errors);
+    }
+
+    private void validateExcludedSections(
+            GenerateClaimRequest.CaseFacts facts,
+            String text,
+            List<String> errors
+    ) {
+        if (BANK_DETAILS_PATTERN.matcher(text).find() || BANK_DETAILS_MENTION_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not contain or mention bank details in current scope");
+        }
+        if (ATTACHMENTS_SECTION_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not contain an attachments section in current scope");
+        }
+    }
+
+    private void validatePresentationQuality(String text, List<String> errors) {
+        Matcher isoDateMatcher = ISO_DATE_IN_CLAIM_PATTERN.matcher(text);
+        if (isoDateMatcher.find()) {
+            errors.add("claim_text contains machine ISO date: " + isoDateMatcher.group());
+        }
+
+        Matcher enumMatcher = TECHNICAL_ENUM_IN_CLAIM_PATTERN.matcher(text);
+        if (enumMatcher.find()) {
+            errors.add("claim_text contains technical enum/code: " + enumMatcher.group());
+        }
+
+        Matcher machineAmountMatcher = MACHINE_RUB_AMOUNT_PATTERN.matcher(text);
+        if (machineAmountMatcher.find()) {
+            errors.add("claim_text contains machine-formatted RUB amount: " + machineAmountMatcher.group());
         }
     }
 
@@ -105,6 +214,7 @@ public class ClaimFactConsistencyValidator {
 
         requireTextValue(text, party.name(), role + ".name", errors);
         requireTextValue(text, party.inn(), role + ".inn", errors);
+        requireTextValue(text, party.bankDetails(), role + ".bank_details", errors);
     }
 
     private void validateUnknownInns(
@@ -135,6 +245,32 @@ public class ClaimFactConsistencyValidator {
         }
         requireTextValue(text, contract.contractNumber(), "contract.contract_number", errors);
         requireDate(text, contract.contractDate(), "contract.contract_date", errors);
+        requireClaimResponseDeadline(text, contract.claimResponseDays(), contract.claimResponseDayType(), errors);
+    }
+
+    private void requireClaimResponseDeadline(
+            String text,
+            Integer days,
+            GenerateClaimRequest.TermDayType dayType,
+            List<String> errors
+    ) {
+        if (days == null || days <= 0) {
+            return;
+        }
+
+        String dayWordPattern = dayTypePattern(dayType);
+        Pattern daysPattern = Pattern.compile(
+                "(?iu)(?<!\\d)" + Pattern.quote(String.valueOf(days))
+                        + "\\s+" + dayWordPattern + "\\s+дн\\p{L}*(?!\\d)"
+        );
+        String normalized = normalize(text);
+        boolean hasDays = daysPattern.matcher(text).find();
+        boolean tiedToReceipt = normalized.contains("получени") && normalized.contains("претензи");
+
+        if (!hasDays || !tiedToReceipt) {
+            errors.add("claim_text does not contain expected contract.claim_response_days: "
+                    + days + " " + dayTypeLabel(dayType) + " from receipt of the claim");
+        }
     }
 
     private void validatePaymentDelayFacts(
@@ -154,7 +290,146 @@ public class ClaimFactConsistencyValidator {
 
         requireTextValue(text, shipment.actNumber(), "shipment.act_number", errors);
         requireDate(text, shipment.actDate(), "shipment.act_date", errors);
+        if (!hasText(shipment.actNumber())
+                && hasText(shipment.actDate())
+                && DANGLING_ACT_NUMBER_PATTERN.matcher(text).find()) {
+            errors.add("claim_text contains a dangling act number marker while shipment.act_number is empty");
+        }
         requireTextValue(text, shipment.route(), "shipment.route", errors);
+    }
+
+    private void validatePaymentDelaySemantics(
+            GenerateClaimRequest.CaseFacts facts,
+            GenerateClaimRequest.BackendCalculation calculation,
+            String text,
+            List<String> errors
+    ) {
+        if (facts == null || text == null) {
+            return;
+        }
+
+        GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
+
+        // There is no order/application date in GenerateClaimRequest.
+        // A model must not turn order_number into "заказ № ... от <invented date>".
+        if (shipment != null && hasText(shipment.orderNumber())) {
+            String quotedOrderNumber = Pattern.quote(shipment.orderNumber());
+            String orderDatePattern = "(?isu)(?:заказ|заявк)\\p{L}*[^.!?\\n]{0,100}"
+                    + "(?:№\\s*)?" + quotedOrderNumber
+                    + "[^.!?\\n]{0,60}\\sот\\s+\\d{1,2}\\s+"
+                    + "(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)"
+                    + "\\s+\\d{4}";
+            if (Pattern.compile(orderDatePattern).matcher(text).find()) {
+                errors.add("claim_text invents an order/application date absent from case_facts.shipment");
+            }
+
+            String wrongRideLabelPattern = "(?isu)(?:"
+                    + "(?:заказ|заявк)\\p{L}*[^.!?\\n]{0,100}(?:№\\s*)?" + quotedOrderNumber
+                    + "|" + quotedOrderNumber + "[^.!?\\n]{0,100}(?:заказ|заявк)\\p{L}*"
+                    + ")";
+            if (Pattern.compile(wrongRideLabelPattern).matcher(text).find()) {
+                errors.add("claim_text labels shipment.order_number as an order/application; PAYMENT_DELAY must call it a ride number");
+            }
+        }
+
+        // Accountant confirmation in this workflow confirms the payment status
+        // (non-payment/partial payment), not issuance/receipt of documents or the
+        // legal moment when the payment term started.
+        if (facts.payment() != null && Boolean.TRUE.equals(facts.payment().paymentConfirmedByAccountant())) {
+            Pattern accountantOverclaim = Pattern.compile(
+                    "(?isu)бухгалтер\\p{L}*[^.!?\\n]{0,220}"
+                            + "(?:выставлен\\p{L}*\\s+документ\\p{L}*"
+                            + "|получен\\p{L}*\\s+(?:полн\\p{L}*\\s+)?комплект\\p{L}*\\s+документ\\p{L}*"
+                            + "|наступлен\\p{L}*\\s+срок\\p{L}*\\s+(?:платеж\\p{L}*|оплат\\p{L}*))"
+            );
+            if (accountantOverclaim.matcher(text).find()) {
+                errors.add("claim_text overstates accountant confirmation beyond the confirmed payment status");
+            }
+        }
+
+        // ARTICLE_395/LEGAL_INTEREST is interest for use of another's money,
+        // not contractual penalty / fine / late fee.
+        if (calculation != null
+                && calculation.penaltyType() == GenerateClaimRequest.PenaltyType.LEGAL_INTEREST
+                && calculation.penaltyAmount() != null
+                && calculation.penaltyAmount().compareTo(BigDecimal.ZERO) > 0) {
+            Pattern wrongInterestTerm = Pattern.compile(
+                    "(?iu)(?<![\\p{L}\\p{N}_])(?:неустойк\\p{L}*|штраф\\p{L}*|пен(?:я|и|ей|ю))(?![\\p{L}\\p{N}_])"
+            );
+            if (wrongInterestTerm.matcher(text).find()) {
+                errors.add("claim_text describes LEGAL_INTEREST as contractual penalty/fine/late fee");
+            }
+        }
+
+        // claim_response_days is the deadline for a written response to the
+        // claim. It must not silently become a new payment deadline.
+        Integer responseDays = facts.contract() == null ? null : facts.contract().claimResponseDays();
+        if (responseDays != null && responseDays > 0) {
+            GenerateClaimRequest.TermDayType responseDayType = facts.contract().claimResponseDayType();
+            Pattern paymentDeadline = Pattern.compile(
+                    "(?iu)(?:оплат\\p{L}*|перечисл\\p{L}*|погас\\p{L}*)"
+                            + "[^.!?\\n]{0,180}"
+                            + "(?:в\\s+течение\\s+)?"
+                            + Pattern.quote(String.valueOf(responseDays))
+                            + "\\s+" + dayTypePattern(responseDayType) + "\\s+дн\\p{L}*"
+            );
+            if (paymentDeadline.matcher(text).find()) {
+                errors.add("claim_text incorrectly uses contract.claim_response_days as a payment deadline");
+            }
+        }
+    }
+
+    private void validatePaymentDelayPresentation(String text, List<String> errors) {
+        if (!hasText(text)) {
+            return;
+        }
+
+        if (FIRST_PERSON_SINGULAR_DEMAND_PATTERN.matcher(text).find()) {
+            errors.add("claim_text must not use first-person singular demand 'требую' for a legal-entity creditor");
+        }
+
+        if (UNSUPPORTED_CONTACT_FIELD_PATTERN.matcher(text).find()) {
+            errors.add("claim_text contains unsupported contact field not present in case_facts");
+        }
+
+        if (UNSUPPORTED_REPRESENTATIVE_PATTERN.matcher(text).find()) {
+            errors.add("claim_text contains unsupported party representative wording");
+        }
+
+        if (STANDALONE_DOCUMENT_PLACE_PATTERN.matcher(text).find()) {
+            errors.add("claim_text invents a standalone document place not present in case_facts");
+        }
+
+        Matcher addressMatcher = ADDRESS_LABEL_PATTERN.matcher(text);
+        int addressLabels = 0;
+        while (addressMatcher.find()) {
+            addressLabels++;
+        }
+        if (addressLabels > 2) {
+            errors.add("claim_text duplicates party addresses");
+        }
+    }
+
+    private String dayTypePattern(GenerateClaimRequest.TermDayType dayType) {
+        GenerateClaimRequest.TermDayType effective = dayType == null
+                ? GenerateClaimRequest.TermDayType.CALENDAR_DAYS
+                : dayType;
+        return switch (effective) {
+            case CALENDAR_DAYS -> "календарн\\p{L}*";
+            case WORKING_DAYS -> "рабоч\\p{L}*";
+            case BANKING_DAYS -> "банковск\\p{L}*";
+        };
+    }
+
+    private String dayTypeLabel(GenerateClaimRequest.TermDayType dayType) {
+        GenerateClaimRequest.TermDayType effective = dayType == null
+                ? GenerateClaimRequest.TermDayType.CALENDAR_DAYS
+                : dayType;
+        return switch (effective) {
+            case CALENDAR_DAYS -> "calendar days";
+            case WORKING_DAYS -> "working days";
+            case BANKING_DAYS -> "banking days";
+        };
     }
 
     private void validateLoadingFailureFacts(
@@ -192,9 +467,18 @@ public class ClaimFactConsistencyValidator {
 
         Set<BigDecimal> allowed = new HashSet<>();
         addAmount(allowed, calculation.principalDebt());
+        addAmount(allowed, calculation.originalObligationAmount());
+        addAmount(allowed, calculation.paidAmount());
         addAmount(allowed, calculation.penaltyAmount());
         addAmount(allowed, calculation.totalAmount());
 
+        if (calculation.originalObligationAmount() != null
+                && calculation.originalObligationAmount().compareTo(BigDecimal.ZERO) > 0) {
+            requireAmount(text, calculation.originalObligationAmount(), "original_obligation_amount", errors);
+        }
+        if (calculation.paidAmount() != null && calculation.paidAmount().compareTo(BigDecimal.ZERO) > 0) {
+            requireAmount(text, calculation.paidAmount(), "paid_amount", errors);
+        }
         if (calculation.principalDebt() != null && calculation.principalDebt().compareTo(BigDecimal.ZERO) > 0) {
             requireAmount(text, calculation.principalDebt(), "principal_debt", errors);
         }
@@ -204,14 +488,78 @@ public class ClaimFactConsistencyValidator {
         if (calculation.totalAmount() != null && calculation.totalAmount().compareTo(BigDecimal.ZERO) > 0) {
             requireAmount(text, calculation.totalAmount(), "total_amount", errors);
         }
+        requireDate(text, calculation.overdueStartDate(), "overdue_start_date", errors);
+        requireDate(text, calculation.overdueEndDate(), "overdue_end_date", errors);
 
         Matcher matcher = RUB_AMOUNT_PATTERN.matcher(text);
         while (matcher.find()) {
-            BigDecimal found = parseAmount(matcher.group(1));
+            BigDecimal found = parseRubAmount(matcher);
             if (found != null && !containsAmount(allowed, found)) {
                 errors.add("claim_text contains amount not present in backend_calculation: " + found.toPlainString() + " RUB");
             }
         }
+    }
+
+
+    private void validatePaymentDelayDemandBreakdown(
+            GenerateClaimRequest.BackendCalculation calculation,
+            String text,
+            List<String> errors
+    ) {
+        if (calculation == null || !hasText(text)) {
+            return;
+        }
+
+        Matcher marker = ORGANIZATION_DEMAND_SECTION_PATTERN.matcher(text);
+        if (!marker.find()) {
+            // Keep legacy/manual texts compatible. New generation is instructed to
+            // use an explicit organization demand section; once it does, validate
+            // that the section does not collapse debt and sanctions into one total.
+            return;
+        }
+
+        String demandSection = text.substring(marker.end());
+        if (calculation.principalDebt() != null
+                && calculation.principalDebt().compareTo(BigDecimal.ZERO) > 0
+                && !containsSemanticAmount(
+                    demandSection,
+                    calculation.principalDebt(),
+                    Pattern.compile("(?iu)(?:основн\\p{L}*\\s+долг\\p{L}*|задолженн\\p{L}*)")
+                )) {
+            errors.add("demand section must state principal debt separately");
+        }
+
+        if (calculation.penaltyAmount() != null
+                && calculation.penaltyAmount().compareTo(BigDecimal.ZERO) > 0) {
+            Pattern sanctionMeaning = calculation.penaltyType() == GenerateClaimRequest.PenaltyType.LEGAL_INTEREST
+                    ? Pattern.compile("(?iu)(?:процент\\p{L}*[^\\n]{0,80}(?:395|чуж\\p{L}*\\s+денежн\\p{L}*\\s+средств\\p{L}*))")
+                    : Pattern.compile("(?iu)(?:неустойк\\p{L}*|пен(?:я|и|ей|ю))");
+            if (!containsSemanticAmount(demandSection, calculation.penaltyAmount(), sanctionMeaning)) {
+                errors.add("demand section must state the calculated sanction separately with its legal type");
+            }
+        }
+
+        if (calculation.totalAmount() != null
+                && calculation.totalAmount().compareTo(BigDecimal.ZERO) > 0
+                && !containsSemanticAmount(
+                    demandSection,
+                    calculation.totalAmount(),
+                    Pattern.compile("(?iu)(?:итог\\p{L}*|всего|общ\\p{L}*\\s+сумм\\p{L}*|(?:произвест\\p{L}*\\s+)?(?:оплат\\p{L}*|уплат\\p{L}*|погас\\p{L}*)[^\\n]{0,80}задолженн\\p{L}*[^\\n]{0,40}(?:в\\s+размере|на\\s+сумму))")
+                )) {
+            errors.add("demand section must state total amount separately");
+        }
+    }
+
+    private boolean containsSemanticAmount(String text, BigDecimal amount, Pattern semanticPattern) {
+        for (String line : text.split("\\R")) {
+            if (!semanticPattern.matcher(line).find()) continue;
+            Matcher amountMatcher = RUB_AMOUNT_PATTERN.matcher(line);
+            while (amountMatcher.find()) {
+                BigDecimal found = parseRubAmount(amountMatcher);
+                if (sameAmount(found, amount)) return true;
+            }
+        }
+        return false;
     }
 
     private void validateAttachments(
@@ -220,43 +568,8 @@ public class ClaimFactConsistencyValidator {
             List<String> errors,
             List<String> warnings
     ) {
-        Set<GenerateClaimResponse.DocumentType> allowed = EnumSet.noneOf(GenerateClaimResponse.DocumentType.class);
-        GenerateClaimRequest.CaseFacts facts = request.caseFacts();
-        GenerateClaimRequest.ShipmentFacts shipment = facts.shipment();
-
-        if (facts.contract() != null) allowed.add(GenerateClaimResponse.DocumentType.CONTRACT);
-        if (request.backendCalculation() != null) allowed.add(GenerateClaimResponse.DocumentType.CALCULATION);
-        if (facts.payment() != null && Boolean.TRUE.equals(facts.payment().paymentConfirmedByAccountant())) {
-            allowed.add(GenerateClaimResponse.DocumentType.PAYMENT_EXTRACT);
-        }
-        if (shipment != null) {
-            if (hasText(shipment.actNumber()) || hasText(shipment.actDate())) allowed.add(GenerateClaimResponse.DocumentType.ACT);
-            if (hasText(shipment.ttnNumber())) allowed.add(GenerateClaimResponse.DocumentType.TTN);
-            if (hasText(shipment.invoiceNumber())) allowed.add(GenerateClaimResponse.DocumentType.INVOICE);
-            if (hasText(shipment.orderNumber())) allowed.add(GenerateClaimResponse.DocumentType.TRANSPORT_ORDER);
-            if (Boolean.TRUE.equals(shipment.failureConfirmedByDispatcher())) {
-                allowed.add(GenerateClaimResponse.DocumentType.LOADING_FAILURE_ACT);
-            }
-        }
-
-        for (GenerateClaimResponse.Attachment attachment : safeList(response.attachments())) {
-            if (attachment == null || attachment.documentType() == null) {
-                errors.add("response.attachments contains item without document_type");
-                continue;
-            }
-            if (attachment.documentType() == GenerateClaimResponse.DocumentType.OTHER
-                    || !allowed.contains(attachment.documentType())) {
-                errors.add("Model added unsupported attachment: " + attachment.documentType());
-                continue;
-            }
-
-            validateAttachmentIdentity(attachment, facts, errors);
-        }
-
-        validateRequiredLoadingFailureAct(facts, response.attachments(), errors);
-
-        if (response.attachments() == null || response.attachments().isEmpty()) {
-            warnings.add("Model returned no attachments");
+        if (response.attachments() != null && !response.attachments().isEmpty()) {
+            errors.add("attachments must be empty in current scope");
         }
     }
 
@@ -602,27 +915,44 @@ public class ClaimFactConsistencyValidator {
     }
 
     private boolean containsDate(String text, String expected) {
-        if (normalize(text).contains(normalize(expected))) {
+        String normalizedText = normalize(text);
+        if (normalizedText.contains(normalize(expected))) {
             return true;
         }
-        try {
-            LocalDate date = LocalDate.parse(expected, INPUT_DATE);
-            String numericDash = date.format(DateTimeFormatter.ofPattern("dd-MM-uuuu"));
-            String iso = date.toString();
-            String longDate = date.getDayOfMonth() + " " + MONTHS[date.getMonthValue() - 1] + " " + date.getYear();
-            String normalizedText = normalize(text);
-            return normalizedText.contains(normalize(numericDash))
-                    || normalizedText.contains(normalize(iso))
-                    || normalizedText.contains(normalize(longDate));
-        } catch (DateTimeParseException ignored) {
+
+        LocalDate date = parseDate(expected);
+        if (date == null) {
             return false;
         }
+
+        List<String> acceptedRepresentations = List.of(
+                date.toString(),
+                date.format(DateTimeFormatter.ofPattern("dd.MM.uuuu")),
+                date.format(DateTimeFormatter.ofPattern("dd-MM-uuuu")),
+                date.getDayOfMonth() + " " + MONTHS[date.getMonthValue() - 1] + " " + date.getYear(),
+                date.getDayOfMonth() + " " + MONTHS[date.getMonthValue() - 1] + " " + date.getYear() + " года"
+        );
+
+        return acceptedRepresentations.stream()
+                .map(this::normalize)
+                .anyMatch(normalizedText::contains);
+    }
+
+    private LocalDate parseDate(String value) {
+        for (DateTimeFormatter formatter : INPUT_DATE_FORMATTERS) {
+            try {
+                return LocalDate.parse(value, formatter);
+            } catch (DateTimeParseException ignored) {
+                // Try the next supported input format.
+            }
+        }
+        return null;
     }
 
     private void requireAmount(String text, BigDecimal amount, String field, List<String> errors) {
         Matcher matcher = RUB_AMOUNT_PATTERN.matcher(text);
         while (matcher.find()) {
-            BigDecimal found = parseAmount(matcher.group(1));
+            BigDecimal found = parseRubAmount(matcher);
             if (found != null && sameAmount(found, amount)) {
                 return;
             }
@@ -630,9 +960,19 @@ public class ClaimFactConsistencyValidator {
         errors.add("claim_text does not contain expected " + field + ": " + amount.toPlainString() + " RUB");
     }
 
-    private BigDecimal parseAmount(String raw) {
+    private BigDecimal parseRubAmount(Matcher matcher) {
+        if (matcher == null) {
+            return null;
+        }
         try {
-            return new BigDecimal(raw.replace(" ", "").replace("\u00A0", "").replace(',', '.'));
+            BigDecimal rubles = new BigDecimal(
+                    matcher.group(1).replace(" ", "").replace("\u00A0", "").replace(',', '.')
+            );
+            String kopecksRaw = matcher.groupCount() >= 2 ? matcher.group(2) : null;
+            if (kopecksRaw == null || kopecksRaw.isBlank() || matcher.group(1).contains(".") || matcher.group(1).contains(",")) {
+                return rubles;
+            }
+            return rubles.add(new BigDecimal(kopecksRaw).movePointLeft(2));
         } catch (NumberFormatException ignored) {
             return null;
         }

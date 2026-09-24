@@ -113,6 +113,11 @@ header {
 
 .primary_btn:hover { background: #D9531A; }
 
+.primary_btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .secondary_btn {
   font-family: inherit;
   font-size: 14px;
@@ -372,6 +377,7 @@ header {
 .modal_footer {
   display: flex;
   justify-content: flex-end;
+  gap: 7px;
   padding: 16px 24px 20px;
   border-top: 1px solid #b9b9b9;
 }
@@ -461,6 +467,102 @@ header {
   text-align: center;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+.search_box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 25px;
+  padding: 14px 20px;
+  flex: 1;
+  max-width: 620px;
+  max-height: 50px;
+}
+
+.search-box__input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: inherit;
+  color: #1a1a1a;
+  width: 100%;
+}
+
+.search-box__input::placeholder {
+  color: #555;
+}
+
+.status_filter {
+  background: #FCEADF;
+  border: 1px solid #F6C9A6;
+  border-radius: 25px;
+  padding: 10px 20px;
+  width: 220px;
+  cursor: pointer;
+  color: #2E3440;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.contract_review_btn {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.contract_extraction_panel {
+  padding: 20px;
+  border-top: 1px solid #e6e9ed;
+  background: #fffaf6;
+  text-align: left;
+}
+
+.contract_extraction_title {
+  margin-bottom: 14px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.contract_extraction_item {
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid #e6e9ed;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.contract_extraction_item blockquote {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid #e7a477;
+  color: #59636f;
+}
+
+#contract_file::file-selector-button {
+  margin-right: 20px;
+  padding: 12px 18px;
+  border: 1px solid #DDE1E6;
+  border-radius: 8px;
+  background: #F26522;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#contract_file::file-selector-button:hover {
+  background: #D9531A;
+}
+
 @media (max-width: 900px) {
   .admin_entity_table {
     overflow-x: auto;
@@ -473,6 +575,18 @@ header {
 }
 
 @media (max-width: 760px) {
+  .shipment_filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .shipment_filters .search_box,
+  .shipment_filters .status_filter {
+    box-sizing: border-box;
+    max-width: none;
+    width: 100%;
+  }
+
   .add_user_form_fields {
     grid-template-columns: 1fr;
   }

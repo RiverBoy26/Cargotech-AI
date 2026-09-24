@@ -3,7 +3,177 @@ let currentVersions = [];
 let currentDocuments = [];
 let selectedDocumentId = null;
 let currentClaimContext = {};
+let currentSendChecklist = null;
 let templatePreviewRequestId = 0;
+let documentGenerationInProgress = false;
+
+function finalClaimVersion() {
+  return currentVersions.find((item) => item.id === currentClaim?.finalVersionId) || null;
+}
+
+function documentClaimVersionNumber(documentItem) {
+  const storedVersion = documentItem.description?.match(/Версия претензии:\s*(\d+)/i)?.[1];
+  if (storedVersion) return Number(storedVersion);
+
+  const documentCreatedAt = new Date(documentItem.createdAt || 0).getTime();
+  return [...currentVersions]
+    .filter((version) => new Date(version.createdAt || 0).getTime() <= documentCreatedAt)
+    .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))[0]
+    ?.versionNumber || null;
+}
+
+function selectedClaimDocumentFormat() {
+  return document.getElementById('document_format')?.value || 'CLAIM_PDF';
+}
+
+function claimDocumentFormatLabel(documentType) {
+  return documentType === 'CLAIM_PDF' ? 'PDF' : 'DOCX';
+}
+
+function finalVersionDocumentExists(outputType = selectedClaimDocumentFormat()) {
+  const finalVersion = finalClaimVersion();
+  if (!finalVersion) return false;
+  return currentDocuments.some((item) =>
+    item.documentType === outputType
+      && documentClaimVersionNumber(item) === finalVersion.versionNumber
+  );
+}
+
+const LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX = 'cargotech.claim.lastOpenedVersion.';
+
+function requestClaimActionText({ title, label, value = '', required = false }) {
+  const dialog = document.getElementById('claim_action_dialog');
+  const form = document.getElementById('claim_action_dialog_form');
+  const input = document.getElementById('claim_action_dialog_text');
+  const error = document.getElementById('claim_action_dialog_error');
+  document.getElementById('claim_action_dialog_title').textContent = title;
+  document.getElementById('claim_action_dialog_label').textContent = label;
+  input.value = value;
+  error.textContent = '';
+
+  return new Promise((resolve) => {
+    const finish = (result) => {
+      form.removeEventListener('submit', submit);
+      dialog.removeEventListener('cancel', cancel);
+      document.getElementById('claim_action_dialog_cancel').removeEventListener('click', cancel);
+      if (dialog.open) dialog.close();
+      resolve(result);
+    };
+    const submit = (event) => {
+      event.preventDefault();
+      const result = input.value.trim();
+      if (required && !result) {
+        error.textContent = 'Заполните обязательное поле';
+        input.focus();
+        return;
+      }
+      finish(result);
+    };
+    const cancel = (event) => {
+      event.preventDefault();
+      finish(null);
+    };
+    form.addEventListener('submit', submit);
+    dialog.addEventListener('cancel', cancel);
+    document.getElementById('claim_action_dialog_cancel').addEventListener('click', cancel);
+    dialog.showModal();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  });
+}
+
+function requestClaimEdit() {
+  const dialog = document.getElementById('claim_edit_dialog');
+  const form = document.getElementById('claim_edit_dialog_form');
+  const cancelButton = document.getElementById('claim_edit_dialog_cancel');
+  const error = document.getElementById('claim_edit_dialog_error');
+  const readOnlyFields = {
+    claimNumber: 'edit_claim_number',
+    recipientName: 'edit_recipient_name',
+    recipientEmail: 'edit_recipient_email',
+    recipientAddress: 'edit_recipient_address',
+    responseDeadlineDays: 'edit_response_deadline_days',
+    signerFullName: 'edit_signer_full_name',
+  };
+  const editableFields = {
+    reason: 'edit_reason',
+    bankDetails: 'edit_bank_details',
+  };
+  Object.entries({ ...readOnlyFields, ...editableFields }).forEach(([name, id]) => {
+    document.getElementById(id).value = currentClaim?.[name] ?? '';
+  });
+  document.getElementById('edit_principal_debt').value = formatMoney(currentClaim?.principalDebt);
+  document.getElementById('edit_penalty_amount').value = formatMoney(currentClaim?.penaltyAmount);
+  error.textContent = '';
+
+  return new Promise((resolve) => {
+    const finish = (result) => {
+      form.removeEventListener('submit', submit);
+      dialog.removeEventListener('cancel', cancel);
+      cancelButton.removeEventListener('click', cancel);
+      if (dialog.open) dialog.close();
+      resolve(result);
+    };
+    const submit = (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const payload = Object.fromEntries(Object.entries(editableFields).map(([name, id]) => {
+        const value = document.getElementById(id).value.trim();
+        return [name, value || null];
+      }));
+      if (!payload.reason) {
+        error.textContent = 'Основание претензии обязательно';
+        return;
+      }
+      finish(payload);
+    };
+    const cancel = (event) => {
+      event?.preventDefault();
+      finish(null);
+    };
+    form.addEventListener('submit', submit);
+    dialog.addEventListener('cancel', cancel);
+    cancelButton.addEventListener('click', cancel);
+    dialog.showModal();
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) {
+            cancel(event);
+        }
+    });
+    document.getElementById('edit_reason').focus();
+  });
+}
+
+function getLastOpenedClaimVersionId(claimId) {
+  try {
+    return localStorage.getItem(`${LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX}${claimId}`);
+  } catch (error) {
+    console.warn('Не удалось прочитать последнюю открытую версию претензии', error);
+    return null;
+  }
+}
+
+function rememberOpenedClaimVersion(claimId, versionId) {
+  if (!claimId || !versionId) return;
+  try {
+    localStorage.setItem(
+      `${LAST_OPENED_CLAIM_VERSION_STORAGE_PREFIX}${claimId}`,
+      versionId
+    );
+  } catch (error) {
+    console.warn('Не удалось сохранить последнюю открытую версию претензии', error);
+  }
+}
+
+const CLAIM_TEXT_LOCKED_STATUSES = new Set([
+  'SENT',
+  'AWAITING_RESPONSE',
+  'PAID',
+  'ESCALATED_TO_COURT',
+  'CANCELLED',
+  'CANCELLED_PAID',
+  'CLOSED_IN_COURT',
+]);
 
 function setText(id, value) {
   const element = document.getElementById(id);
@@ -27,6 +197,52 @@ function setButtonState(id, visible, enabled = true) {
   button.classList.toggle('action_btn_disabled', !enabled);
 }
 
+function isClaimTextLocked(status = currentClaim?.status) {
+  return CLAIM_TEXT_LOCKED_STATUSES.has(status);
+}
+
+function updateClaimTextPanelState() {
+  const locked = isClaimTextLocked();
+  const panel = document.getElementById('claim_text_panel');
+  const editor = document.getElementById('claim_text_editor');
+  const previewButton = document.getElementById('btn_template_preview');
+
+  if (panel) {
+    panel.classList.toggle('workflow_panel_locked', locked);
+    panel.setAttribute('aria-disabled', String(locked));
+    panel.title = locked
+      ? 'Текст претензии недоступен для изменения после отправки'
+      : '';
+  }
+
+  ['template_select', 'version_select', 'btn_template_preview'].forEach((id) => {
+    const control = document.getElementById(id);
+    if (control) control.disabled = locked;
+  });
+
+  if (previewButton) {
+    previewButton.classList.toggle('action_btn_disabled', locked);
+  }
+  if (editor) {
+    editor.readOnly = locked;
+    editor.setAttribute('aria-readonly', String(locked));
+  }
+}
+
+function setRecipientEmail(email) {
+  const input = document.getElementById('email_to');
+  const display = document.getElementById('email_to_display');
+  const editButton = document.getElementById('btn_edit_recipient_email');
+  if (!input || !display || !editButton) return;
+
+  input.value = String(email || '').trim();
+  input.hidden = true;
+  display.textContent = input.value || 'Email клиента не указан';
+  display.hidden = false;
+  editButton.textContent = 'Изменить';
+  editButton.dataset.editing = 'false';
+}
+
 function formatDate(value) {
   if (!value) return '—';
   const datePart = String(value).slice(0, 10);
@@ -34,16 +250,22 @@ function formatDate(value) {
   return year && month && day ? `${day}.${month}.${year}` : value;
 }
 
+function claimHistoryStatusLabel(status, emptyLabel = '—') {
+  if (!status) return emptyLabel;
+  return STATUS_MAP[status]?.text || 'Неизвестен';
+}
+
 function renderHistoryItem(item) {
   const date = item.changedAt || item.createdAt || '';
   const title = item.newStatus
-    ? `${item.previousStatus || '—'} → ${item.newStatus}`
+    ? `${claimHistoryStatusLabel(item.previousStatus)} → ${claimHistoryStatusLabel(item.newStatus)}`
     : (item.text || 'Комментарий');
-  const subtitle = item.reason || item.text || '';
+  const subtitle = item.newStatus ? (item.reason || '') : '';
+  const actor = item.changedByLabel || item.authorName || item.changedBy || item.authorId || '—';
   return `
     <div class="history_item">
       <div class="history_item_title">${escapeHtml(title)}</div>
-      <div class="history_item_meta">${escapeHtml(date)}${subtitle ? ` — ${escapeHtml(subtitle)}` : ''}</div>
+      <div class="history_item_meta">${escapeHtml(date)} · ${escapeHtml(actor)}${subtitle ? ` — ${escapeHtml(subtitle)}` : ''}</div>
     </div>`;
 }
 
@@ -71,39 +293,67 @@ function updateAvailableActions() {
   const approved = Boolean(currentClaim?.approvedAt)
     || ['LEGAL_APPROVED', 'SENT', 'AWAITING_RESPONSE', 'PAID', 'ESCALATED_TO_COURT', 'CLOSED_IN_COURT']
       .includes(status);
-  setButtonState('btn_compose', status === 'DRAFT' && hasPermission('CLAIM_UPDATE'));
+  const documentDeliveryPanel = document.getElementById('document_delivery_panel');
+  if (documentDeliveryPanel) documentDeliveryPanel.hidden = !approved;
+  setButtonState(
+    'btn_compose',
+    ['DRAFT', 'PENDING_LEGAL_REVIEW'].includes(status)
+      && Boolean(currentClaim?.nonPaymentConfirmed)
+      && hasPermission('CLAIM_UPDATE')
+  );
   setButtonState('btn_recalculate', editable && hasPermission('CALCULATION_GENERATE'));
   setButtonState('btn_edit', editable && hasPermission('CLAIM_UPDATE'));
   setButtonState(
+    'btn_request_confirmation',
+    status === 'DRAFT' && !currentClaim?.nonPaymentConfirmed && hasPermission('CLAIM_UPDATE'),
+    !currentClaim?.nonPaymentConfirmationRequestedAt
+  );
+  setButtonState(
     'btn_approve',
-    status === 'PENDING_LEGAL_REVIEW' && hasPermission('CLAIM_UPDATE'),
+    (status === 'PENDING_LEGAL_REVIEW'
+      || (status === 'DRAFT' && Boolean(currentClaim?.nonPaymentConfirmed)))
+      && hasPermission('CLAIM_UPDATE'),
     Boolean(currentClaim?.finalVersionId)
   );
   setButtonState(
     'btn_cancel',
-    !['PAID', 'CANCELLED', 'CLOSED_IN_COURT'].includes(status) && hasPermission('CLAIM_UPDATE')
+    !['PAID', 'CANCELLED', 'CANCELLED_PAID', 'CLOSED_IN_COURT'].includes(status) && hasPermission('CLAIM_UPDATE')
   );
   setButtonState(
     'btn_court_package',
     ['SENT', 'AWAITING_RESPONSE'].includes(status) && hasPermission('CLAIM_UPDATE')
   );
   setButtonState(
-    'btn_generate_document',
-    status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_GENERATE'),
-    Boolean(currentClaim?.finalVersionId)
+    'btn_delete_claim',
+    ['DRAFT', 'PAID', 'CANCELLED'].includes(status) && hasPermission('CLAIM_DELETE')
   );
+  const canGenerateDocument = status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_GENERATE');
+  setButtonState(
+    'btn_generate_document',
+    canGenerateDocument,
+    Boolean(currentClaim?.finalVersionId)
+      && !finalVersionDocumentExists()
+      && !documentGenerationInProgress
+  );
+  const generateButton = document.getElementById('btn_generate_document');
+  if (generateButton) {
+    generateButton.title = finalVersionDocumentExists()
+      ? `Документ ${claimDocumentFormatLabel(selectedClaimDocumentFormat())} для текущей финальной версии уже сформирован.`
+      : '';
+  }
   setButtonState(
     'btn_download_claim',
-    approved && hasPermission('DOCUMENT_GENERATE') && hasPermission('DOCUMENT_DOWNLOAD'),
-    Boolean(currentClaim?.finalVersionId)
+    approved && hasPermission('DOCUMENT_DOWNLOAD'),
+    Boolean(selectedDocumentId)
   );
   setButtonState(
     'btn_send_document',
     status === 'LEGAL_APPROVED' && hasPermission('DOCUMENT_SEND'),
-    Boolean(selectedDocumentId)
+    Boolean(selectedDocumentId) && Boolean(currentSendChecklist?.readyToSend)
   );
   setButtonState('btn_save_version', editable && hasPermission('CLAIM_UPDATE'));
   setButtonState('btn_mark_final', editable && hasPermission('CLAIM_UPDATE'));
+  updateClaimTextPanelState();
 }
 
 function fillClaimCard(claim) {
@@ -118,19 +368,22 @@ function fillClaimCard(claim) {
   setText('info_payment_term', '—');
   setText('info_completion_date', '—');
   setText('info_overdue_date', '—');
-  setText('info_lawyer_name', claim.createdBy || '—');
+  setText('info_lawyer_name', '—');
+  renderAutocheckWarning(claim);
+  renderUsedSources(claim, null);
   const stripe = document.getElementById('claim_card_stripe');
   if (stripe) stripe.className = `claim_card_stripe ${status.className}`;
   updateAvailableActions();
 }
 
 async function loadClaimContext(claim) {
+  const lawyerId = claim.assignedLawyerId || claim.createdBy;
   const requests = await Promise.allSettled([
     getContract(claim.contractId),
     getShipment(claim.shipmentId),
     getClaimCalculation(claim.id),
     getParty(claim.debtorId),
-    getUser(claim.createdBy),
+    lawyerId ? getUser(lawyerId) : Promise.resolve(null),
   ]);
 
   const valueOrNull = (result) => result.status === 'fulfilled' ? result.value : null;
@@ -138,10 +391,18 @@ async function loadClaimContext(claim) {
   const shipment = valueOrNull(requests[1]);
   const calculation = valueOrNull(requests[2]);
   const debtor = valueOrNull(requests[3]);
-  const creator = valueOrNull(requests[4]);
+  const assignedLawyer = valueOrNull(requests[4]);
   const storedUser = getStoredUser() || {};
 
-  currentClaimContext = { contract, shipment, calculation, debtor, creator };
+  currentClaimContext = {
+    contract,
+    shipment,
+    calculation,
+    debtor,
+    assignedLawyer,
+  };
+
+  renderUsedSources(claim, contract);
 
   setText(
     'info_payment_term',
@@ -154,9 +415,8 @@ async function loadClaimContext(claim) {
   setText('info_overdue_date', formatDate(calculation?.overdueStartDate));
   setText(
     'info_lawyer_name',
-    creator?.fullName
-      || (claim.createdBy === storedUser.userId ? storedUser.fullName : null)
-      || claim.createdBy
+    (assignedLawyer ? formatUserFullName(assignedLawyer) : null)
+      || (lawyerId === storedUser.userId ? formatUserFullName(storedUser) : null)
       || '—'
   );
 
@@ -164,10 +424,361 @@ async function loadClaimContext(claim) {
     setText('claim_card_overdue_badge', `Дней просрочки ${calculation.overdueDays}`);
   }
 
-  const emailInput = document.getElementById('email_to');
-  if (emailInput && !emailInput.value.trim() && debtor?.email) {
-    emailInput.value = debtor.email;
+  setRecipientEmail(debtor?.email);
+}
+
+function parseUsedSourceLine(line) {
+  const raw = String(line || '').trim();
+  if (!raw) return null;
+
+  const documentMatch = raw.match(
+    /^DOCUMENT\s*(.*?)\s*\|\s*CHUNK\s*(.*?)\s*\|\s*SCORE\s*([0-9.]*)\s*\|\s*TEXT\s*(.*)$/i
+  );
+  if (documentMatch) {
+    return {
+      kind: 'retrieved',
+      documentId: documentMatch[1].trim(),
+      chunkId: documentMatch[2].trim(),
+      score: documentMatch[3] ? Number(documentMatch[3]) : null,
+      text: documentMatch[4].trim(),
+      raw,
+    };
   }
+
+  const contractMatch = raw.match(/^CONTRACT\s+(\S+)(?:\s+(.+))?$/i);
+  if (contractMatch) {
+    return {
+      kind: 'contract',
+      chunkId: contractMatch[1]?.trim() || '',
+      clauseNumber: contractMatch[2]?.trim() || '',
+      text: '',
+      raw,
+    };
+  }
+
+  const lawMatch = raw.match(/^LAW\s+(\S+)\s+(.+?)\s+(\S+)$/i);
+  if (lawMatch) {
+    return {
+      kind: 'law',
+      chunkId: lawMatch[1]?.trim() || '',
+      lawCode: lawMatch[2]?.trim() || '',
+      article: lawMatch[3]?.trim() || '',
+      text: '',
+      raw,
+    };
+  }
+
+  return { kind: 'unknown', text: raw, raw };
+}
+
+function parseUsedSources(rawSources) {
+  if (!rawSources) return [];
+
+  try {
+    const parsed = JSON.parse(rawSources);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => ({
+        kind: 'json',
+        documentId: item?.documentId || item?.document_id || '',
+        chunkId: item?.chunkId || item?.chunk_id || '',
+        score: Number.isFinite(Number(item?.score)) ? Number(item.score) : null,
+        text: item?.text || item?.content || item?.citation || JSON.stringify(item),
+        raw: JSON.stringify(item),
+      }));
+    }
+  } catch (_) {
+    // Current backend stores one source per line. Keep this branch as forward compatibility.
+  }
+
+  return rawSources
+    .split(/\r?\n/)
+    .map(parseUsedSourceLine)
+    .filter(Boolean);
+}
+
+function detectSourceClause(text) {
+  const value = String(text || '').trim();
+  const direct = value.match(/^(?:п\.?\s*)?(\d+(?:\.\d+)+)\.?\s+/i);
+  return direct?.[1] || '';
+}
+
+function detectLegalArticle(source) {
+  const text = String(source?.text || '');
+  const explicit = text.match(/(?:статья|ст\.)\s*(\d+(?:\.\d+)*)/i);
+  if (explicit) return explicit[1];
+
+  const technical = `${source?.chunkId || ''} ${source?.documentId || ''}`;
+  const fromId = technical.match(/(?:gk|гк|uat|уат|87fz|87-фз)[_-]?(?:rf[_-]?)?(\d{2,4})/i);
+  return fromId?.[1] || source?.article || '';
+}
+
+function isLegalSource(source) {
+  const technical = `${source?.kind || ''} ${source?.chunkId || ''} ${source?.documentId || ''}`.toLowerCase();
+  return source?.kind === 'law'
+    || /(?:legal|law|gk|uat|87fz|гк|уат)/i.test(technical);
+}
+
+function describeSourcePurpose(text, legal) {
+  const value = String(text || '').toLowerCase();
+
+  if (legal) {
+    if (/395|денежн.*обязатель|процент/.test(value)) {
+      return { title: 'Проценты за просрочку', purpose: 'правовое основание начисления процентов за просрочку' };
+    }
+    if (/неустойк|штраф|пен/.test(value)) {
+      return { title: 'Ответственность и неустойка', purpose: 'правовое основание ответственности за нарушение обязательства' };
+    }
+    if (/экспедиц|перевоз/.test(value)) {
+      return { title: 'Транспортно-экспедиционные отношения', purpose: 'правовую квалификацию отношений сторон' };
+    }
+    return { title: 'Правовое основание', purpose: 'правовую норму, использованную при проверке претензии' };
+  }
+
+  if (/неустойк|штраф|пен/.test(value)) {
+    return { title: 'Ответственность / неустойка', purpose: 'условия ответственности за нарушение срока оплаты' };
+  }
+  if (/претензи/.test(value) && /(дн|срок|ответ|рассматрива)/.test(value)) {
+    return { title: 'Срок ответа на претензию', purpose: 'срок и порядок ответа на претензию' };
+  }
+  if (/расч[её]т|российск.*руб|безналич|перечислен|расчетн.*счет/.test(value)) {
+    return { title: 'Порядок расчётов', purpose: 'порядок проведения расчётов между сторонами' };
+  }
+  if (/оплат/.test(value)) {
+    return { title: 'Срок оплаты', purpose: 'срок и условия оплаты оказанных услуг' };
+  }
+  if (/документ|акт|оригинал/.test(value)) {
+    return { title: 'Документы для оплаты', purpose: 'документы и события, влияющие на наступление срока оплаты' };
+  }
+  return { title: 'Условие договора', purpose: 'условие договора, использованное при формировании претензии' };
+}
+
+function sourceRelevance(score) {
+  if (!Number.isFinite(score)) return null;
+  if (score >= 0.75) return { label: 'Высокая релевантность', level: 'high' };
+  if (score >= 0.55) return { label: 'Средняя релевантность', level: 'medium' };
+  return { label: 'Дополнительный источник', level: 'low' };
+}
+
+function appendSourceTechnicalDetails(card, source) {
+  const rows = [];
+  if (source.chunkId) rows.push(['Фрагмент', source.chunkId]);
+  if (source.documentId) rows.push(['Документ в базе', source.documentId]);
+  if (Number.isFinite(source.score)) rows.push(['Оценка поиска', `${Math.round(source.score * 100)}%`]);
+
+  if (!rows.length) return;
+
+  const details = document.createElement('details');
+  details.className = 'source_technical';
+
+  const summary = document.createElement('summary');
+  summary.textContent = 'Технические детали';
+  details.appendChild(summary);
+
+  const grid = document.createElement('div');
+  grid.className = 'source_technical_grid';
+
+  rows.forEach(([label, value]) => {
+    const labelElement = document.createElement('span');
+    labelElement.className = 'source_technical_label';
+    labelElement.textContent = label;
+
+    const valueElement = document.createElement('span');
+    valueElement.className = 'source_technical_value';
+    valueElement.textContent = value;
+
+    grid.append(labelElement, valueElement);
+  });
+
+  details.appendChild(grid);
+  card.appendChild(details);
+}
+
+function createUsedSourceCard(source, index) {
+  const legal = isLegalSource(source);
+  const clause = source.clauseNumber || detectSourceClause(source.text);
+  const article = detectLegalArticle(source);
+  const descriptor = describeSourcePurpose(source.text, legal);
+  const relevance = sourceRelevance(source.score);
+
+  const card = document.createElement('article');
+  card.className = 'source_card';
+
+  const header = document.createElement('div');
+  header.className = 'source_card_header';
+
+  const heading = document.createElement('div');
+  heading.className = 'source_card_heading';
+
+  const type = document.createElement('span');
+  type.className = `source_type_badge ${legal ? 'source_type_law' : 'source_type_contract'}`;
+  type.textContent = legal ? 'Правовая норма' : 'Договор';
+
+  const title = document.createElement('strong');
+  title.className = 'source_card_title';
+
+  if (legal && article) {
+    title.textContent = `Статья ${article} — ${descriptor.title}`;
+  } else if (!legal && clause) {
+    title.textContent = `Пункт ${clause} — ${descriptor.title}`;
+  } else {
+    title.textContent = descriptor.title || `Источник ${index + 1}`;
+  }
+
+  heading.append(type, title);
+  header.appendChild(heading);
+
+  if (relevance) {
+    const badge = document.createElement('span');
+    badge.className = `source_relevance source_relevance_${relevance.level}`;
+    badge.textContent = relevance.label;
+    header.appendChild(badge);
+  }
+
+  card.appendChild(header);
+
+  const purpose = document.createElement('p');
+  purpose.className = 'source_purpose';
+  purpose.textContent = `Подтверждает: ${descriptor.purpose}.`;
+  card.appendChild(purpose);
+
+  if (source.text) {
+    const quote = document.createElement('blockquote');
+    quote.className = 'source_quote';
+    quote.textContent = source.text;
+    card.appendChild(quote);
+  } else {
+    const fallback = document.createElement('p');
+    fallback.className = 'source_quote source_quote_compact';
+
+    if (source.kind === 'law') {
+      fallback.textContent = [source.lawCode, source.article ? `ст. ${source.article}` : '']
+        .filter(Boolean)
+        .join(', ');
+    } else if (source.kind === 'contract') {
+      fallback.textContent = clause
+        ? `Использован пункт ${clause} договора.`
+        : 'Использован подтверждённый фрагмент договора.';
+    } else {
+      fallback.textContent = source.raw || 'Источник использован при формировании претензии.';
+    }
+    card.appendChild(fallback);
+  }
+
+  appendSourceTechnicalDetails(card, source);
+  return card;
+}
+
+function renderUsedSources(claim, contract) {
+  const contractSource = document.getElementById('contract_source');
+  const contractTitle = document.getElementById('contract_source_title');
+  const contractMeta = document.getElementById('contract_source_meta');
+  const contractDownload = document.getElementById('btn_download_contract_source');
+  const sourcesContainer = document.getElementById('used_sources');
+  const sourcesIntro = document.getElementById('used_sources_intro');
+  const sourcesEmpty = document.getElementById('used_sources_empty');
+  const hasContractDocument = Boolean(contract?.documentId);
+  const rawSources = claim?.usedSources?.trim() || '';
+  const parsedSources = parseUsedSources(rawSources);
+
+  if (contractSource) contractSource.hidden = !hasContractDocument;
+  if (hasContractDocument) {
+    contractTitle.textContent = contract.number ? `Договор № ${contract.number}` : 'Договор без номера';
+    contractMeta.textContent = contract.signedAt
+      ? `Дата договора: ${formatDate(contract.signedAt)}`
+      : 'Дата договора не указана';
+    contractDownload.dataset.documentId = contract.documentId;
+    contractDownload.hidden = !hasPermission('DOCUMENT_DOWNLOAD');
+  } else if (contractDownload) {
+    delete contractDownload.dataset.documentId;
+    contractDownload.hidden = true;
+  }
+
+  if (sourcesContainer) {
+    sourcesContainer.replaceChildren();
+    parsedSources.forEach((source, index) => {
+      sourcesContainer.appendChild(createUsedSourceCard(source, index));
+    });
+    sourcesContainer.hidden = parsedSources.length === 0;
+  }
+
+  if (sourcesIntro) {
+    sourcesIntro.hidden = parsedSources.length === 0;
+  }
+
+  if (sourcesEmpty) {
+    sourcesEmpty.hidden = hasContractDocument || parsedSources.length > 0;
+  }
+}
+
+function renderAutocheckWarning(claim) {
+  const warning = document.getElementById('autocheck_warning');
+  const warningText = document.getElementById('autocheck_warning_text');
+  if (!warning || !warningText) return;
+
+  const failed = claim?.documentValidationStatus === 'FAILED';
+  warning.hidden = !failed;
+  warningText.textContent = failed
+    ? formatAutocheckMessages(
+        claim.documentValidationErrors
+          || claim.manualReviewReason
+      )
+    : '';
+}
+
+const AUTOCHECK_MESSAGE_TRANSLATIONS = new Map([
+  ['legal_context is empty', 'Не найдены правовые источники для проверки текста претензии.'],
+  ['legal_context is required for claim generation', 'Для проверки претензии не хватает правовых источников.'],
+  ['template_context is empty', 'Не найден шаблон для проверки структуры претензии.'],
+  ['contract_context is empty', 'Не удалось получить текст договора для проверки претензии.'],
+  ['rag search returned no chunks', 'Поиск не нашёл источники, необходимые для полной проверки претензии.'],
+  [
+    'claim_text incorrectly uses contract.claim_response_days as a payment deadline',
+    'В тексте срок ответа на претензию ошибочно указан как срок оплаты задолженности. Проверьте формулировку о сроках.',
+  ],
+  ['model did not cite contract clauses', 'В тексте не указаны использованные пункты договора.'],
+  [
+    'model must cite at least one numbered contract clause from contract_context',
+    'В тексте должна быть ссылка хотя бы на один пронумерованный пункт договора.',
+  ],
+  [
+    'model must cite at least one applicable law article from legal_context',
+    'В тексте должна быть ссылка хотя бы на одну применимую норму закона.',
+  ],
+]);
+
+function formatAutocheckMessages(rawMessages) {
+  const fallback = 'Автопроверка обнаружила несоответствие в тексте. Проверьте содержание претензии перед утверждением.';
+  const messages = String(rawMessages || '')
+    .split(/\r?\n/)
+    .map(message => message.trim())
+    .filter(Boolean)
+    .map(humanizeAutocheckMessage);
+  const uniqueMessages = [...new Set(messages.length ? messages : [fallback])];
+  return uniqueMessages.map(message => `• ${message}`).join('\n');
+}
+
+function humanizeAutocheckMessage(message) {
+  const normalized = message.toLowerCase();
+  const exactTranslation = AUTOCHECK_MESSAGE_TRANSLATIONS.get(normalized);
+  if (exactTranslation) return exactTranslation;
+
+  const unknownInn = message.match(/^claim_text contains unknown INN:\s*(.+)$/i);
+  if (unknownInn) return `В тексте указан ИНН, которого нет в данных претензии: ${unknownInn[1]}.`;
+
+  const unknownAmount = message.match(/^claim_text contains amount not present in backend_calculation:\s*(.+)$/i);
+  if (unknownAmount) return `В тексте указана сумма, которая не совпадает с расчётом: ${unknownAmount[1]}.`;
+
+  const missingContractClause = message.match(/^claim_text does not cite used contract clause:\s*(.+)$/i);
+  if (missingContractClause) return `В тексте отсутствует ссылка на использованный пункт договора: ${missingContractClause[1]}.`;
+
+  const missingLawArticle = message.match(/^claim_text does not cite used law article:\s*(.+)$/i);
+  if (missingLawArticle) return `В тексте отсутствует ссылка на использованную норму закона: ${missingLawArticle[1]}.`;
+
+  const missingShipmentRoute = message.match(/^claim_text does not contain expected shipment\.route:\s*(.+)$/i);
+  if (missingShipmentRoute) return `В тексте претензии отсутствует маршрут перевозки: ${missingShipmentRoute[1]}.`;
+
+  if (/[А-Яа-яЁё]/.test(message)) return message;
+  return 'Автопроверка обнаружила несоответствие в тексте. Проверьте содержание претензии перед утверждением.';
 }
 
 async function loadVersions(claimId) {
@@ -184,12 +795,102 @@ async function loadVersions(claimId) {
     currentVersions.map((version) =>
       `<option value="${version.id}">v${version.versionNumber} · ${escapeHtml(version.source)}${version.finalVersion ? ' · финальная' : ''}</option>`
     ).join('');
+  const lastOpenedVersionId = getLastOpenedClaimVersionId(claimId);
   const selected = currentVersions.find((item) => item.id === currentClaim?.finalVersionId)
+    || currentVersions.find((item) => item.id === lastOpenedVersionId)
     || currentVersions.at(-1);
   if (selected) {
     select.value = selected.id;
     document.getElementById('claim_text_editor').value = selected.content || '';
+    rememberOpenedClaimVersion(claimId, selected.id);
+    await renderVersionDiff(claimId, selected.id);
   }
+}
+
+async function renderVersionDiff(claimId, versionId) {
+  const container = document.getElementById('version_diff');
+  if (!versionId) {
+    container.textContent = 'Выберите версию для сравнения.';
+    return;
+  }
+  try {
+    const diff = await getClaimVersionDiff(claimId, versionId);
+    const groups = [
+      ['Добавлено', diff.addedLines, 'diff_added'],
+      ['Удалено', diff.removedLines, 'diff_removed'],
+      ['Изменено', diff.changedLines, 'diff_changed'],
+    ];
+    const totalChanges = groups.reduce((sum, [, lines]) => sum + (lines || []).length, 0);
+    const importantChanges = groups
+      .flatMap(([title, lines]) => (lines || []).map((line) => `${title}: ${line}`))
+      .slice(0, 3);
+    const fullDiffHtml = groups.map(([title, lines, className]) => `
+      <section class="${className}"><strong>${title}: ${(lines || []).length}</strong>
+        ${(lines || []).length
+          ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+          : '<div class="version_diff_section_empty">Нет изменений</div>'}
+      </section>`).join('');
+    container.innerHTML = `
+      <div class="version_diff_summary">
+        <div class="version_diff_summary_title">Изменений: ${totalChanges}</div>
+        <div class="version_diff_counters">
+          ${groups.map(([title, lines, className]) => `
+            <span class="version_diff_counter ${className}">${title}: ${(lines || []).length}</span>`).join('')}
+        </div>
+        ${importantChanges.length ? `
+          <ul class="version_diff_preview">
+            ${importantChanges.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+          </ul>` : '<div class="version_diff_empty">Версии не отличаются</div>'}
+        ${totalChanges ? `
+          <details class="version_diff_details">
+            <summary>Показать все изменения</summary>
+            <div class="version_diff_full">${fullDiffHtml}</div>
+          </details>` : ''}
+      </div>
+    `;
+  } catch (error) {
+    container.textContent = `Сравнение недоступно: ${error.message}`;
+  }
+}
+
+const CHECK_ORDER = [
+    
+    'partyDetails',
+    'paymentConfirmed',
+    'debt',
+    
+    'penaltyCalculation',
+    'contractReferences',
+    
+    'finalVersion',
+    'legalBasis',
+    'attachments',
+];
+
+const CHECK_LABELS = {
+  debt: 'Есть непогашенный долг',
+  penaltyCalculation: 'Неустойка рассчитана',
+  partyDetails: 'Реквизиты сторон заполнены',
+  contractReferences: 'Договор и пункты указаны',
+  legalBasis: 'Правовое основание проверено',
+  attachments: 'Сформирован документ претензии с расчетами',
+  paymentConfirmed: 'Бухгалтер подтвердил неуплату',
+  finalVersion: 'Финальная версия назначена',
+};
+
+async function loadSendChecklist(claimId) {
+  const list = document.getElementById('send_checklist');
+  try {
+    currentSendChecklist = await getClaimSendChecklist(claimId);
+    list.innerHTML = CHECK_ORDER.filter(name => name in (currentSendChecklist.checks || {})).map(name => [name, currentSendChecklist.checks[name]])
+      .map(([name, passed]) =>
+        `<li class="${passed ? 'check_passed' : 'check_failed'}">${passed ? '✓' : '✕'} ${escapeHtml(CHECK_LABELS[name] || name)}</li>`
+      ).join('');
+  } catch (error) {
+    currentSendChecklist = null;
+    list.innerHTML = `<li class="check_failed">Ошибка проверки: ${escapeHtml(error.message)}</li>`;
+  }
+  updateAvailableActions();
 }
 
 async function loadTemplates(claimId) {
@@ -227,20 +928,43 @@ async function loadDocuments(claimId) {
     return;
   }
   currentDocuments = page.content || [];
-  if (!currentDocuments.length) {
+  const displayedDocuments = currentDocuments
+    .filter((item) => item.documentType !== 'CALCULATION_APPENDIX')
+    .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0));
+  if (!displayedDocuments.length) {
     selectedDocumentId = null;
     list.textContent = 'Документы ещё не сформированы';
   } else {
-    selectedDocumentId = currentDocuments[0].id;
-    list.innerHTML = currentDocuments.map((document) => `
+    const claimDocuments = displayedDocuments.filter((item) =>
+      ['CLAIM_PDF', 'CLAIM_DOCX'].includes(item.documentType)
+    );
+    selectedDocumentId = claimDocuments[0]?.id || null;
+    const typeLabels = {
+      CLAIM_PDF: 'Претензия',
+      CLAIM_DOCX: 'Претензия',
+      CALCULATION_PDF: 'Расчёт задолженности',
+      CALCULATION_XLSX: 'Расчёт задолженности',
+    };
+    const formatLabels = {
+      CLAIM_PDF: 'PDF',
+      CLAIM_DOCX: 'DOCX',
+      CALCULATION_PDF: 'PDF',
+      CALCULATION_XLSX: 'XLSX',
+    };
+    list.innerHTML = displayedDocuments.map((document) => {
+      const versionNumber = documentClaimVersionNumber(document);
+      const versionLabel = versionNumber ? `Версия претензии №${versionNumber}` : 'Версия претензии не определена';
+      const formatLabel = formatLabels[document.documentType] || document.documentType;
+      return `
       <div class="document_item">
-        <label>
+        ${['CLAIM_PDF', 'CLAIM_DOCX'].includes(document.documentType) ? `<label>
           <input type="radio" name="document_to_send" value="${document.id}"
                  ${document.id === selectedDocumentId ? 'checked' : ''}>
-          ${escapeHtml(document.documentNumber || document.documentType)} · ${escapeHtml(document.status)}
-        </label>
+          ${escapeHtml(document.documentNumber || typeLabels[document.documentType])} · ${escapeHtml(versionLabel)} · ${escapeHtml(formatLabel)}
+        </label>` : `<span>${escapeHtml(typeLabels[document.documentType] || document.documentType)} · ${escapeHtml(versionLabel)} · ${escapeHtml(formatLabel)}</span>`}
         <button class="action_btn document_download" data-id="${document.id}">Скачать</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     list.querySelectorAll('input[name="document_to_send"]').forEach((radio) => {
       radio.addEventListener('change', () => {
         selectedDocumentId = radio.value;
@@ -283,12 +1007,14 @@ async function buildClaimTemplateData(claimId, generatedText = '') {
     },
     signer: {
       position: 'Юрист',
-      fullName: user.fullName || '',
+      fullName: formatUserFullName(user),
     },
   };
 }
 
 async function applySelectedClaimTemplate(claimId) {
+  if (isClaimTextLocked()) return;
+
   const select = document.getElementById('template_select');
   const editor = document.getElementById('claim_text_editor');
   const templateId = select.value;
@@ -321,24 +1047,28 @@ async function reloadClaim(claimId) {
   const claim = await getClaim(claimId);
   fillClaimCard(claim);
   await loadClaimContext(claim);
+  await loadVersions(claimId);
   await Promise.allSettled([
     loadHistory(claimId),
-    loadVersions(claimId),
     loadDocuments(claimId),
+    loadSendChecklist(claimId),
   ]);
   return claim;
 }
 
-async function generateSelectedClaimDocument(claimId, downloadAfterGeneration) {
+async function generateSelectedClaimDocument(claimId) {
   const template = document.getElementById('template_select');
-  const templateId = downloadAfterGeneration ? null : template.value || null;
+  const templateId = template.value || null;
   const templateVersionId = templateId
     ? template.selectedOptions[0]?.dataset.versionId || null
     : null;
-  const finalVersion = currentVersions.find((item) => item.id === currentClaim.finalVersionId);
+  const finalVersion = finalClaimVersion();
 
   if (!finalVersion) {
     throw new Error('Назначьте финальную версию текста');
+  }
+  if (finalVersionDocumentExists()) {
+    throw new Error(`Документ ${claimDocumentFormatLabel(selectedClaimDocumentFormat())} для этой версии претензии уже сформирован.`);
   }
 
   const data = await buildClaimTemplateData(claimId, finalVersion.content);
@@ -346,25 +1076,25 @@ async function generateSelectedClaimDocument(claimId, downloadAfterGeneration) {
     templateId,
     templateVersionId,
     claimId,
+    claimVersionId: finalVersion.id,
     outputType: document.getElementById('document_format').value,
     documentNumber: currentClaim.claimNumber,
     documentDate: new Date().toISOString().slice(0, 10),
-    description: `Претензия ${currentClaim.claimNumber}`,
+    description: `Претензия ${currentClaim.claimNumber}. Версия претензии: ${finalVersion.versionNumber}`,
     claimText: finalVersion.content,
     data,
   });
 
-  await loadDocuments(claimId);
-
-  if (downloadAfterGeneration) {
-    await downloadDocument(generated.documentId);
-  }
+  await Promise.all([
+    loadDocuments(claimId),
+    loadSendChecklist(claimId),
+  ]);
 
   return generated;
 }
 
 function showError(error) {
-  alert(error?.message || String(error));
+  showToast(error?.message || String(error), 'error');
 }
 
 async function initClaimCardPage() {
@@ -374,7 +1104,7 @@ async function initClaimCardPage() {
 
   const claimId = getQueryParam('id');
   if (!claimId) {
-    alert('Не указан id претензии');
+    showToast('Не указан id претензии', 'error');
     window.location.href = '/pages/lawyer/claims.html';
     return;
   }
@@ -383,9 +1113,28 @@ async function initClaimCardPage() {
     window.location.href = '/pages/lawyer/claims.html';
   });
 
+  document.getElementById('btn_download_contract_source').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const documentId = button.dataset.documentId;
+    if (!documentId) return;
+
+    button.disabled = true;
+    try {
+      await downloadDocument(documentId);
+    } catch (error) {
+      showError(error);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   document.getElementById('version_select').addEventListener('change', (event) => {
     const version = currentVersions.find((item) => item.id === event.target.value);
-    if (version) document.getElementById('claim_text_editor').value = version.content || '';
+    if (version) {
+      document.getElementById('claim_text_editor').value = version.content || '';
+      rememberOpenedClaimVersion(claimId, version.id);
+      renderVersionDiff(claimId, version.id);
+    }
   });
 
   document.getElementById('template_select').addEventListener('change', async () => {
@@ -402,7 +1151,7 @@ async function initClaimCardPage() {
     try {
       await recalculateClaim(claimId);
       await reloadClaim(claimId);
-      alert('Расчёт обновлён');
+      showToast('Расчёт обновлён', 'success');
     } catch (error) { showError(error); }
   });
 
@@ -421,13 +1170,15 @@ async function initClaimCardPage() {
       await reloadClaim(claimId);
       document.getElementById('version_select').value = result.version.id;
       document.getElementById('claim_text_editor').value = generatedText;
+      rememberOpenedClaimVersion(claimId, result.version.id);
     } catch (error) { showError(error); }
     finally { updateAvailableActions(); }
   });
 
   document.getElementById('btn_template_preview').addEventListener('click', async () => {
+    if (isClaimTextLocked()) return;
     if (!document.getElementById('template_select').value) {
-      return alert('Выберите шаблон');
+      return showToast('Выберите шаблон', 'error');
     }
     try {
       await applySelectedClaimTemplate(claimId);
@@ -435,23 +1186,26 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_save_version').addEventListener('click', async () => {
+    if (isClaimTextLocked()) return showToast('Текст этой претензии уже нельзя изменять', 'error');
     const content = document.getElementById('claim_text_editor').value.trim();
-    if (!content) return alert('Введите текст претензии');
+    if (!content) return showToast('Введите текст претензии', 'error');
     try {
-      await createClaimVersion(claimId, {
+      const createdVersion = await createClaimVersion(claimId, {
         source: 'LAWYER',
         baseVersionId: document.getElementById('version_select').value || null,
         content,
         comment: 'Версия сохранена юристом',
         finalVersion: false,
       });
+      rememberOpenedClaimVersion(claimId, createdVersion.id);
       await reloadClaim(claimId);
     } catch (error) { showError(error); }
   });
 
   document.getElementById('btn_mark_final').addEventListener('click', async () => {
+    if (isClaimTextLocked()) return showToast('Финальную версию этой претензии уже нельзя изменять', 'error');
     const versionId = document.getElementById('version_select').value;
-    if (!versionId) return alert('Выберите сохранённую версию');
+    if (!versionId) return showToast('Выберите сохранённую версию', 'error');
     try {
       await markClaimVersionFinal(claimId, versionId);
       await reloadClaim(claimId);
@@ -466,34 +1220,106 @@ async function initClaimCardPage() {
   });
 
   document.getElementById('btn_edit').addEventListener('click', async () => {
-    const reason = prompt('Новое основание претензии:', currentClaim?.reason || '');
-    if (reason == null) return;
+    const payload = await requestClaimEdit();
+    if (payload == null) return;
     try {
-      await updateClaim(claimId, { reason });
+      await updateClaim(claimId, payload);
       await reloadClaim(claimId);
+      showToast('Основание и банковские реквизиты сохранены', 'success');
+    } catch (error) { showError(error); }
+  });
+
+  document.getElementById('btn_request_confirmation').addEventListener('click', async () => {
+    try {
+      await requestNonPaymentConfirmation(claimId);
+      await reloadClaim(claimId);
+      showToast('Запрос передан бухгалтеру', 'success');
     } catch (error) { showError(error); }
   });
 
   document.getElementById('btn_cancel').addEventListener('click', async () => {
-    const reason = prompt('Причина отмены:');
-    if (!reason) return;
+    const reason = await requestClaimActionText({
+      title: 'Отмена претензии',
+      label: 'Причина отмены',
+      required: true,
+    });
+    if (reason == null) return;
     try {
       await claimAction(claimId, 'cancel', reason);
       await reloadClaim(claimId);
     } catch (error) { showError(error); }
   });
 
-  document.getElementById('btn_generate_document').addEventListener('click', async () => {
+  document.getElementById('btn_delete_claim').addEventListener('click', async () => {
+    if (!window.confirm('Удалить претензию, связанный рейс и все его платежи без возможности восстановления?')) return;
+    const button = document.getElementById('btn_delete_claim');
+    button.disabled = true;
     try {
-      await generateSelectedClaimDocument(claimId, false);
-    } catch (error) { showError(error); }
+      await deleteClaim(claimId);
+      window.location.href = '/pages/lawyer/claims.html';
+    } catch (error) {
+      showError(error);
+      updateAvailableActions();
+    }
+  });
+
+  document.getElementById('btn_generate_document').addEventListener('click', async () => {
+    if (documentGenerationInProgress) return;
+    const button = document.getElementById('btn_generate_document');
+    documentGenerationInProgress = true;
+    button.textContent = 'Формирование...';
+    updateAvailableActions();
+    try {
+      await generateSelectedClaimDocument(claimId);
+    } catch (error) {
+      showError(error);
+    } finally {
+      documentGenerationInProgress = false;
+      button.textContent = 'Сформировать документ';
+      updateAvailableActions();
+    }
+  });
+  document.getElementById('document_format').addEventListener('change', updateAvailableActions);
+
+  for (const format of ['pdf', 'xlsx']) {
+    document.getElementById(`btn_download_calculation_${format}`).addEventListener('click', async () => {
+      try {
+        await downloadClaimCalculation(claimId, format);
+      } catch (error) { showError(error); }
+    });
+  }
+
+  document.getElementById('btn_edit_recipient_email').addEventListener('click', () => {
+    const input = document.getElementById('email_to');
+    const display = document.getElementById('email_to_display');
+    const button = document.getElementById('btn_edit_recipient_email');
+    const editing = button.dataset.editing === 'true';
+
+    if (!editing) {
+      display.hidden = true;
+      input.hidden = false;
+      button.textContent = 'Готово';
+      button.dataset.editing = 'true';
+      input.focus();
+      input.select();
+      return;
+    }
+
+    if (input.value && !input.checkValidity()) {
+      input.reportValidity();
+      return;
+    }
+    setRecipientEmail(input.value);
   });
 
   document.getElementById('btn_download_claim').addEventListener('click', async () => {
     const button = document.getElementById('btn_download_claim');
     button.disabled = true;
     try {
-      await generateSelectedClaimDocument(claimId, true);
+      if (!selectedDocumentId) {
+        throw new Error('Сначала сформируйте и выберите документ');
+      }
+      await downloadDocument(selectedDocumentId);
     } catch (error) {
       showError(error);
     } finally {
@@ -503,9 +1329,13 @@ async function initClaimCardPage() {
 
   document.getElementById('btn_send_document').addEventListener('click', async () => {
     const to = document.getElementById('email_to').value.trim();
-    if (!selectedDocumentId || !to) return alert('Выберите документ и укажите email клиента');
+    if (!selectedDocumentId || !to) return showToast('Выберите документ и укажите email клиента', 'error');
     const status = document.getElementById('delivery_status');
     try {
+      const checklist = await getClaimSendChecklist(claimId);
+      if (!checklist.readyToSend) {
+        throw new Error(`Отправка заблокирована: ${(checklist.warnings || []).join('; ')}`);
+      }
       status.textContent = 'Проверка оплаты...';
       const preflight = await preflightClaimPayment(claimId, 'Проверка перед email-отправкой');
       if (!preflight.canSend) throw new Error('Отправка заблокирована: задолженность погашена');
@@ -539,7 +1369,7 @@ async function initClaimCardPage() {
   document.getElementById('add_comment_btn').addEventListener('click', async () => {
     const input = document.getElementById('comment_input');
     const text = input.value.trim();
-    if (!text) return alert('Введите комментарий');
+    if (!text) return showToast('Введите комментарий', 'error');
     try {
       await addClaimComment(claimId, text);
       input.value = '';

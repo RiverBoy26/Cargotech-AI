@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Дашборд бухгалтера</title>
-    <link rel="stylesheet" href="../../styles/ac_dashboard.css">
+    <link rel="stylesheet" href="../../styles/ac_dashboard.css?v=20260813-overdue-confirmation-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
@@ -12,7 +12,7 @@
     <header>
         <button class="logout_btn" id="logout_btn" type="button">Выйти из аккаунта</button>
         <div class="topbar_user">
-            <div class="topbar_usename">Кузнецова Мария Геннадьевна</div>
+            <div class="topbar_usename">-</div>
             <div class="topbar_user_role">бухгалтер</div>
         </div>
     </header>
@@ -36,6 +36,8 @@
                     <input
                         class="search-box__input"
                         id="overdue_search"
+                        name="overdue_search"
+                        autocomplete="off"
                         type="search"
                         placeholder="Поиск по клиенту, экспедитору или рейсу...">
                 </div>
@@ -44,17 +46,26 @@
                 </div>
             </div>
 
+            <div class="overdue_section_header">
+                <div>
+                    <h2 class="panel_title">Претензии и просрочки</h2>
+                    <p class="panel_subtitle">Черновики новых рейсов и претензии, уже переданные в работу.</p>
+                </div>
+            </div>
             <div class="overdues_table">
                 <div class="overdues_table_head">
                     <div class="overdues_table_head_t">Клиент</div>
+                    <div class="overdues_table_head_t">ИНН</div>
                     <div class="overdues_table_head_t">Экспедитор</div>
                     <div class="overdues_table_head_t">Рейс</div>
-                    <div class="overdues_table_head_t">Сумма долга</div>
+                    <div class="overdues_table_head_t">Сумма рейса</div>
+                    <div class="overdues_table_head_t">Оплачено</div>
+                    <div class="overdues_table_head_t">Остаток</div>
                     <div class="overdues_table_head_t">Просрочка</div>
                     <div class="overdues_table_head_t">Статус</div>
                     <div class="overdues_table_head_t">Действие</div>
                 </div>
-                <div class="overdues_list" id="overdues_list"></div>
+                <div class="overdues_list" id="created_claims_list"></div>
             </div>
         </section>
 
@@ -83,7 +94,7 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_import_file">Файл XLSX *</label>
-                        <input class="form_input form_file" id="payment_import_file" type="file" required
+                        <input class="form_input form_file" id="payment_import_file" name="payment_import_file" autocomplete="off" type="file" required
                                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
                     </div>
                 </div>
@@ -98,23 +109,25 @@
 
             <section class="payment_form" id="payment_create_form">
                 <div class="payment_form_title">Новый платёж</div>
-                <div class="payment_form_hint">Платёж будет создан со статусом «Не сопоставлен» и сможет участвовать в сверке.</div>
+                <div class="payment_form_hint">Выберите рейс: сумма заполнится с учётом начисленной неустойки, а платёж будет сразу сопоставлен с его претензией.</div>
                 <div class="payment_form_grid">
                     <div class="form_field">
                         <label class="form_label" for="payment_number">Номер платежа</label>
-                        <input class="form_input" id="payment_number" maxlength="128" placeholder="ПП-101">
+                        <input class="form_input" id="payment_number" name="payment_number" autocomplete="off" maxlength="128" placeholder="ПП-101">
                     </div>
-                    <div class="form_field">
-                        <label class="form_label" for="payment_external_id">Внешний ID</label>
-                        <input class="form_input" id="payment_external_id" maxlength="255" placeholder="MANUAL-2026-001">
+                    <div class="form_field form_field_wide">
+                        <label class="form_label" for="payment_shipment_id">Рейс *</label>
+                        <select class="form_input form_select" id="payment_shipment_id" name="payment_shipment_id" required>
+                            <option value="">Выберите рейс</option>
+                        </select>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_date">Дата платежа *</label>
-                        <input class="form_input" id="payment_date" type="date" required>
+                        <input class="form_input" id="payment_date" name="payment_date" autocomplete="off" type="date" required>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_amount">Сумма *</label>
-                        <input class="form_input" id="payment_amount" type="number" required min="0.01" step="0.01" placeholder="150000,00">
+                        <input class="form_input" id="payment_amount" name="payment_amount" autocomplete="off" type="number" required min="0.01" step="0.01" placeholder="150000,00">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_currency">Валюта *</label>
@@ -126,23 +139,15 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_payer_inn">ИНН плательщика</label>
-                        <input class="form_input" id="payment_payer_inn" maxlength="12">
+                        <input class="form_input" id="payment_payer_inn" name="payment_payer_inn" autocomplete="off" maxlength="12" readonly>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="payment_payer_name">Плательщик</label>
-                        <input class="form_input" id="payment_payer_name" maxlength="500" placeholder="ООО Клиент">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="payment_recipient_inn">ИНН получателя</label>
-                        <input class="form_input" id="payment_recipient_inn" maxlength="12">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="payment_recipient_name">Получатель</label>
-                        <input class="form_input" id="payment_recipient_name" maxlength="500" placeholder="ООО Экспедитор">
+                        <input class="form_input" id="payment_payer_name" name="payment_payer_name" autocomplete="off" maxlength="500" placeholder="ООО Клиент" readonly>
                     </div>
                     <div class="form_field form_field_wide">
                         <label class="form_label" for="payment_purpose">Назначение платежа</label>
-                        <textarea class="form_input form_textarea" id="payment_purpose"
+                        <textarea class="form_input form_textarea" id="payment_purpose" name="payment_purpose" autocomplete="off"
                                   placeholder="Оплата по претензии CT-2026-001"></textarea>
                     </div>
                 </div>
@@ -158,7 +163,7 @@
             <div class="payments_toolbar">
                 <div class="search_box">
                     <span class="search-box__icon"><img src="../../assets/Search.svg" alt=""></span>
-                    <input class="search-box__input" id="payment_search" type="search"
+                    <input class="search-box__input" id="payment_search" name="payment_search" autocomplete="off" type="search"
                            placeholder="Поиск по номеру, плательщику, ИНН или назначению...">
                 </div>
                 <div class="toolbar_actions">
@@ -167,7 +172,6 @@
                         <option value="IMPORTED">Не сопоставлен</option>
                         <option value="PARTIALLY_MATCHED">Сопоставлен частично</option>
                         <option value="MATCHED">Сопоставлен</option>
-                        <option value="REJECTED">Отклонён</option>
                     </select>
                     <button class="action_btn" id="reconcile_btn">Запустить сверку</button>
                     <button class="action_btn" id="refresh_payments_btn">Обновить</button>
@@ -186,6 +190,7 @@
                     <div>Сопоставлено</div>
                     <div>Доступно</div>
                     <div>Статус</div>
+                    <div>Действие</div>
                 </div>
                 <div id="payments_list"></div>
             </div>
@@ -205,7 +210,30 @@
         </div>
     </div>
 
-    <script src="../../scripts/api.js"></script>
-    <script src="../../scripts/ac_script.js"></script>
+    <div class="modal_overlay" id="payment_match_modal" role="dialog" aria-modal="true" aria-labelledby="payment_match_modal_title">
+        <form class="payment_modal payment_match_modal" id="payment_match_form">
+            <div class="modal_header">
+                <div>
+                    <div class="payment_form_title" id="payment_match_modal_title">Подтверждение полной оплаты</div>
+                    <div class="payment_form_hint" id="payment_match_modal_subtitle"></div>
+                </div>
+                <button class="modal_close" id="close_payment_match_modal_btn" type="button" aria-label="Закрыть">×</button>
+            </div>
+            <div class="modal_body">
+                <div class="form_field">
+                    <label class="form_label" for="payment_match_select">Платёж *</label>
+                    <select class="form_input form_select" id="payment_match_select" required></select>
+                </div>
+                <p class="form_message form_error" id="payment_match_error" role="alert"></p>
+                <div class="payment_form_actions payment_match_actions">
+                    <button class="secondary_btn" id="cancel_payment_match_btn" type="button">Отмена</button>
+                    <button class="primary_btn" type="submit">Подтвердить оплату</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script src="../../scripts/api.js?v=20260813-payment-shipment-1"></script>
+    <script src="../../scripts/ac_script.js?v=20260814-draft-row-navigation-1"></script>
 </body>
 </html>

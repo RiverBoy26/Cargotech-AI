@@ -4,7 +4,7 @@
 
 -- DROP TABLE cargotech.outbox_events;
 
-CREATE TABLE cargotech.outbox_events (
+CREATE TABLE IF NOT EXISTS cargotech.outbox_events (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	module_name varchar(64) NOT NULL,
 	aggregate_type varchar(128) NOT NULL,
@@ -21,8 +21,8 @@ CREATE TABLE cargotech.outbox_events (
 	CONSTRAINT outbox_events_pkey PRIMARY KEY (id),
 	CONSTRAINT outbox_events_status_check CHECK (((status)::text = ANY ((ARRAY['NEW'::character varying, 'PUBLISHED'::character varying, 'FAILED'::character varying])::text[])))
 );
-CREATE INDEX idx_outbox_aggregate ON cargotech.outbox_events USING btree (aggregate_id);
-CREATE INDEX idx_outbox_pending ON cargotech.outbox_events USING btree (status, created_at) WHERE ((status)::text = ANY ((ARRAY['NEW'::character varying, 'FAILED'::character varying])::text[]));
+CREATE INDEX IF NOT EXISTS idx_outbox_aggregate ON cargotech.outbox_events USING btree (aggregate_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON cargotech.outbox_events USING btree (status, created_at) WHERE ((status)::text = ANY ((ARRAY['NEW'::character varying, 'FAILED'::character varying])::text[]));
 
 
 -- cargotech.auth_permissions определение
@@ -116,7 +116,9 @@ CREATE TABLE cargotech.auth_role_permissions (
 CREATE TABLE cargotech.auth_users (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	organization_id uuid NULL,
-	full_name varchar(255) NOT NULL,
+	first_name varchar(100) NOT NULL,
+	last_name varchar(100) NOT NULL,
+	middle_name varchar(100) NULL,
 	email varchar(320) NOT NULL,
 	password_hash varchar(255) NOT NULL,
 	active bool DEFAULT true NOT NULL,
@@ -292,6 +294,7 @@ JOIN cargotech.auth_permissions p
         'CLAIM_CREATE',
         'CLAIM_READ',
         'CLAIM_UPDATE',
+        'CLAIM_DELETE',
         'CALCULATION_READ',
         'CALCULATION_GENERATE',
         'CALCULATION_DOWNLOAD',
@@ -324,6 +327,7 @@ JOIN cargotech.auth_permissions p
         'PAYMENT_CREATE',
         'PAYMENT_READ',
         'PAYMENT_UPDATE',
+        'PAYMENT_DELETE',
         'PAYMENT_IMPORT',
         'PAYMENT_RECONCILE',
         'PAYMENT_MARK_PAID'

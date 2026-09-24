@@ -29,8 +29,14 @@ public class AuthUser {
     @Column(name = "organization_id")
     private UUID organizationId;
 
-    @Column(name = "full_name", nullable = false)
-    private String fullName;
+    @Column(name = "first_name", nullable = false, length = 100)
+    private String firstName;
+
+    @Column(name = "last_name", nullable = false, length = 100)
+    private String lastName;
+
+    @Column(name = "middle_name", length = 100)
+    private String middleName;
 
     @Column(name = "email", nullable = false)
     private String email;

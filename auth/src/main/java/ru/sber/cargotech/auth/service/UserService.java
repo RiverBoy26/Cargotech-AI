@@ -5,7 +5,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -39,6 +41,18 @@ import java.util.UUID;
 @Slf4j
 public class UserService {
 
+    private static final Set<String> ALLOWED_SORT_PROPERTIES = Set.of(
+        "id",
+        "firstName",
+        "lastName",
+        "middleName",
+        "email",
+        "active",
+        "createdAt",
+        "updatedAt",
+        "lastLoginAt"
+    );
+
     private final AuthUserRepository userRepository;
     private final UserAccessRepository accessRepository;
     private final AccessService accessService;
@@ -58,6 +72,8 @@ public class UserService {
     ) {
         log.debug("Поиск пользователей: actorUserId={}, actorOrganizationId={}, requestedOrganizationId={}, active={}, searchPresent={}, page={}, size={}", actor.userId(), actor.organizationId(), organizationId, active, search != null && !search.isBlank(), pageable.getPageNumber(), pageable.getPageSize());
 
+        Pageable normalizedPageable = normalizePageable(pageable);
+
         UUID effectiveOrganization = resolveListOrganization(
             organizationId,
             actor
@@ -71,7 +87,7 @@ public class UserService {
             );
             if (roleUserIds.isEmpty()) {
                 return PageResponse.from(
-                    new PageImpl<>(List.of(), pageable, 0)
+                    new PageImpl<>(List.of(), normalizedPageable, 0)
                 );
             }
         }
@@ -94,7 +110,15 @@ public class UserService {
                     .toLowerCase(Locale.ROOT) + "%";
                 predicates.add(builder.or(
                     builder.like(
-                        builder.lower(root.get("fullName")),
+                        builder.lower(root.get("firstName")),
+                        pattern
+                    ),
+                    builder.like(
+                        builder.lower(root.get("lastName")),
+                        pattern
+                    ),
+                    builder.like(
+                        builder.lower(root.get("middleName")),
                         pattern
                     ),
                     builder.like(
@@ -111,7 +135,7 @@ public class UserService {
         };
 
         Page<UserResponse> page = userRepository
-            .findAll(specification, pageable)
+            .findAll(specification, normalizedPageable)
             .map(this::toResponse);
         return PageResponse.from(page);
     }
@@ -122,7 +146,7 @@ public class UserService {
 
         AuthUser user = requireUser(userId);
         Set<String> roles = accessService.roleCodes(userId);
-        policy.checkTargetUser(actor, user, roles);
+        policy.checkTargetUserRead(actor, user);
         return toResponse(user, roles);
     }
 
@@ -152,7 +176,9 @@ public class UserService {
 
         AuthUser user = new AuthUser();
         user.setOrganizationId(organizationId);
-        user.setFullName(request.fullName().trim());
+        user.setFirstName(normalizeRequiredName(request.firstName(), "Имя"));
+        user.setLastName(normalizeRequiredName(request.lastName(), "Фамилия"));
+        user.setMiddleName(blankToNull(request.middleName()));
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setActive(true);
@@ -182,7 +208,7 @@ public class UserService {
         UpdateUserRequest request,
         CurrentUser actor
     ) {
-        log.debug("Обновление пользователя: targetUserId={}, actorUserId={}, fullNameChanged={}, emailChanged={}", userId, actor.userId(), request.fullName() != null, request.email() != null);
+        log.debug("Обновление пользователя: targetUserId={}, actorUserId={}, firstNameChanged={}, lastNameChanged={}, middleNameChanged={}, emailChanged={}", userId, actor.userId(), request.firstName() != null, request.lastName() != null, request.middleName() != null, request.email() != null);
 
         AuthUser user = requireUser(userId);
         Set<String> roles = accessService.roleCodes(userId);
@@ -190,13 +216,22 @@ public class UserService {
 
         Map<String, Object> changes = new LinkedHashMap<>();
 
-        if (request.fullName() != null) {
-            String fullName = request.fullName().trim();
-            if (fullName.isBlank()) {
-                throw AuthException.validation("ФИО не может быть пустым");
-            }
-            user.setFullName(fullName);
-            changes.put("fullName", fullName);
+        if (request.firstName() != null) {
+            String firstName = normalizeRequiredName(request.firstName(), "Имя");
+            user.setFirstName(firstName);
+            changes.put("firstName", firstName);
+        }
+
+        if (request.lastName() != null) {
+            String lastName = normalizeRequiredName(request.lastName(), "Фамилия");
+            user.setLastName(lastName);
+            changes.put("lastName", lastName);
+        }
+
+        if (request.middleName() != null) {
+            String middleName = blankToNull(request.middleName());
+            user.setMiddleName(middleName);
+            changes.put("middleName", middleName);
         }
 
         if (request.email() != null) {
@@ -335,6 +370,36 @@ public class UserService {
         return actor.organizationId();
     }
 
+    private Pageable normalizePageable(Pageable pageable) {
+        List<Sort.Order> orders = new ArrayList<>();
+
+        pageable.getSort().forEach(order -> {
+            if ("fullName".equals(order.getProperty())) {
+                orders.add(new Sort.Order(order.getDirection(), "lastName"));
+                orders.add(new Sort.Order(order.getDirection(), "firstName"));
+                return;
+            }
+
+            if (!ALLOWED_SORT_PROPERTIES.contains(order.getProperty())) {
+                throw AuthException.validation(
+                    "Недопустимое поле сортировки: " + order.getProperty()
+                );
+            }
+            orders.add(order);
+        });
+
+        if (orders.isEmpty()) {
+            orders.add(Sort.Order.asc("lastName"));
+            orders.add(Sort.Order.asc("firstName"));
+        }
+
+        return PageRequest.of(
+            pageable.getPageNumber(),
+            pageable.getPageSize(),
+            Sort.by(orders)
+        );
+    }
+
     private AuthUser requireUser(UUID userId) {
         return userRepository.findById(userId)
             .orElseThrow(() -> AuthException.notFound(
@@ -356,7 +421,9 @@ public class UserService {
         return new UserResponse(
             user.getId(),
             user.getOrganizationId(),
-            user.getFullName(),
+            user.getFirstName(),
+            user.getLastName(),
+            user.getMiddleName(),
             user.getEmail(),
             user.isActive(),
             user.getBlockedAt(),
@@ -369,5 +436,17 @@ public class UserService {
 
     private String normalizeEmail(String value) {
         return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeRequiredName(String value, String fieldName) {
+        String normalized = value.trim();
+        if (normalized.isBlank()) {
+            throw AuthException.validation(fieldName + " не может быть пустым");
+        }
+        return normalized;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

@@ -215,6 +215,15 @@ header {
   background: #D9531A;
 }
 
+.action_btn_delete {
+  background: #FFE0E0;
+  color: #C0392B;
+}
+
+.action_btn_delete:hover {
+  background: #FFC9C9;
+}
+
 .action_btn_disabled {
   background: #FCEADF;
   border: 1px solid #F6C9A6;
@@ -232,6 +241,310 @@ header {
   border-radius: 10px;
   padding: 18px;
   margin-bottom: 18px;
+}
+
+.checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.check_passed { color: #217a47; }
+.check_failed { color: #b23a2f; }
+
+.validation_panel > details {
+  border: 1px solid #dfe3e8;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.validation_panel > details > summary {
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+
+.validation_panel > details[open] > summary {
+  border-bottom: 1px solid #e7eaee;
+  border-radius: 8px 8px 0 0;
+  background: #fafbfc;
+}
+
+.sources_view {
+  max-height: 390px;
+  overflow: auto;
+  padding: 12px;
+  background: #fff;
+}
+
+.contract_source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #f6c9a6;
+  border-radius: 9px;
+  background: #fff7f1;
+}
+
+.contract_source[hidden] {
+  display: none;
+}
+
+.contract_source_info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.contract_source_type {
+  color: #7b3517;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.contract_source_title {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.contract_source_meta {
+  color: #5f6875;
+  font-size: 12px;
+}
+
+.contract_source_download {
+  flex: 0 0 auto;
+  padding: 9px 14px;
+}
+
+.sources_intro {
+  margin: 12px 2px 10px;
+  color: #697381;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.sources_intro[hidden],
+.sources_cards[hidden] {
+  display: none;
+}
+
+.sources_cards {
+  display: grid;
+  gap: 10px;
+}
+
+.source_card {
+  padding: 12px 14px;
+  border: 1px solid #e3e6ea;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.source_card_header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.source_card_heading {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.source_type_badge {
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+}
+
+.source_type_contract {
+  color: #7b3517;
+  background: #fff0e5;
+}
+
+.source_type_law {
+  color: #245b43;
+  background: #e9f6ef;
+}
+
+.source_card_title {
+  color: #242a31;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.source_relevance {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.source_relevance_high {
+  color: #21633f;
+  background: #eaf6ef;
+}
+
+.source_relevance_medium {
+  color: #73510f;
+  background: #fff4cf;
+}
+
+.source_relevance_low {
+  color: #5f6875;
+  background: #f0f2f4;
+}
+
+.source_purpose {
+  margin: 8px 0 0;
+  color: #5f6875;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.source_quote {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border-left: 3px solid #f0a06b;
+  border-radius: 0 6px 6px 0;
+  background: #fafafa;
+  color: #30363d;
+  font: 12px/1.5 'Anonymous Pro', monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.source_quote_compact {
+  color: #5f6875;
+}
+
+.source_technical {
+  margin-top: 9px;
+  color: #6b7480;
+  font-size: 11px;
+}
+
+.source_technical > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #697381;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.source_technical_grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  margin-top: 7px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f6f7f8;
+}
+
+.source_technical_label {
+  color: #818995;
+}
+
+.source_technical_value {
+  overflow-wrap: anywhere;
+  color: #555e69;
+  font-family: 'Anonymous Pro', monospace;
+}
+
+.sources_empty {
+  margin: 0;
+  color: #5f6875;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .source_card_header {
+    display: grid;
+  }
+
+  .source_relevance {
+    width: fit-content;
+  }
+
+  .source_technical_grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.version_diff {
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.version_diff_full {
+  margin-top: 8px;
+  border-top: 1px solid #dde1e6;
+}
+
+.version_diff_full section {
+  padding: 12px 0;
+  border-bottom: 1px solid #e6e9ed;
+  background: transparent;
+  overflow-wrap: anywhere;
+}
+
+.version_diff_full section:last-child { border-bottom: 0; }
+.version_diff_full section > strong { display: block; }
+.version_diff_section_empty { margin-top: 6px; color: #7b8491; }
+
+.version_diff ul { margin: 8px 0 0; padding-left: 18px; }
+.version_diff_summary {
+  padding: 14px;
+  border: 1px solid #dde1e6;
+  border-radius: 8px;
+  background: #f8f9fb;
+}
+.version_diff_summary_title { font-size: 14px; font-weight: 600; }
+.version_diff_counters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.version_diff_counter { padding: 5px 9px; border-radius: 999px; }
+.version_diff_preview { margin-bottom: 0 !important; }
+.version_diff_empty { margin-top: 10px; color: #687180; }
+.version_diff_details { margin-top: 12px; }
+.version_diff_details > summary {
+  width: fit-content;
+  color: #3559a6;
+  cursor: pointer;
+  user-select: none;
+}
+.version_diff_details[open] > summary { margin-bottom: 2px; }
+.diff_added { background: #eaf7ef; color: #216b42; }
+.diff_removed { background: #fff0ee; color: #96392f; }
+.diff_changed { background: #fff8df; color: #795a00; }
+
+.workflow_panel_locked .workflow_input:disabled,
+.workflow_panel_locked .workflow_textarea[readonly] {
+  color: #77808c;
+  background: #eceff2;
+  border-color: #d5d9de;
+  cursor: not-allowed;
+}
+
+.workflow_panel_locked .workflow_textarea[readonly] {
+  resize: none;
 }
 
 .workflow_title {
@@ -262,6 +575,47 @@ header {
   flex: 1;
 }
 
+.email_recipient_control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 210px;
+  flex: 1;
+}
+
+.email_recipient_control .workflow_input {
+  min-width: 0;
+  width: 100%;
+}
+
+.email_recipient_value {
+  box-sizing: border-box;
+  min-width: 0;
+  flex: 1;
+  padding: 10px 12px;
+  overflow: hidden;
+  color: #252a31;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email_edit_button {
+  padding: 3px 2px;
+  border: 0;
+  background: transparent;
+  color: #77808c;
+  font-family: inherit;
+  font-size: 12px;
+  opacity: 0.62;
+  cursor: pointer;
+}
+
+.email_edit_button:hover,
+.email_edit_button:focus-visible {
+  color: #252a31;
+  opacity: 0.9;
+}
+
 .workflow_textarea {
   width: 100%;
   min-height: 260px;
@@ -271,6 +625,25 @@ header {
 
 .workflow_textarea_small {
   min-height: 90px;
+}
+
+.autocheck_warning {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #f0a35e;
+  border-radius: 8px;
+  background: #fff4e5;
+  color: #8a3f12;
+}
+
+.autocheck_warning strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.autocheck_warning p {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .document_item {
@@ -332,7 +705,7 @@ header {
 /* история изменений */
 
 .history_list {
-  background: #c4c4c4;
+  background: #DDE1E6;
   border-radius: 8px;
   max-height: 220px;
   overflow-y: auto;
@@ -367,4 +740,104 @@ header {
 .history_item_date {
   white-space: nowrap;
   color: #444;
+}
+
+.action_dialog {
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(27, 42, 74, 0.28);
+}
+
+.action_dialog::backdrop {
+  background: rgba(27, 42, 74, 0.48);
+}
+
+.action_dialog_form {
+  padding: 24px;
+}
+
+.action_dialog_title {
+  margin: 0 0 18px;
+  font-size: 20px;
+}
+
+.action_dialog_label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.action_dialog_textarea {
+  min-height: 120px;
+  margin-bottom: 0;
+}
+
+.action_dialog_error {
+  min-height: 20px;
+  margin: 7px 0;
+  color: #b23a2f;
+  font-size: 13px;
+}
+
+.action_dialog_buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.action_dialog_confirm {
+  background: #f26522;
+  color: #fff;
+}
+
+.claim_edit_dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.claim_edit_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.claim_edit_grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.claim_edit_grid .workflow_input,
+.claim_edit_grid .workflow_textarea {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  font-weight: 400;
+}
+
+.claim_edit_grid .action_dialog_textarea { min-height: 72px; }
+.claim_edit_grid .claim_edit_wide { grid-column: 1 / -1; }
+.claim_edit_grid input[readonly],
+.claim_edit_grid textarea[readonly] {
+  background: #eceff2;
+  color: #5f6875;
+  cursor: default;
+}
+
+@media (max-width: 760px) {
+  main { padding: 16px; }
+  .claim_card_body { padding: 20px; }
+  .claim_card_info_grid,
+  .action_buttons_grid,
+  .checklist,
+  .version_diff_full,
+  .claim_edit_grid { grid-template-columns: 1fr; }
+  .claim_edit_grid .claim_edit_wide { grid-column: auto; }
 }

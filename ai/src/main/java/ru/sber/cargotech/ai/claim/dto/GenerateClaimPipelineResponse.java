@@ -3,6 +3,7 @@ package ru.sber.cargotech.ai.claim.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import ru.sber.cargotech.ai.claim.guardrail.GuardrailResult;
 import ru.sber.cargotech.ai.gigachat.dto.GigaChatChatResponse;
+import ru.sber.cargotech.ai.rag.RagSearchService;
 
 import java.time.Instant;
 import java.util.List;
@@ -32,6 +33,9 @@ public record GenerateClaimPipelineResponse(
 
         @JsonProperty("guardrail_result")
         GuardrailResult guardrailResult,
+
+        @JsonProperty("retrieved_fragments")
+        List<RagSearchService.RetrievedFragment> retrievedFragments,
 
         @JsonProperty("checked_at")
         Instant checkedAt

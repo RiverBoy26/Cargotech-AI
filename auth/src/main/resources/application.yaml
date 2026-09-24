@@ -45,7 +45,9 @@ auth:
     enabled: ${AUTH_BOOTSTRAP_ENABLED:false}
     email: ${AUTH_BOOTSTRAP_EMAIL:admin@cargotech.local}
     password: ${AUTH_BOOTSTRAP_PASSWORD}
-    full-name: ${AUTH_BOOTSTRAP_FULL_NAME}
+    first-name: ${AUTH_BOOTSTRAP_FIRST_NAME}
+    last-name: ${AUTH_BOOTSTRAP_LAST_NAME}
+    middle-name: ${AUTH_BOOTSTRAP_MIDDLE_NAME:}
     organization-name: ${AUTH_BOOTSTRAP_ORGANIZATION_NAME:CargoTech}
     organization-inn: ${AUTH_BOOTSTRAP_ORGANIZATION_INN:7700000000}
 

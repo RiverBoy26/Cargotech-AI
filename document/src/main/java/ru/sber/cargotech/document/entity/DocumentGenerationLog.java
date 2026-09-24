@@ -32,6 +32,9 @@ public class DocumentGenerationLog {
     @Column(name = "claim_id", nullable = false)
     private UUID claimId;
 
+    @Column(name = "claim_version_id")
+    private UUID claimVersionId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "document_id")
     private Document document;
@@ -82,6 +85,8 @@ public class DocumentGenerationLog {
     public void setOrganizationId(UUID organizationId) { this.organizationId = organizationId; }
     public UUID getClaimId() { return claimId; }
     public void setClaimId(UUID claimId) { this.claimId = claimId; }
+    public UUID getClaimVersionId() { return claimVersionId; }
+    public void setClaimVersionId(UUID claimVersionId) { this.claimVersionId = claimVersionId; }
     public Document getDocument() { return document; }
     public void setDocument(Document document) { this.document = document; }
     public GeneratedDocumentType getOutputType() { return outputType; }

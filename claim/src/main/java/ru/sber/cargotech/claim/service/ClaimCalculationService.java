@@ -3,6 +3,7 @@ package ru.sber.cargotech.claim.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sber.cargotech.claim.client.PaymentClient;
 import ru.sber.cargotech.claim.dto.ClaimCalculationResponse;
@@ -10,7 +11,6 @@ import ru.sber.cargotech.claim.entity.ClaimCalculation;
 import ru.sber.cargotech.claim.entity.ClaimContract;
 import ru.sber.cargotech.claim.entity.ClaimEntity;
 import ru.sber.cargotech.claim.entity.ClaimShipment;
-import ru.sber.cargotech.claim.enums.PaymentStartEvent;
 import ru.sber.cargotech.claim.enums.PenaltyType;
 import ru.sber.cargotech.claim.exception.ClaimException;
 import ru.sber.cargotech.claim.repository.ClaimCalculationRepository;
@@ -21,7 +21,8 @@ import ru.sber.cargotech.claim.security.CurrentClaimUser;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,15 +30,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class ClaimCalculationService {
-    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
-    private static final BigDecimal DAYS_IN_YEAR = new BigDecimal("365");
-
     private final ClaimRepository claimRepository;
     private final ClaimCalculationRepository calculationRepository;
     private final PaymentClient paymentClient;
     private final ShipmentService shipmentService;
     private final ContractService contractService;
     private final ClaimOutboxWriter outboxWriter;
+    private final Article395RateProvider article395RateProvider;
 
     @Transactional(readOnly = true)
     public ClaimCalculationResponse getLatest(CurrentClaimUser user, UUID claimId) {
@@ -49,7 +48,7 @@ public class ClaimCalculationService {
             .orElseThrow(() -> ClaimException.notFound("Расчёт по претензии не найден"));
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ClaimCalculationResponse recalculate(CurrentClaimUser user, UUID claimId) {
         log.debug("Запуск перерасчёта: claimId={}, organizationId={}, userId={}", claimId, user.organizationId(), user.userId());
 
@@ -57,7 +56,15 @@ public class ClaimCalculationService {
         ClaimShipment shipment = shipmentService.getEntity(user.organizationId(), claim.getShipmentId());
         ClaimContract contract = contractService.getEntity(user.organizationId(), claim.getContractId());
 
+        // The shipment is the only source of truth for the original obligation.
+        // Never carry a client-supplied or previously mutated claim balance into a
+        // new calculation: doing so makes partial payments compound incorrectly.
         BigDecimal principalDebt = money(shipment.getServiceAmount());
+        if (principalDebt.signum() <= 0) {
+            throw ClaimException.validation(
+                "Сумма завершённого рейса должна быть больше нуля"
+            );
+        }
         PaymentClient.PaymentStateResponse paymentState =
                 paymentClient.getPaymentState(
                         claim.getId(),
@@ -66,25 +73,68 @@ public class ClaimCalculationService {
                 );
 
         BigDecimal paidAmount = money(paymentState.paidAmount());
-        BigDecimal remainingDebt = money(principalDebt.subtract(paidAmount).max(BigDecimal.ZERO));
 
         LocalDate calculationDate = LocalDate.now();
-        LocalDate overdueStartDate = resolveOverdueStartDate(shipment, contract);
-        int overdueDays = resolveOverdueDays(overdueStartDate, calculationDate);
+        LocalDate overdueStartDate = OverdueDateCalculator.overdueStartDate(shipment, contract);
+        if (overdueStartDate == null) {
+            throw ClaimException.validation(
+                "Не удалось безопасно определить дату начала просрочки по условиям договора. "
+                    + "Проверьте договорное событие начала срока оплаты и необходимые даты рейса"
+            );
+        }
+        int overdueDays = OverdueDateCalculator.overdueDays(overdueStartDate, calculationDate);
         PenaltyType penaltyType = contract.getPenaltyType() == null
-            ? PenaltyType.NONE
+            ? PenaltyType.ARTICLE_395
             : contract.getPenaltyType();
-        BigDecimal penaltyRate = contract.getPenaltyRate() == null
-            ? BigDecimal.ZERO
-            : contract.getPenaltyRate();
-        BigDecimal penaltyAmount = calculatePenalty(
-            remainingDebt,
-            overdueDays,
+        List<PenaltyScheduleCalculator.RatePeriod> article395RatePeriods =
+            penaltyType == PenaltyType.ARTICLE_395
+                ? article395RateProvider.periods(overdueStartDate, calculationDate)
+                : List.of();
+        BigDecimal penaltyRate = penaltyType == PenaltyType.ARTICLE_395
+            ? latestArticle395Rate(article395RatePeriods)
+            : (contract.getPenaltyRate() == null ? BigDecimal.ZERO : contract.getPenaltyRate());
+        List<PenaltyScheduleCalculator.Allocation> paymentAllocations =
+            paymentState.allocations() == null
+                ? List.of()
+                : paymentState.allocations().stream()
+                    .map(allocation -> new PenaltyScheduleCalculator.Allocation(
+                        allocation.paymentDate(),
+                        allocation.amount()
+                    ))
+                    .toList();
+        BigDecimal accruedPenaltyAmount = PenaltyScheduleCalculator.calculate(
+            principalDebt,
+            overdueStartDate,
+            calculationDate,
             penaltyType,
-            penaltyRate
+            penaltyRate,
+            paymentAllocations,
+            article395RatePeriods
         );
+        accruedPenaltyAmount = PenaltyCapCalculator.apply(
+            accruedPenaltyAmount,
+            contract.getPenaltyCapPercent(),
+            contract.getPenaltyCapBase(),
+            principalDebt,
+            paidAmount
+        );
+        ClaimPaymentAllocationCalculator.AllocationResult paymentAllocation =
+                ClaimPaymentAllocationCalculator.allocate(
+                        principalDebt,
+                        accruedPenaltyAmount,
+                        paidAmount
+                );
+        BigDecimal remainingDebt = money(paymentAllocation.remainingPrincipal());
+        BigDecimal paidPenaltyAmount = money(paymentAllocation.paidPenalty());
+        BigDecimal penaltyAmount = money(paymentAllocation.remainingPenalty());
         BigDecimal totalAmount = money(remainingDebt.add(penaltyAmount));
         log.debug("Расчёт выполнен: claimId={}, principalDebt={}, paidAmount={}, remainingDebt={}, overdueStartDate={}, overdueDays={}, penaltyType={}, penaltyRate={}, penaltyAmount={}, totalAmount={}", claim.getId(), principalDebt, paidAmount, remainingDebt, overdueStartDate, overdueDays, penaltyType, penaltyRate, penaltyAmount, totalAmount);
+
+        // Serialize version allocation per claim. MAX(version) + 1 is safe only
+        // while the parent claim row is locked in this transaction.
+        ClaimEntity lockedClaim = claimRepository
+            .findByIdAndOrganizationIdForUpdate(claim.getId(), user.organizationId())
+            .orElseThrow(() -> ClaimException.notFound("Претензия не найдена"));
 
         int nextVersion = calculationRepository.findLastCalculationVersion(claim.getId()) + 1;
         ClaimCalculation calculation = new ClaimCalculation();
@@ -100,24 +150,50 @@ public class ClaimCalculationService {
         calculation.setPenaltyRate(penaltyRate);
         calculation.setPenaltyAmount(penaltyAmount);
         calculation.setTotalAmount(totalAmount);
-        calculation.setFormula(buildFormula(penaltyType, penaltyRate, overdueDays));
-        calculation.setInputSnapshot(Map.of(
-            "shipmentId", shipment.getId().toString(),
-            "contractId", contract.getId().toString(),
-            "serviceAmount", principalDebt,
-            "paidAmount", paidAmount,
-            "paymentStartEvent", contract.getPaymentStartEvent() == null ? "" : contract.getPaymentStartEvent().name(),
-            "paymentDays", contract.getPaymentDays() == null ? 0 : contract.getPaymentDays()
+        calculation.setFormula(buildFormula(
+            penaltyType,
+            penaltyRate,
+            overdueDays,
+            paymentAllocations.size(),
+            contract.getPenaltyCapPercent(),
+            contract.getPenaltyCapBase(),
+            article395RatePeriods
         ));
+        Map<String, Object> inputSnapshot = new LinkedHashMap<>();
+        inputSnapshot.put("shipmentId", shipment.getId().toString());
+        inputSnapshot.put("contractId", contract.getId().toString());
+        inputSnapshot.put("serviceAmount", principalDebt);
+        inputSnapshot.put("paidAmount", paidAmount);
+        inputSnapshot.put("accruedPenaltyAmount", accruedPenaltyAmount);
+        inputSnapshot.put("paidPenaltyAmount", paidPenaltyAmount);
+        inputSnapshot.put("paymentAllocations", paymentAllocations.stream()
+            .map(allocation -> Map.of(
+                "paymentDate", allocation.paymentDate().toString(),
+                "amount", allocation.amount()
+            ))
+            .toList());
+        inputSnapshot.put("paymentStartEvent", contract.getPaymentStartEvent() == null ? "" : contract.getPaymentStartEvent().name());
+        inputSnapshot.put("paymentDays", contract.getPaymentDays() == null ? 0 : contract.getPaymentDays());
+        inputSnapshot.put("penaltyCapPercent", contract.getPenaltyCapPercent() == null ? "" : contract.getPenaltyCapPercent());
+        inputSnapshot.put("penaltyCapBase", contract.getPenaltyCapBase() == null ? "" : contract.getPenaltyCapBase().name());
+        inputSnapshot.put("article395RatePeriods", article395RatePeriods.stream()
+            .map(period -> Map.of(
+                "from", period.from().toString(),
+                "to", period.to().toString(),
+                "rate", period.rate(),
+                "source", period.source() == null ? "" : period.source()
+            ))
+            .toList());
+        calculation.setInputSnapshot(inputSnapshot);
         calculation.setCreatedBy(user.userId());
         ClaimCalculation saved = calculationRepository.save(calculation);
         log.debug("Расчёт сохранён: claimId={}, calculationId={}, version={}", claim.getId(), saved.getId(), saved.getCalculationVersion());
 
-        claim.setPrincipalDebt(remainingDebt);
-        claim.setPenaltyAmount(penaltyAmount);
-        claim.setUpdatedBy(user.userId());
-        claim.normalizeTotals();
-        claimRepository.save(claim);
+        lockedClaim.setPrincipalDebt(remainingDebt);
+        lockedClaim.setPenaltyAmount(penaltyAmount);
+        lockedClaim.setUpdatedBy(user.userId());
+        lockedClaim.normalizeTotals();
+        claimRepository.save(lockedClaim);
 
         outboxWriter.write(
             "CLAIM",
@@ -129,6 +205,7 @@ public class ClaimCalculationService {
                 "claimId", claim.getId(),
                 "calculationId", saved.getId(),
                 "remainingDebt", remainingDebt,
+                "paidPenaltyAmount", paidPenaltyAmount,
                 "penaltyAmount", penaltyAmount,
                 "totalAmount", totalAmount
             )
@@ -142,60 +219,40 @@ public class ClaimCalculationService {
             .orElseThrow(() -> ClaimException.notFound("Претензия не найдена"));
     }
 
-    private LocalDate resolveOverdueStartDate(ClaimShipment shipment, ClaimContract contract) {
-        LocalDate baseDate = switch (contract.getPaymentStartEvent() == null
-            ? PaymentStartEvent.UNLOADING_DATE
-            : contract.getPaymentStartEvent()) {
-            case ACT_SIGNED -> shipment.getActSignedAt();
-            case UNLOADING_DATE, TTN_SIGNED, INVOICE_DATE -> shipment.getUnloadingDate();
-        };
-        if (baseDate == null) {
-            baseDate = shipment.getActSignedAt() != null
-                ? shipment.getActSignedAt()
-                : shipment.getUnloadingDate();
-        }
-        if (baseDate == null) {
-            return null;
-        }
-        int paymentDays = contract.getPaymentDays() == null ? 0 : contract.getPaymentDays();
-        return baseDate.plusDays(paymentDays + 1L);
-    }
-
-    private int resolveOverdueDays(LocalDate overdueStartDate, LocalDate calculationDate) {
-        if (overdueStartDate == null || !calculationDate.isAfter(overdueStartDate)) {
-            return 0;
-        }
-        return Math.toIntExact(ChronoUnit.DAYS.between(overdueStartDate, calculationDate));
-    }
-
-    private BigDecimal calculatePenalty(
-        BigDecimal remainingDebt,
-        int overdueDays,
-        PenaltyType penaltyType,
-        BigDecimal penaltyRate
+    private String buildFormula(
+        PenaltyType type,
+        BigDecimal rate,
+        int days,
+        int paymentCount,
+        BigDecimal penaltyCapPercent,
+        ru.sber.cargotech.claim.enums.PenaltyCapBase penaltyCapBase,
+        List<PenaltyScheduleCalculator.RatePeriod> article395RatePeriods
     ) {
-        if (remainingDebt.signum() <= 0 || overdueDays <= 0 || penaltyType == PenaltyType.NONE) {
-            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        }
-        BigDecimal days = BigDecimal.valueOf(overdueDays);
-        BigDecimal percent = penaltyRate.divide(ONE_HUNDRED, 10, RoundingMode.HALF_UP);
-        BigDecimal value;
-        if (penaltyType == PenaltyType.ARTICLE_395) {
-            value = remainingDebt.multiply(percent).multiply(days).divide(DAYS_IN_YEAR, 10, RoundingMode.HALF_UP);
-        } else {
-            value = remainingDebt.multiply(percent).multiply(days);
-        }
-        return money(value);
-    }
-
-    private String buildFormula(PenaltyType type, BigDecimal rate, int days) {
         if (type == PenaltyType.NONE) {
             return "Неустойка не начисляется";
         }
+        String base = paymentCount > 0
+            ? "Остаток долга по периодам между платежами"
+            : "Остаток долга";
         if (type == PenaltyType.ARTICLE_395) {
-            return "Остаток долга × " + rate + "% × " + days + " дней / 365";
+            String periods = article395RatePeriods.stream()
+                .map(period -> period.from() + "—" + period.to() + ": "
+                    + period.rate().stripTrailingZeros().toPlainString() + "%")
+                .collect(java.util.stream.Collectors.joining("; "));
+            return base + " × ключевая ставка Банка России по периодам × дни / 365(366)"
+                + (periods.isBlank() ? "" : " (" + periods + ")");
         }
-        return "Остаток долга × " + rate + "% × " + days + " дней";
+        return base + " × " + rate + "% × " + days + " дней"
+            + PenaltyCapCalculator.describe(penaltyCapPercent, penaltyCapBase);
+    }
+
+    private static BigDecimal latestArticle395Rate(
+        List<PenaltyScheduleCalculator.RatePeriod> periods
+    ) {
+        if (periods == null || periods.isEmpty()) {
+            return null;
+        }
+        return periods.get(periods.size() - 1).rate();
     }
 
     private static BigDecimal money(BigDecimal value) {

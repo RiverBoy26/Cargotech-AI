@@ -164,18 +164,24 @@ public class TokenService {
             OffsetDateTime issuedAt,
             OffsetDateTime expiresAt
     ) {
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder claimsBuilder = JwtClaimsSet.builder()
                 .issuer(properties.jwt().issuer())
                 .issuedAt(issuedAt.toInstant())
                 .expiresAt(expiresAt.toInstant())
                 .subject(access.userId().toString())
                 .claim("user_id", access.userId().toString())
                 .claim("organization_id", access.organizationId().toString())
-                .claim("full_name", access.fullName())
+                .claim("first_name", access.firstName())
+                .claim("last_name", access.lastName())
                 .claim("email", access.email())
                 .claim("roles", access.roles())
-                .claim("permissions", access.permissions())
-                .build();
+                .claim("permissions", access.permissions());
+
+        if (access.middleName() != null) {
+            claimsBuilder.claim("middle_name", access.middleName());
+        }
+
+        JwtClaimsSet claims = claimsBuilder.build();
 
         JwsHeader header = JwsHeader
                 .with(MacAlgorithm.HS256)

@@ -167,7 +167,9 @@ public class ClaimClient {
 
     public void updateLastPaymentCheck(
             UUID claimId,
-            UUID checkId
+            UUID checkId,
+            BigDecimal remainingPrincipalAmount,
+            BigDecimal remainingPenaltyAmount
     ) {
         try {
             restClient
@@ -177,7 +179,11 @@ public class ClaimClient {
                                     + "{claimId}/last-payment-check",
                             claimId
                     )
-                    .body(new UpdateLastPaymentCheckRequest(checkId))
+                    .body(new UpdateLastPaymentCheckRequest(
+                            checkId,
+                            remainingPrincipalAmount,
+                            remainingPenaltyAmount
+                    ))
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientResponseException exception) {
@@ -221,6 +227,37 @@ public class ClaimClient {
         }
     }
 
+    public void syncPaymentState(UUID claimId) {
+        syncPaymentState(claimId, null);
+    }
+
+    public void syncPaymentState(UUID claimId, String reason) {
+        try {
+            restClient
+                .post()
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder.path(
+                        "/internal/api/v1/claims/{claimId}/sync-payment-state"
+                    );
+                    if (reason != null && !reason.isBlank()) {
+                        builder.queryParam("reason", reason);
+                    }
+                    return builder.build(claimId);
+                })
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientResponseException exception) {
+            throw PaymentException.conflict(
+                "Платёж зафиксирован, но claim не выполнил перерасчёт: "
+                    + exception.getStatusCode()
+            );
+        } catch (ResourceAccessException exception) {
+            throw PaymentException.conflict(
+                "Модуль claim недоступен для перерасчёта после платежа"
+            );
+        }
+    }
+
     private static String currentBearerToken() {
         Authentication authentication = SecurityContextHolder
                 .getContext()
@@ -236,7 +273,9 @@ public class ClaimClient {
     }
 
     public record UpdateLastPaymentCheckRequest(
-            UUID checkId
+            UUID checkId,
+            BigDecimal remainingPrincipalAmount,
+            BigDecimal remainingPenaltyAmount
     ) {
     }
 }

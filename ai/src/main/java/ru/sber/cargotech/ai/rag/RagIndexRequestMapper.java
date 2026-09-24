@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 @Component
 public class RagIndexRequestMapper {
 
-    private static final int MAX_BATCH_SIZE = 200;
+    private static final int MAX_BATCH_SIZE = 1_000;
 
     private static final Pattern PASSPORT = Pattern.compile("\\b\\d{4}\\s?\\d{6}\\b");
     private static final Pattern BANK_ACCOUNT = Pattern.compile("\\b\\d{20}\\b");
@@ -59,6 +59,7 @@ public class RagIndexRequestMapper {
                 validateNoRawPiiInObject(input.extra(), prefix + ".extra", errors);
                 validateNoBrokenEncoding(input.chunkId(), prefix + ".chunk_id", errors);
                 validateNoBrokenEncoding(input.claimType(), prefix + ".claim_type", errors);
+                validateNoBrokenEncoding(input.organizationId(), prefix + ".organization_id", errors);
                 validateNoBrokenEncoding(input.clientId(), prefix + ".client_id", errors);
                 validateNoBrokenEncoding(input.contractId(), prefix + ".contract_id", errors);
                 validateNoBrokenEncoding(input.contractNumber(), prefix + ".contract_number", errors);
@@ -122,10 +123,8 @@ public class RagIndexRequestMapper {
             require(chunk.clientId(), prefix + ".client_id", errors);
             require(chunk.contractId(), prefix + ".contract_id", errors);
             require(chunk.contractNumber(), prefix + ".contract_number", errors);
-            require(chunk.contractDate(), prefix + ".contract_date", errors);
             require(chunk.sectionTitle(), prefix + ".section_title", errors);
             require(chunk.sectionPath(), prefix + ".section_path", errors);
-            require(chunk.clauseNumber(), prefix + ".clause_number", errors);
             require(chunk.clauseTopic(), prefix + ".clause_topic", errors);
         }
 
@@ -169,6 +168,7 @@ public class RagIndexRequestMapper {
                 input.chunkType(),
 
                 input.claimType(),
+                input.organizationId(),
                 input.clientId(),
 
                 input.contractId(),

@@ -6,9 +6,16 @@ import ru.sber.cargotech.ai.claim.dto.GenerateClaimResponse;
 
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class RuleBasedGuardrailService {
+
+    private static final Pattern ARTICLE_REFERENCE_PATTERN = Pattern.compile(
+            "(?iu)(?:^|[^\\p{L}\\p{N}])(?:статья|статьи|статью|статье|статьей|статьёй|статьями|статей|ст\\.?)\\s*(\\d+(?:\\.\\d+)?)"
+    );
+    private static final Pattern ARTICLE_NUMBER_PATTERN = Pattern.compile("\\d+(?:\\.\\d+)?");
 
     private final ClaimFactConsistencyValidator factConsistencyValidator;
 
@@ -28,6 +35,7 @@ public class RuleBasedGuardrailService {
             validateCalculationNotChanged(request, response, errors);
             validateUsedContractClauses(request, response, errors, warnings);
             validateUsedLawArticles(request, response, errors, warnings);
+            validatePaymentDelayLawSemantics(request, response, errors);
             validateForbiddenText(response, errors);
             validateManualReview(response, errors);
             factConsistencyValidator.validate(request, response, errors, warnings);
@@ -91,7 +99,7 @@ public class RuleBasedGuardrailService {
         }
 
         if (request.legalContext() == null || request.legalContext().isEmpty()) {
-            warnings.add("legal_context is empty");
+            errors.add("legal_context is required for claim generation");
         }
 
         if (request.templateContext() == null) {
@@ -185,6 +193,21 @@ public class RuleBasedGuardrailService {
         }
 
         if (claimType == GenerateClaimRequest.ClaimType.PAYMENT_DELAY) {
+            if (calculation.originalObligationAmount() == null
+                    || calculation.originalObligationAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                errors.add("backend_calculation.original_obligation_amount must be positive for PAYMENT_DELAY");
+            }
+
+            if (calculation.paidAmount() == null || calculation.paidAmount().compareTo(BigDecimal.ZERO) < 0) {
+                errors.add("backend_calculation.paid_amount must be zero or positive for PAYMENT_DELAY");
+            }
+
+            if (calculation.originalObligationAmount() != null
+                    && calculation.principalDebt() != null
+                    && calculation.originalObligationAmount().compareTo(calculation.principalDebt()) < 0) {
+                errors.add("backend_calculation.original_obligation_amount must not be less than principal_debt");
+            }
+
             if (calculation.principalDebt() == null || calculation.principalDebt().compareTo(BigDecimal.ZERO) <= 0) {
                 errors.add("backend_calculation.principal_debt must be positive for PAYMENT_DELAY");
             }
@@ -302,9 +325,18 @@ public class RuleBasedGuardrailService {
         }
 
         List<GenerateClaimResponse.UsedContractClause> usedClauses = safeList(response.usedContractClauses());
+        boolean numberedContractContextAvailable = safeList(request.contractContext()).stream()
+                .filter(Objects::nonNull)
+                .anyMatch(chunk -> !isBlank(chunk.clauseNumber()));
 
         if (usedClauses.isEmpty()) {
-            warnings.add("Model did not cite contract clauses");
+            if (request.caseFacts() != null
+                    && request.caseFacts().claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                    && numberedContractContextAvailable) {
+                errors.add("Model must cite at least one numbered contract clause from contract_context");
+            } else {
+                warnings.add("Model did not cite contract clauses");
+            }
             return;
         }
 
@@ -322,8 +354,215 @@ public class RuleBasedGuardrailService {
 
             if (!sameText(allowed.clauseNumber(), used.clauseNumber())) {
                 errors.add("Model contract chunk_id and clause_number do not match: " + used.chunkId());
+                continue;
+            }
+
+            if (!isBlank(used.clauseNumber())
+                    && !containsContractClauseReference(response.claimText(), used.clauseNumber())) {
+                errors.add("claim_text does not cite used contract clause: " + used.clauseNumber());
+            }
+
+            if (!isBlank(used.clauseNumber())
+                    && request.caseFacts() != null
+                    && request.caseFacts().claimType() == GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                    && request.caseFacts().contract() != null
+                    && !isBlank(request.caseFacts().contract().contractNumber())
+                    && !containsClauseAndContractNumberInSameSentence(
+                            response.claimText(),
+                            used.clauseNumber(),
+                            request.caseFacts().contract().contractNumber()
+                    )) {
+                errors.add("claim_text contract clause citation must include contract number in the same sentence: "
+                        + used.clauseNumber());
             }
         }
+
+        validatePaymentDelayContractClauseSemantics(request, response, errors);
+    }
+
+    private void validatePaymentDelayContractClauseSemantics(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            List<String> errors
+    ) {
+        if (request.caseFacts() == null
+                || request.caseFacts().claimType() != GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                || isBlank(response.claimText())) {
+            return;
+        }
+
+        requireTypedClauseNearMeaning(
+            request,
+            response,
+            "PAYMENT_TERMS",
+            Pattern.compile("(?iu)(?:срок\\p{L}*\\s+оплат\\p{L}*|оплат\\p{L}*[^\\n]{0,100}(?:должн\\p{L}*|производ\\p{L}*|осуществл\\p{L}*|не\\s+позднее)|не\\s+позднее[^\\n]{0,80}оплат\\p{L}*)"),
+            "payment term",
+            errors
+        );
+
+        if (request.backendCalculation() != null
+                && request.backendCalculation().penaltyType() == GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY
+                && request.backendCalculation().penaltyAmount() != null
+                && request.backendCalculation().penaltyAmount().compareTo(BigDecimal.ZERO) > 0) {
+            requireTypedClauseNearMeaning(
+                request,
+                response,
+                "PENALTY",
+                Pattern.compile("(?iu)(?:неустойк\\p{L}*|пен(?:я|и|ей|ю))"),
+                "contract penalty",
+                errors
+            );
+        }
+
+        Integer responseDays = request.caseFacts().contract() == null
+                ? null
+                : request.caseFacts().contract().claimResponseDays();
+        if (responseDays != null && responseDays > 0) {
+            requireTypedClauseNearMeaning(
+                request,
+                response,
+                "CLAIM_PROCEDURE",
+                Pattern.compile("(?iu)(?:письменн\\p{L}*\\s+ответ\\p{L}*|ответ\\p{L}*[^\\n]{0,80}претензи\\p{L}*|претензи\\p{L}*[^\\n]{0,80}ответ\\p{L}*)"),
+                "claim response deadline",
+                errors
+            );
+        }
+
+        validateNoMixedTypedClauseGroups(request, response.claimText(), errors);
+    }
+
+    private void requireTypedClauseNearMeaning(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            String clauseType,
+            Pattern meaningPattern,
+            String label,
+            List<String> errors
+    ) {
+        List<GenerateClaimRequest.ContractContextChunk> candidates = safeList(request.contractContext()).stream()
+            .filter(Objects::nonNull)
+            .filter(chunk -> clauseType.equals(chunk.clauseType()))
+            .filter(chunk -> !isBlank(chunk.clauseNumber()))
+            .toList();
+        if (candidates.isEmpty()) return;
+
+        Set<String> allowedIds = candidates.stream()
+            .map(GenerateClaimRequest.ContractContextChunk::chunkId)
+            .filter(Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+        boolean selected = safeList(response.usedContractClauses()).stream()
+            .filter(Objects::nonNull)
+            .map(GenerateClaimResponse.UsedContractClause::chunkId)
+            .anyMatch(allowedIds::contains);
+        if (!selected) {
+            errors.add("Model must use a " + clauseType + " contract clause for " + label);
+            return;
+        }
+
+        String contractNumber = request.caseFacts().contract() == null
+            ? null
+            : request.caseFacts().contract().contractNumber();
+        boolean foundNearMeaning = false;
+        for (String line : response.claimText().split("\\R")) {
+            if (!meaningPattern.matcher(line).find()) continue;
+            for (GenerateClaimRequest.ContractContextChunk chunk : candidates) {
+                if (containsContractClauseReference(line, chunk.clauseNumber())
+                        && (isBlank(contractNumber) || line.contains(contractNumber))) {
+                    foundNearMeaning = true;
+                    break;
+                }
+            }
+            if (foundNearMeaning) break;
+        }
+        if (!foundNearMeaning) {
+            errors.add("claim_text must cite a " + clauseType + " contract clause in the same logical line as " + label);
+        }
+    }
+
+    private void validateNoMixedTypedClauseGroups(
+            GenerateClaimRequest request,
+            String claimText,
+            List<String> errors
+    ) {
+        List<GenerateClaimRequest.ContractContextChunk> typed = safeList(request.contractContext()).stream()
+            .filter(Objects::nonNull)
+            .filter(chunk -> !isBlank(chunk.clauseType()) && !isBlank(chunk.clauseNumber()))
+            .toList();
+        if (typed.size() < 2) return;
+
+        /*
+         * Do not reject two independent sentences merely because an LLM happened
+         * to keep them in the same paragraph/line. Only inspect actual grouped
+         * citation spans such as "п. 8.2, 9.4" / "пп. 8.2 и 9.4".
+         */
+        Map<String, String> typeByClause = new HashMap<>();
+        for (GenerateClaimRequest.ContractContextChunk chunk : typed) {
+            typeByClause.put(chunk.clauseNumber(), chunk.clauseType());
+        }
+
+        Pattern groupPattern = Pattern.compile(
+            "(?iu)(?:пункт(?:а|у|е|ом|ы|ов|ам|ами|ах)?|п\\.|пп\\.)\\s*"
+                + "((?:\\d+(?:\\.\\d+)+)(?:\\s*(?:,|;|и)\\s*(?:(?:п\\.|пп\\.)\\s*)?\\d+(?:\\.\\d+)+)+)"
+        );
+        Matcher groupMatcher = groupPattern.matcher(claimText);
+        Pattern numberPattern = Pattern.compile("\\d+(?:\\.\\d+)+");
+        while (groupMatcher.find()) {
+            Set<String> types = new HashSet<>();
+            Matcher numberMatcher = numberPattern.matcher(groupMatcher.group(1));
+            while (numberMatcher.find()) {
+                String type = typeByClause.get(numberMatcher.group());
+                if (type != null) types.add(type);
+            }
+            if (types.size() > 1) {
+                errors.add("claim_text groups contract clauses with different semantic roles in one citation: " + types);
+                return;
+            }
+        }
+    }
+
+    private boolean containsContractClauseReference(String claimText, String clauseNumber) {
+        if (isBlank(claimText) || isBlank(clauseNumber)) {
+            return false;
+        }
+
+        // Legal Russian drafting commonly groups references:
+        // "п. 8.2, 8.4 Договора" / "пп. 8.2 и 8.4".
+        // Treat every number inside such a group as an explicit citation instead
+        // of requiring a separate "п." marker before each number.
+        String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
+        String marker = "(?:пункт(?:а|у|е|ом|ы|ов|ам|ами|ах)?|п\\.|пп\\.)\\s*"
+                + previousClauses
+                + Pattern.quote(clauseNumber);
+        return Pattern.compile("(?iu)" + marker).matcher(claimText).find();
+    }
+
+    private boolean containsClauseAndContractNumberInSameSentence(
+            String claimText,
+            String clauseNumber,
+            String contractNumber
+    ) {
+        if (isBlank(claimText) || isBlank(clauseNumber) || isBlank(contractNumber)) {
+            return false;
+        }
+
+        String previousClauses = "(?:\\d+(?:\\.\\d+)+\\s*(?:,|;|и)\\s*)*";
+        String clauseMarker = "(?:пункт(?:а|у|е|ом|ы|ов|ам|ами|ах)?|п\\.|пп\\.)\\s*"
+                + previousClauses
+                + Pattern.quote(clauseNumber);
+        String contractMarker = "(?:договор\\p{L}*\\s*)?(?:№\\s*)?"
+                + Pattern.quote(contractNumber);
+
+        // Clause numbers (4.2) and contract dates (10.01.2026) themselves
+        // contain dots, so a dot cannot be used as a sentence delimiter here.
+        // Require both markers on the same logical line instead. This still
+        // enforces a local, human-readable citation without rejecting normal
+        // Russian legal formatting.
+        Pattern linePattern = Pattern.compile(
+                "(?iu)(?=[^\\n]*" + clauseMarker + ")"
+                        + "(?=[^\\n]*" + contractMarker + ")"
+                        + "[^\\n]+"
+        );
+        return linePattern.matcher(claimText).find();
     }
 
     private void validateUsedLawArticles(
@@ -333,13 +572,10 @@ public class RuleBasedGuardrailService {
             List<String> warnings
     ) {
         Map<String, GenerateClaimRequest.LegalContextItem> allowedByChunkId = new HashMap<>();
-        Set<String> legacyAllowedPairs = new HashSet<>();
-
         for (GenerateClaimRequest.LegalContextItem item : safeList(request.legalContext())) {
             if (item == null || isBlank(item.lawCode()) || isBlank(item.article())) {
                 continue;
             }
-            legacyAllowedPairs.add(normalizeKey(item.lawCode(), item.article()));
             if (!isBlank(item.chunkId())) {
                 allowedByChunkId.put(item.chunkId(), item);
             }
@@ -348,7 +584,8 @@ public class RuleBasedGuardrailService {
         List<GenerateClaimResponse.UsedLawArticle> usedArticles = safeList(response.usedLawArticles());
 
         if (usedArticles.isEmpty()) {
-            warnings.add("Model did not cite law articles");
+            errors.add("Model must cite at least one applicable law article from legal_context");
+            validateNoUnknownLawReferences(request, response, errors);
             return;
         }
 
@@ -358,25 +595,269 @@ public class RuleBasedGuardrailService {
                 continue;
             }
 
+            GenerateClaimRequest.LegalContextItem allowed = null;
+
             if (!allowedByChunkId.isEmpty()) {
                 if (isBlank(used.chunkId())) {
                     errors.add("Model law citation must contain chunk_id");
                     continue;
                 }
 
-                GenerateClaimRequest.LegalContextItem allowed = allowedByChunkId.get(used.chunkId());
+                allowed = allowedByChunkId.get(used.chunkId());
                 if (allowed == null) {
                     errors.add("Model used unknown legal chunk_id: " + used.chunkId());
                     continue;
                 }
 
-                if (!sameText(allowed.lawCode(), used.lawCode()) || !sameText(allowed.article(), used.article())) {
+                if (!sameLawSource(allowed.lawCode(), used.lawCode()) || !sameText(allowed.article(), used.article())) {
                     errors.add("Model legal chunk_id does not match law_code/article: " + used.chunkId());
+                    continue;
                 }
-            } else if (!legacyAllowedPairs.contains(normalizeKey(used.lawCode(), used.article()))) {
+            } else if (!containsAllowedLawPair(request.legalContext(), used)) {
                 errors.add("Model used law article not present in legal_context: " + used.lawCode() + " " + used.article());
+                continue;
+            } else {
+                allowed = findLegacyLegalContextItem(request.legalContext(), used);
+            }
+
+            validateLawCitationPresentInClaimText(allowed, used, response.claimText(), errors);
+        }
+
+        validateNoUnknownLawReferences(request, response, errors);
+    }
+
+    private void validatePaymentDelayLawSemantics(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            List<String> errors
+    ) {
+        if (request.caseFacts() == null
+                || request.caseFacts().claimType() != GenerateClaimRequest.ClaimType.PAYMENT_DELAY
+                || request.backendCalculation() == null
+                || isBlank(response.claimText())) {
+            return;
+        }
+
+        Set<String> referenced = extractReferencedArticleNumbers(response.claimText());
+        if (request.backendCalculation().penaltyType() == GenerateClaimRequest.PenaltyType.CONTRACT_PENALTY) {
+            if (legalContextHasArticle(request, "330") && !referenced.contains("330")) {
+                errors.add("CONTRACT_PENALTY must be legally qualified by Article 330 when it is available in legal_context");
+            }
+            if (referenced.contains("395")) {
+                errors.add("CONTRACT_PENALTY must not be presented as Article 395 interest");
+            }
+        } else if (request.backendCalculation().penaltyType() == GenerateClaimRequest.PenaltyType.LEGAL_INTEREST) {
+            if (legalContextHasArticle(request, "395") && !referenced.contains("395")) {
+                errors.add("LEGAL_INTEREST must cite Article 395 when it is available in legal_context");
+            }
+            if (referenced.contains("330")) {
+                errors.add("LEGAL_INTEREST must not be presented as contractual penalty under Article 330");
             }
         }
+    }
+
+    private boolean legalContextHasArticle(GenerateClaimRequest request, String expectedArticle) {
+        return safeList(request.legalContext()).stream()
+            .filter(Objects::nonNull)
+            .map(GenerateClaimRequest.LegalContextItem::article)
+            .map(this::firstArticleNumber)
+            .anyMatch(expectedArticle::equals);
+    }
+
+    private GenerateClaimRequest.LegalContextItem findLegacyLegalContextItem(
+            List<GenerateClaimRequest.LegalContextItem> legalContext,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        for (GenerateClaimRequest.LegalContextItem item : safeList(legalContext)) {
+            if (item != null
+                    && sameLawSource(item.lawCode(), used.lawCode())
+                    && sameText(item.article(), used.article())) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private void validateLawCitationPresentInClaimText(
+            GenerateClaimRequest.LegalContextItem allowed,
+            GenerateClaimResponse.UsedLawArticle used,
+            String claimText,
+            List<String> errors
+    ) {
+        if (isBlank(claimText)) {
+            return;
+        }
+
+        String articleNumber = firstArticleNumber(used.article());
+        if (articleNumber == null && allowed != null) {
+            articleNumber = firstArticleNumber(allowed.article());
+        }
+
+        if (articleNumber == null || !extractReferencedArticleNumbers(claimText).contains(articleNumber)) {
+            errors.add("claim_text does not cite used law article: " + used.lawCode() + " " + used.article());
+            return;
+        }
+
+        if (!containsLawSourceReference(claimText, allowed, used)) {
+            errors.add("claim_text cites article " + articleNumber + " without the expected law source: "
+                    + expectedLawSourceLabel(allowed, used));
+        }
+    }
+
+    /**
+     * Legal citations are validated semantically rather than by exact string equality.
+     * For example, both "ГК РФ, ст. 309" and "в соответствии со ст. 309 ГК РФ"
+     * are the same reference and must be accepted.
+     */
+    private boolean containsLawSourceReference(
+            String claimText,
+            GenerateClaimRequest.LegalContextItem allowed,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        String articleNumber = firstArticleNumber(used.article());
+        if (articleNumber == null && allowed != null) {
+            articleNumber = firstArticleNumber(allowed.article());
+        }
+        if (articleNumber == null) {
+            return false;
+        }
+
+        String source = ((allowed == null ? "" : Objects.toString(allowed.lawCode(), ""))
+                + " " + (allowed == null ? "" : Objects.toString(allowed.citation(), ""))
+                + " " + Objects.toString(used.lawCode(), "")).toLowerCase(Locale.ROOT);
+
+        String lawPattern = lawSourcePattern(source, allowed, used);
+        if (lawPattern == null) {
+            return true;
+        }
+
+        String articlePattern = "(?:статья|статьи|статью|статье|статьей|статьёй|статьями|статей|ст\\.?)\\s*"
+                + "(?:\\d+(?:\\.\\d+)?\\s*(?:,|;|и)\\s*)*"
+                + Pattern.quote(articleNumber);
+
+        Pattern referencePattern = Pattern.compile(
+                "(?isu)(?:"
+                        + articlePattern + ".{0,120}?" + lawPattern
+                        + "|"
+                        + lawPattern + ".{0,120}?" + articlePattern
+                        + ")"
+        );
+
+        return referencePattern.matcher(claimText).find();
+    }
+
+    private String lawSourcePattern(
+            String source,
+            GenerateClaimRequest.LegalContextItem allowed,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        if (source.contains("гк рф") || source.contains("гражданск")) {
+            return "(?:гк\\s*рф|гражданск\\p{L}*\\s+кодекс\\p{L}*\\s+российск\\p{L}*\\s+федерац\\p{L}*)";
+        }
+
+        if (source.contains("апк рф") || source.contains("арбитражн") && source.contains("процессуальн")) {
+            return "(?:апк\\s*рф|арбитражн\\p{L}*\\s+процессуальн\\p{L}*\\s+кодекс\\p{L}*\\s+российск\\p{L}*\\s+федерац\\p{L}*)";
+        }
+
+        Matcher federalLawMatcher = Pattern.compile("(?iu)(\\d+)\\s*[-–—]?\\s*фз").matcher(source);
+        if (federalLawMatcher.find()) {
+            String lawNumber = Pattern.quote(federalLawMatcher.group(1));
+            return "(?:федеральн\\p{L}*\\s+закон\\p{L}*\\s*(?:№\\s*)?"
+                    + lawNumber
+                    + "\\s*[-–—]?\\s*фз|"
+                    + lawNumber
+                    + "\\s*[-–—]?\\s*фз)";
+        }
+
+        String expected = allowed == null ? null : allowed.lawCode();
+        if (isBlank(expected)) {
+            expected = used.lawCode();
+        }
+        if (isBlank(expected)) {
+            return null;
+        }
+
+        expected = expected.replaceAll("\\s*\\([^)]*\\)\\s*$", "").trim();
+        return expected.isBlank() ? null : Pattern.quote(expected);
+    }
+
+    private String expectedLawSourceLabel(
+            GenerateClaimRequest.LegalContextItem allowed,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        if (allowed != null && !isBlank(allowed.lawCode())) {
+            return allowed.lawCode();
+        }
+        return used.lawCode();
+    }
+
+    private void validateNoUnknownLawReferences(
+            GenerateClaimRequest request,
+            GenerateClaimResponse response,
+            List<String> errors
+    ) {
+        Set<String> allowedArticleNumbers = new HashSet<>();
+        for (GenerateClaimRequest.LegalContextItem item : safeList(request.legalContext())) {
+            if (item == null) {
+                continue;
+            }
+            String articleNumber = firstArticleNumber(item.article());
+            if (articleNumber != null) {
+                allowedArticleNumbers.add(articleNumber);
+            }
+        }
+
+        for (String referencedArticle : extractReferencedArticleNumbers(response.claimText())) {
+            if (!allowedArticleNumbers.contains(referencedArticle)) {
+                errors.add("claim_text cites law article not present in legal_context: " + referencedArticle);
+            }
+        }
+    }
+
+    private Set<String> extractReferencedArticleNumbers(String text) {
+        if (isBlank(text)) {
+            return Set.of();
+        }
+
+        Set<String> result = new LinkedHashSet<>();
+
+        // Capture both standalone references ("ст. 395") and grouped references
+        // ("ст. 309, 314 ГК РФ"). The old implementation only saw the first
+        // article in a group and falsely blocked otherwise valid legal drafting.
+        Pattern articleListPattern = Pattern.compile(
+                "(?iu)(?:^|[^\\p{L}\\p{N}])"
+                        + "(?:статья|статьи|статью|статье|статьей|статьёй|статьями|статей|ст\\.?)\\s*"
+                        + "((?:\\d+(?:\\.\\d+)?)(?:\\s*(?:,|;|и)\\s*\\d+(?:\\.\\d+)?)*)"
+        );
+        Matcher listMatcher = articleListPattern.matcher(text);
+        while (listMatcher.find()) {
+            Matcher numberMatcher = ARTICLE_NUMBER_PATTERN.matcher(listMatcher.group(1));
+            while (numberMatcher.find()) {
+                result.add(numberMatcher.group());
+            }
+        }
+
+        return result;
+    }
+
+    private String firstArticleNumber(String article) {
+        if (isBlank(article)) {
+            return null;
+        }
+        Matcher matcher = ARTICLE_NUMBER_PATTERN.matcher(article);
+        return matcher.find() ? matcher.group() : null;
+    }
+
+    private String normalizeCitationText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .toLowerCase(Locale.ROOT)
+                .replace('ё', 'е')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
     }
 
     private void validateForbiddenText(GenerateClaimResponse response, List<String> errors) {
@@ -385,8 +866,16 @@ public class RuleBasedGuardrailService {
                 + (response.summaryForLawyer() == null ? "" : response.summaryForLawyer()))
                 .toLowerCase(Locale.ROOT);
 
+        // A neutral warning about the creditor's right to go to court after non-performance
+        // of the claim is allowed by the product requirements. Concrete procedural actions,
+        // invented courts and aggressive escalation language remain prohibited.
+        String textWithoutAllowedCourtWarning = text.replaceAll(
+                "(?iu)в\\s+случае\\s+неисполнени\\p{L}*[^.]{0,180}?"
+                        + "(?:вправе|имеет\\s+право)[^.]{0,80}?обратиться\\s+в\\s+суд",
+                ""
+        );
+
         List<String> forbiddenPhrases = List.of(
-                "обратиться в суд",
                 "в судебном порядке",
                 "исковое заявление",
                 "подать иск",
@@ -397,7 +886,7 @@ public class RuleBasedGuardrailService {
         );
 
         for (String phrase : forbiddenPhrases) {
-            if (text.contains(phrase)) {
+            if (textWithoutAllowedCourtWarning.contains(phrase)) {
                 errors.add("Model used forbidden court/escalation phrase: " + phrase);
             }
         }
@@ -431,6 +920,64 @@ public class RuleBasedGuardrailService {
         }
 
         return expected.trim().equalsIgnoreCase(actual.trim());
+    }
+
+    /**
+     * Compares structured law source labels semantically. RAG may use a full
+     * official label (for example, "ГК РФ (часть первая)"), while the model
+     * returns the conventional short form ("ГК РФ"). These are the same
+     * source and must not be rejected before claim-text citation validation.
+     */
+    private boolean sameLawSource(String expected, String actual) {
+        if (expected == null && actual == null) {
+            return true;
+        }
+        if (expected == null || actual == null) {
+            return false;
+        }
+
+        return canonicalLawSource(expected).equals(canonicalLawSource(actual));
+    }
+
+    private String canonicalLawSource(String value) {
+        String normalized = normalizeCitationText(value);
+
+        if (normalized.contains("гк рф")
+                || (normalized.contains("гражданск")
+                && normalized.contains("кодекс")
+                && !normalized.contains("процессуальн"))) {
+            return "GK_RF";
+        }
+
+        if (normalized.contains("апк рф")
+                || (normalized.contains("арбитражн")
+                && normalized.contains("процессуальн")
+                && normalized.contains("кодекс"))) {
+            return "APK_RF";
+        }
+
+        Matcher federalLawMatcher = Pattern.compile("(?iu)(\\d+)\\s*[-–—]?\\s*фз").matcher(value);
+        if (federalLawMatcher.find()) {
+            return "FZ_" + federalLawMatcher.group(1);
+        }
+
+        // Parenthetical clarifications such as "(часть первая)" are metadata,
+        // not a different source. Keep other labels strict after removing them.
+        return normalizeCitationText(value.replaceAll("\\([^)]*\\)", " "));
+    }
+
+    private boolean containsAllowedLawPair(
+            List<GenerateClaimRequest.LegalContextItem> legalContext,
+            GenerateClaimResponse.UsedLawArticle used
+    ) {
+        for (GenerateClaimRequest.LegalContextItem item : safeList(legalContext)) {
+            if (item != null
+                    && sameLawSource(item.lawCode(), used.lawCode())
+                    && sameText(item.article(), used.article())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String normalizeKey(String first, String second) {

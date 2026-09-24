@@ -138,7 +138,7 @@ components:
           additionalProperties: true
     GenerateClaimDocumentRequest:
       type: object
-      required: [claimId]
+      required: [claimId, claimVersionId]
       properties:
         templateId: { type: string, format: uuid }
         templateVersionId: { type: string, format: uuid }
@@ -147,6 +147,10 @@ components:
           type: string
           description: Финальный текст претензии для формирования файла без шаблона
         claimId: { type: string, format: uuid }
+        claimVersionId:
+          type: string
+          format: uuid
+          description: Идентификатор финальной версии претензии; для одной версии допускается не более одного документа каждого формата
         outputType:
           type: string
           enum: [CLAIM_DOCX, CLAIM_PDF]

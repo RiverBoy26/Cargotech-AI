@@ -66,7 +66,8 @@ public class AiClaimResponseDecoder {
                     List.of(),
                     true
                 ),
-                null
+                null,
+                List.of()
             );
         } catch (ClaimException exception) {
             throw exception;

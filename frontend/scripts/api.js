@@ -21,6 +21,7 @@ const STATUS_MAP = {
   PAID: { text: 'Оплачено', className: 'status-pill-success paid' },
   ESCALATED_TO_COURT: { text: 'Эскалация', className: 'status-pill-danger escalation' },
   CANCELLED: { text: 'Отменено', className: 'status-pill-info draft' },
+  CANCELLED_PAID: { text: 'Оплачено до отправки', className: 'status-pill-success status-pill-paid-before-send paid' },
   CLOSED_IN_COURT: { text: 'Закрыто', className: 'status-pill-success closed' },
 };
 
@@ -84,6 +85,47 @@ function mapStatus(status) {
   return STATUS_MAP[status] || { text: status || '—', className: 'status-pill-info draft' };
 }
 
+function showToast(message, type = 'error') {
+  let region = document.getElementById('app_toast_region');
+  if (!region) {
+    region = document.createElement('div');
+    region.id = 'app_toast_region';
+    region.setAttribute('aria-live', 'polite');
+    Object.assign(region.style, {
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      zIndex: '10000',
+      display: 'grid',
+      gap: '10px',
+      width: 'min(420px, calc(100vw - 40px))',
+    });
+    document.body.appendChild(region);
+  }
+
+  const toast = document.createElement('div');
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  toast.textContent = String(message || 'Операция завершена');
+  const palette = type === 'success'
+    ? { background: '#e8f7ef', border: '#198754', color: '#0f5132' }
+    : type === 'info'
+      ? { background: '#eef4ff', border: '#2463eb', color: '#173b82' }
+      : { background: '#fff0f0', border: '#c62828', color: '#7a1717' };
+  Object.assign(toast.style, {
+    padding: '14px 16px',
+    border: `1px solid ${palette.border}`,
+    borderLeftWidth: '5px',
+    borderRadius: '8px',
+    background: palette.background,
+    color: palette.color,
+    boxShadow: '0 10px 30px rgba(0, 0, 0, .14)',
+    whiteSpace: 'pre-line',
+    fontFamily: 'inherit',
+  });
+  region.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 5000);
+}
+
 function getQueryParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }
@@ -95,7 +137,7 @@ function fillUserHeader() {
   const nameEl = document.querySelector('.topbar_usename');
   const roleEl = document.querySelector('.topbar_user_role');
 
-  if (nameEl && user.fullName) nameEl.textContent = user.fullName;
+  if (nameEl) nameEl.textContent = formatUserFullName(user);
   if (roleEl && user.roles?.[0]) {
     roleEl.textContent = ROLE_LABELS[user.roles[0]]?.toLowerCase() || user.roles[0];
   }
@@ -183,6 +225,29 @@ async function login(email, password) {
   return data;
 }
 
+async function refreshSession() {
+  const refreshToken = localStorage.getItem(STORAGE.refreshToken);
+  if (!refreshToken) {
+    clearSession();
+    window.location.href = '/pages/authorization/login.html';
+    throw new Error('Сессия истекла. Войдите снова.');
+  }
+
+  try {
+    const data = await apiRequest('/auth/refresh', {
+      method: 'POST',
+      skipAuth: true,
+      body: JSON.stringify({ refreshToken }),
+    });
+    saveSession(data);
+    return data;
+  } catch (error) {
+    clearSession();
+    window.location.href = '/pages/authorization/login.html';
+    throw error;
+  }
+}
+
 async function logout() {
   const refreshToken = localStorage.getItem(STORAGE.refreshToken);
 
@@ -198,6 +263,19 @@ async function logout() {
     clearSession();
     window.location.href = '/pages/authorization/login.html';
   }
+}
+
+function formatUserFullName(user) {
+  const separatedName = [user?.lastName, user?.firstName, user?.middleName]
+    .filter((part) => typeof part === 'string' && part.trim())
+    .map((part) => part.trim())
+    .join(' ');
+
+  if (separatedName) return separatedName;
+  if (typeof user?.fullName === 'string' && user.fullName.trim()) {
+    return user.fullName.trim();
+  }
+  return '—';
 }
 
 function bindLogoutButton() {
@@ -233,7 +311,9 @@ async function syncUserProfile() {
     ...getStoredUser(),
     userId: me.id,
     organizationId: me.organizationId,
-    fullName: me.fullName,
+    firstName: me.firstName,
+    lastName: me.lastName,
+    middleName: me.middleName,
     email: me.email,
     roles: me.roles,
     permissions: me.permissions,
@@ -248,7 +328,7 @@ async function getUsers(params = {}) {
   const qs = buildQuery({
     page: params.page ?? 0,
     size: params.size ?? 50,
-    sort: params.sort ?? 'fullName,asc',
+    sort: params.sort ?? 'lastName,asc',
     search: params.search,
     active: params.active,
     role: params.role,
@@ -259,6 +339,10 @@ async function getUsers(params = {}) {
 
 async function getUser(userId) {
   return apiRequest(`/users/${userId}`);
+}
+
+async function getOrganizationLawyer() {
+  return apiRequest('/users/organization/lawyer');
 }
 
 async function createUser(payload) {
@@ -278,6 +362,13 @@ async function unblockUser(userId) {
 
 async function getRoles() {
   return apiRequest('/roles');
+}
+
+async function updateUser(userId, payload) {
+  return apiRequest(`/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 // --- Organizations ---
@@ -348,11 +439,35 @@ async function updateClaim(claimId, payload) {
   });
 }
 
+async function updateAccountantClaimDraft(claimId, payload) {
+  return apiRequest(`/claims/${claimId}/accountant-draft`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 async function claimAction(claimId, action, reason) {
   const body = reason ? JSON.stringify({ reason }) : undefined;
   return apiRequest(`/claims/${claimId}/${action}`, {
     method: 'POST',
     body,
+  });
+}
+
+async function requestNonPaymentConfirmation(claimId) {
+  return apiRequest(`/claims/${claimId}/request-non-payment-confirmation`, {
+    method: 'POST',
+  });
+}
+
+async function getClaimSendChecklist(claimId) {
+  return apiRequest(`/claims/${claimId}/send-checklist`);
+}
+
+async function overrideClaimValidation(claimId, reason) {
+  return apiRequest(`/claims/${claimId}/validation-override`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
   });
 }
 
@@ -379,12 +494,28 @@ async function recalculateClaim(claimId) {
   return apiRequest(`/calculations/claim/${claimId}/recalculate`, { method: 'POST' });
 }
 
+async function downloadClaimCalculation(claimId, format) {
+  const normalizedFormat = String(format || '').toLowerCase();
+  const response = await fetch(`${API_BASE}/calculations/claim/${claimId}/export/${normalizedFormat}`, {
+    headers: { Authorization: `Bearer ${getAccessToken()}` },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `Ошибка ${response.status}`);
+  }
+  await downloadResponseFile(response, `calculation-${claimId}.${normalizedFormat}`);
+}
+
 async function generateClaimText(claimId) {
   return apiRequest(`/claims/${claimId}/generate`, { method: 'POST' });
 }
 
 async function getClaimVersions(claimId) {
   return apiRequest(`/claims/${claimId}/versions`);
+}
+
+async function getClaimVersionDiff(claimId, versionId) {
+  return apiRequest(`/claims/${claimId}/versions/${versionId}/diff`);
 }
 
 async function createClaimVersion(claimId, payload) {
@@ -428,9 +559,52 @@ async function createContract(payload) {
   return apiRequest('/contracts', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+async function uploadContractDocument(file, documentNumber, documentDate) {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('documentType', 'CONTRACT');
+  if (documentNumber) body.append('documentNumber', documentNumber);
+  if (documentDate) body.append('documentDate', documentDate);
+  body.append('description', 'Файл договора для автоматического разбора условий');
+  return apiRequest('/documents/upload', { method: 'POST', body });
+}
+
+async function getContractExtraction(contractId) {
+  return apiRequest(`/contracts/${contractId}/extraction`);
+}
+
+async function submitContractExtraction(contractId, candidates) {
+  return apiRequest(`/contracts/${contractId}/extraction/results`, {
+    method: 'POST',
+    body: JSON.stringify({ candidates }),
+  });
+}
+
+async function confirmContractExtraction(contractId) {
+  return apiRequest(`/contracts/${contractId}/extraction/confirm`, { method: 'POST' });
+}
+
 async function getShipments(params = {}) {
   const qs = buildQuery({ page: params.page ?? 0, size: params.size ?? 100 });
   return apiRequest(`/shipments?${qs}`);
+}
+
+async function getOverdueShipments() {
+  return apiRequest('/shipments/overdue');
+}
+
+async function submitClaimToLegalReview(claimId, payload) {
+  return apiRequest(`/claims/${claimId}/submit-to-legal-review`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+async function confirmShipmentNonPayment(shipmentId, payload) {
+  return apiRequest(`/shipments/${shipmentId}/confirm-non-payment`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 async function getShipment(shipmentId) {
@@ -439,6 +613,11 @@ async function getShipment(shipmentId) {
 
 async function createShipment(payload) {
   return apiRequest('/shipments', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+async function deleteClaim(claimId) {
+  await refreshSession();
+  return apiRequest(`/claims/${claimId}`, { method: 'DELETE' });
 }
 
 // --- Payments ---
@@ -452,12 +631,25 @@ async function getPayments(params = {}) {
   return apiRequest(`/payments?${qs}`);
 }
 
+async function deletePayment(paymentId, reason) {
+  await refreshSession();
+  const qs = buildQuery({ reason });
+  return apiRequest(`/payments/${paymentId}?${qs}`, { method: 'DELETE' });
+}
+
 async function getPayment(paymentId) {
   return apiRequest(`/payments/${paymentId}`);
 }
 
 async function createPayment(payload) {
   return apiRequest('/payments', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+async function createPaymentMatch(paymentId, payload) {
+  return apiRequest(`/payments/${paymentId}/matches`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -550,11 +742,15 @@ async function downloadDocument(documentId) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.message || `Ошибка ${response.status}`);
   }
+  await downloadResponseFile(response, `document-${documentId}`);
+}
+
+async function downloadResponseFile(response, fallbackFilename) {
   const blob = await response.blob();
   const disposition = response.headers.get('Content-Disposition') || '';
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
   const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-  const filename = encoded ? decodeURIComponent(encoded) : (plain || `document-${documentId}`);
+  const filename = encoded ? decodeURIComponent(encoded) : (plain || fallbackFilename);
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;

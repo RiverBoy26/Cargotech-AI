@@ -10,6 +10,9 @@ public record ClaimPaymentData(
     String debtorInn,
     String shipmentOrderNumber,
     BigDecimal serviceAmount,
+    BigDecimal calculatedPaidAmount,
+    BigDecimal remainingPrincipalAmount,
+    BigDecimal remainingPenaltyAmount,
     String status
 ) {
 }

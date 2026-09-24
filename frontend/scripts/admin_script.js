@@ -5,6 +5,71 @@ const ROLE_CLASS = {
   SUPER_ADMIN: 'role-pill-admin',
 };
 
+const CONTRACT_STATUS_LABEL = {
+  DRAFT: 'Черновик', ACTIVE: 'Действует', EXPIRED: 'Истёк',
+  TERMINATED: 'Расторгнут', ARCHIVED: 'Архивный',
+};
+const EXTRACTION_STATUS_LABEL = {
+  NOT_STARTED: 'Файл не загружен', PENDING: 'Идёт распознавание',
+  REVIEW_REQUIRED: 'Требуется проверка', CONFIRMED: 'Разбор подтверждён', FAILED: 'Ошибка разбора',
+};
+const EXTRACTION_FIELD_LABEL = {
+  CONTRACT_NUMBER: 'Номер договора', SIGNED_AT: 'Дата договора',
+  PAYMENT_DAYS: 'Срок оплаты', PAYMENT_DAY_TYPE: 'Тип дней срока оплаты', PAYMENT_START_EVENT: 'Начало срока оплаты',
+  PAYMENT_SCHEDULE_TYPE: 'Перенос срока оплаты', PAYMENT_WEEK_DAYS: 'Платёжные дни',
+  PENALTY_TYPE: 'Вид неустойки', PENALTY_RATE: 'Ставка',
+  PENALTY_CAP_PERCENT: 'Максимальный размер неустойки, %', PENALTY_CAP_BASE: 'База ограничения',
+  CLAIM_RESPONSE_DAYS: 'Срок ответа', CLAIM_RESPONSE_DAY_TYPE: 'Тип дней срока ответа', JURISDICTION: 'Подсудность', EXACT_CLAUSE: 'Точный пункт договора',
+};
+const CONTRACT_REVIEW_SCALAR_FIELDS = [
+  'CONTRACT_NUMBER', 'SIGNED_AT', 'PAYMENT_DAYS', 'PAYMENT_DAY_TYPE', 'PAYMENT_START_EVENT',
+  'PAYMENT_SCHEDULE_TYPE', 'PAYMENT_WEEK_DAYS',
+  'PENALTY_TYPE', 'PENALTY_RATE', 'PENALTY_CAP_PERCENT', 'PENALTY_CAP_BASE',
+  'CLAIM_RESPONSE_DAYS', 'CLAIM_RESPONSE_DAY_TYPE', 'JURISDICTION',
+];
+const PAYMENT_SCHEDULE_FIELDS = new Set(['PAYMENT_SCHEDULE_TYPE', 'PAYMENT_WEEK_DAYS']);
+const PENALTY_CAP_FIELDS = new Set(['PENALTY_CAP_PERCENT', 'PENALTY_CAP_BASE']);
+const SPECIAL_CONTRACT_FIELDS = new Set([...PAYMENT_SCHEDULE_FIELDS, ...PENALTY_CAP_FIELDS]);
+const INTERNAL_CONTRACT_FIELDS = new Set(['CLIENT_INN', 'EXPEDITOR_INN']);
+const PAYMENT_START_EVENT_OPTIONS = {
+  ACT_SIGNED: 'Дата подписания акта', UNLOADING_DATE: 'Дата выгрузки',
+  TTN_SIGNED: 'Дата подписания ТТН', INVOICE_DATE: 'Дата счёта',
+  REGISTRY_INCLUDED: 'Дата включения рейса в реестр',
+  DOCUMENT_PACKAGE_RECEIVED: 'Дата получения полного комплекта документов',
+  LATEST_ACT_OR_DOCUMENT_PACKAGE: 'Более поздняя из даты акта и даты получения документов',
+  ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE: 'Дата акта при обязательном получении документов',
+};
+const TERM_DAY_TYPE_OPTIONS = {
+  CALENDAR_DAYS: 'Календарные дни', WORKING_DAYS: 'Рабочие дни', BANKING_DAYS: 'Банковские дни',
+};
+const PAYMENT_SCHEDULE_TYPE_OPTIONS = {
+  NEXT_PAYMENT_DAY: 'Ближайший платёжный день (включая расчётную дату)',
+  NEXT_PAYMENT_DAY_AFTER_TERM: 'Первый платёжный день строго после истечения срока',
+};
+const PAYMENT_WEEK_DAY_OPTIONS = {
+  MONDAY: 'Пн', TUESDAY: 'Вт', WEDNESDAY: 'Ср', THURSDAY: 'Чт',
+  FRIDAY: 'Пт', SATURDAY: 'Сб', SUNDAY: 'Вс',
+};
+const PENALTY_TYPE_OPTIONS = {
+  CONTRACT_PENALTY: 'Договорная неустойка', ARTICLE_395: 'Статья 395 ГК РФ', NONE: 'Не начисляется',
+};
+const PENALTY_CAP_BASE_OPTIONS = {
+  PRINCIPAL_DEBT: 'Основной долг',
+  OUTSTANDING_DEBT: 'Непогашенная задолженность',
+  SHIPMENT_COST: 'Стоимость соответствующей перевозки',
+  INVOICE_AMOUNT: 'Сумма соответствующего счёта',
+};
+const CLAUSE_TYPE_OPTIONS = {
+  PAYMENT_TERMS: 'Условия оплаты', PENALTY: 'Неустойка',
+  CLAIM_PROCEDURE: 'Претензионный порядок', JURISDICTION: 'Подсудность',
+  LIABILITY: 'Ответственность', OTHER: 'Другое',
+};
+const PARTY_TYPE_LABEL = { CLIENT: 'Клиент', EXPEDITOR: 'Экспедитор', OTHER: 'Другое' };
+const PARTY_STATUS_LABEL = { ACTIVE: 'Активен', ARCHIVED: 'Архивирован' };
+const SHIPMENT_STATUS_LABEL = {
+  CREATED: 'Создан', IN_PROGRESS: 'В пути', COMPLETED: 'Завершён', CANCELLED: 'Отменён',
+};
+
 function escapeAdmin(value) {
   return String(value ?? '—')
     .replaceAll('&', '&amp;')
@@ -17,8 +82,12 @@ function mapUserRow(user) {
   const role = user.roles?.[0] || '—';
   return {
     id: user.id,
-    fullName: user.fullName,
+    fullName: formatUserFullName(user),
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+    middleName: user.middleName || '',
     email: user.email,
+    organizationId: user.organizationId,
     role: ROLE_LABELS[role] || role,
     roleClass: ROLE_CLASS[role] || '',
     status: user.active ? 'Активен' : 'Заблокирован',
@@ -28,6 +97,9 @@ function mapUserRow(user) {
 }
 
 function renderActionButton(user) {
+  if (String(user.id) === String(getStoredUser()?.userId)) {
+    return '<span class="action_btn_done">Текущая учётная запись</span>';
+  }
   if (user.active) {
     return `<button class="action_btn action_btn_block" data-action="block" data-id="${user.id}">Заблокировать</button>`;
   }
@@ -37,7 +109,7 @@ function renderActionButton(user) {
 function renderUserRow(user) {
   return `
     <div class="user_row" data-id="${user.id}">
-      <div class="user_row_name">${user.fullName}</div>
+      <div class="user_row_name">${escapeAdmin(user.fullName)}</div>
       <div class="user_row_email">${user.email}</div>
       <div class="user_row_role_cell">
         <span class="role-pill ${user.roleClass}">${user.role}</span>
@@ -63,7 +135,7 @@ function bindUserActions() {
         if (action === 'unblock') await unblockUser(id);
         await loadUsers();
       } catch (err) {
-        alert(err.message);
+        showToast(err.message, 'error');
       }
     });
   });
@@ -84,10 +156,149 @@ async function loadUsers() {
 
     listEl.innerHTML = users.map(renderUserRow).join('');
     bindUserActions();
+    bindUserRowClicks();
   } catch (err) {
     listEl.innerHTML = `<div class="user_row">Ошибка: ${err.message}</div>`;
   }
 }
+
+const modal = document.getElementById('user_modal_overlay');
+const modalLoading = document.getElementById('modal_loading');
+const modalError = document.getElementById('modal_error');
+const modalFieldGrid = document.querySelector('.modal_field_grid');
+
+let currentModalUser = null;
+
+function showModal() {
+  modal.classList.add('modal_overlay_visible');
+}
+
+function hideModal() {
+  modal.classList.remove('modal_overlay_visible');
+  modalLoading.style.display = 'none';
+  modalError.textContent = '';
+  modalFieldGrid.style.display = 'grid';
+  setModalEditMode(false);
+  currentModalUser = null;
+}
+
+function setModalEditMode(isEditing) {
+  ['firstname', 'lastname', 'middlename', 'email'].forEach((field) => {
+    document.getElementById(`modal_user_${field}_view`).style.display = isEditing ? 'none' : 'block';
+    document.getElementById(`modal_user_${field}_input`).style.display = isEditing ? 'block' : 'none';
+  });
+  document.getElementById('modal_edit_btn').style.display = isEditing ? 'none' : 'inline-block';
+  document.getElementById('modal_save_btn').style.display = isEditing ? 'inline-block' : 'none';
+  document.getElementById('modal_cancel_edit_btn').style.display = isEditing ? 'inline-block' : 'none';
+  document.getElementById('modal_edit_message').textContent = '';
+}
+
+function fillModal(user) {
+  currentModalUser = user;
+  document.getElementById('modal_user_name').textContent = user.fullName;
+
+  document.getElementById('modal_user_firstname_view').textContent = user.firstName || '—';
+  document.getElementById('modal_user_firstname_input').value = user.firstName;
+  document.getElementById('modal_user_lastname_view').textContent = user.lastName || '—';
+  document.getElementById('modal_user_lastname_input').value = user.lastName;
+  document.getElementById('modal_user_middlename_view').textContent = user.middleName || '—';
+  document.getElementById('modal_user_middlename_input').value = user.middleName;
+  document.getElementById('modal_user_email_view').textContent = user.email;
+  document.getElementById('modal_user_email_input').value = user.email;
+
+  document.getElementById('modal_user_role').textContent = user.role;
+  document.getElementById('modal_user_status').textContent = user.status;
+  document.getElementById('modal_user_expeditor').textContent = user.organizationId || '—';
+
+  const blockBtn = document.getElementById('modal_block_btn');
+  const isSelf = String(user.id) === String(getStoredUser()?.userId);
+  blockBtn.style.display = isSelf ? 'none' : 'inline-block';
+  blockBtn.textContent = user.active ? 'Заблокировать' : 'Разблокировать';
+
+  setModalEditMode(false);
+}
+
+async function saveUserEdits() {
+  if (!currentModalUser) return;
+  const message = document.getElementById('modal_edit_message');
+  const saveBtn = document.getElementById('modal_save_btn');
+
+  const payload = {
+    firstName: document.getElementById('modal_user_firstname_input').value.trim(),
+    lastName: document.getElementById('modal_user_lastname_input').value.trim(),
+    middleName: document.getElementById('modal_user_middlename_input').value.trim(),
+    email: document.getElementById('modal_user_email_input').value.trim(),
+  };
+
+  if (!payload.firstName || !payload.lastName || !payload.email) {
+    message.textContent = 'Имя, фамилия и email обязательны.';
+    return;
+  }
+
+  saveBtn.disabled = true;
+  message.textContent = '';
+  try {
+    const updated = await updateUser(currentModalUser.id, payload);
+    fillModal(mapUserRow(updated));
+    showToast('Данные пользователя обновлены', 'success');
+    await loadAllUsers();
+  } catch (error) {
+    message.textContent = error.message || 'Не удалось сохранить изменения';
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function toggleUserBlock() {
+  if (!currentModalUser) return;
+  const blockBtn = document.getElementById('modal_block_btn');
+  blockBtn.disabled = true;
+  try {
+    const action = currentModalUser.active ? blockUser : unblockUser;
+    await action(currentModalUser.id);
+    const refreshed = await getUser(currentModalUser.id);
+    fillModal(mapUserRow(refreshed));
+    showToast(currentModalUser.active ? 'Пользователь заблокирован' : 'Пользователь разблокирован', 'success');
+    await loadAllUsers();
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    blockBtn.disabled = false;
+  }
+}
+
+function bindUserRowClicks() {
+  document.querySelectorAll('.user_row').forEach((row) => {
+    row.addEventListener('click', async () => {
+      const userId = row.dataset.id;
+      showModal();
+
+      modalLoading.style.display = 'block';
+      modalFieldGrid.style.display = 'none';
+      modalError.textContent = '';
+
+      try {
+        const user = await getUser(userId);
+        fillModal(mapUserRow(user));
+        modalLoading.style.display = 'none';
+        modalFieldGrid.style.display = 'grid';
+      } catch (err) {
+        modalLoading.style.display = 'none';
+        modalError.textContent = err.message || 'Не удалось загрузить данные';
+      }
+    });
+  });
+}
+
+document.getElementById('modal_close_btn').addEventListener('click', hideModal);
+document.getElementById('modal_close_footer_btn').addEventListener('click', hideModal);
+document.getElementById('modal_edit_btn').addEventListener('click', () => setModalEditMode(true));
+document.getElementById('modal_cancel_edit_btn').addEventListener('click', () => fillModal(currentModalUser));
+document.getElementById('modal_save_btn').addEventListener('click', saveUserEdits);
+document.getElementById('modal_block_btn').addEventListener('click', toggleUserBlock);
+modal.addEventListener('click', (event) => {
+  if (event.target === modal) hideModal();
+});
 
 async function loadParties() {
   const list = document.getElementById('parties_list');
@@ -97,16 +308,40 @@ async function loadParties() {
     list.innerHTML = (page.content || []).map((party) => `
       <div class="admin_entity_row">
         <div>${escapeAdmin(party.name)}</div>
-        <div>${escapeAdmin(party.type)}</div>
+        <div>${escapeAdmin(PARTY_TYPE_LABEL[party.type] || party.type)}</div>
         <div>${escapeAdmin(party.inn)}</div>
         <div>${escapeAdmin(party.email)}</div>
         <div>
           <span class="status-pill ${party.active ? 'status-pill-active' : 'status-pill-blocked'}">
-            ${party.active ? 'Активен' : 'Архивирован'}
+            ${PARTY_STATUS_LABEL[party.active ? 'ACTIVE' : 'ARCHIVED']}
           </span>
         </div>
       </div>`).join('') || '<div class="admin_entity_empty">Контрагентов пока нет</div>';
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
+}
+
+function termDayTypeLabel(value) {
+  return { CALENDAR_DAYS: 'календарных дней', WORKING_DAYS: 'рабочих дней', BANKING_DAYS: 'банковских дней' }[value] || 'дней';
+}
+
+function paymentWeekDaysLabel(value) {
+  if (!value) return '';
+  return value.split(',')
+    .map((day) => PAYMENT_WEEK_DAY_OPTIONS[day.trim()] || day.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+function paymentScheduleSummary(contract) {
+  if (!contract.paymentScheduleType || !contract.paymentWeekDays) return '';
+  const days = paymentWeekDaysLabel(contract.paymentWeekDays);
+  if (contract.paymentScheduleType === 'NEXT_PAYMENT_DAY_AFTER_TERM') {
+    return ` → первый платёжный день после истечения срока (${days})`;
+  }
+  if (contract.paymentScheduleType === 'NEXT_PAYMENT_DAY') {
+    return ` → ближайший платёжный день (${days})`;
+  }
+  return '';
 }
 
 async function loadContracts() {
@@ -115,8 +350,8 @@ async function loadContracts() {
   try {
     const page = await getContracts();
     list.innerHTML = (page.content || []).map((contract) => `
-      <div class="admin_entity_row">
-        <div>${escapeAdmin(contract.number)}</div>
+      <div class="admin_entity_row" data-contract-row="${escapeAdmin(contract.id)}">
+        <div>${contract.number ? escapeAdmin(contract.number) : '<span class="contract_value_missing">Не подтверждён</span>'}</div>
         <div>${escapeAdmin(contract.clientName)}</div>
         <div>${escapeAdmin(contract.expeditorName)}</div>
         <div>
@@ -126,11 +361,375 @@ async function loadContracts() {
               : ['EXPIRED', 'TERMINATED', 'ARCHIVED'].includes(contract.status)
                 ? 'status-pill-blocked'
                 : 'status-pill-neutral'
-          }">${escapeAdmin(contract.status)}</span>
+          }">${escapeAdmin(CONTRACT_STATUS_LABEL[contract.status] || contract.status)}</span>
         </div>
-        <div>${contract.paymentDays ?? 0} дней</div>
-      </div>`).join('') || '<div class="admin_entity_empty">Договоров пока нет</div>';
+        <div>
+          <div>${contract.paymentDays == null
+            ? 'Не указан'
+            : `${contract.paymentDays} ${escapeAdmin(termDayTypeLabel(contract.paymentDayType))}${escapeAdmin(paymentScheduleSummary(contract))}`}</div>
+          <small>${escapeAdmin(EXTRACTION_STATUS_LABEL[contract.extractionStatus] || contract.extractionStatus)}</small>
+          ${['REVIEW_REQUIRED', 'CONFIRMED'].includes(contract.extractionStatus)
+            ? `<button class="secondary_btn contract_review_btn" type="button" data-contract-id="${escapeAdmin(contract.id)}">${contract.extractionStatus === 'CONFIRMED' ? 'Просмотреть / изменить' : 'Проверить и подтвердить'}</button>`
+            : ''}
+        </div>
+      </div>
+      <div class="contract_extraction_panel" id="contract_extraction_${escapeAdmin(contract.id)}" hidden></div>`).join('') || '<div class="admin_entity_empty">Договоров пока нет</div>';
+    bindContractExtractionActions();
+    schedulePendingContractRefresh((page.content || []).some((contract) => contract.extractionStatus === 'PENDING'));
   } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
+}
+
+let pendingContractRefreshTimer = null;
+const contractExtractionDrafts = new Map();
+
+function schedulePendingContractRefresh(hasPending) {
+  if (pendingContractRefreshTimer) clearTimeout(pendingContractRefreshTimer);
+  pendingContractRefreshTimer = hasPending
+    ? setTimeout(() => { loadContracts(); }, 2500)
+    : null;
+}
+
+function renderSelectOptions(options, currentValue) {
+  return [
+    '<option value="">— не найдено —</option>',
+    ...Object.entries(options).map(([value, label]) =>
+      `<option value="${escapeAdmin(value)}" ${value === currentValue ? 'selected' : ''}>${escapeAdmin(label)}</option>`
+    ),
+  ].join('');
+}
+
+function renderContractCandidateInput(candidate, index) {
+  const value = candidate.value || '';
+  const common = `class="form_input contract_candidate_value" data-candidate-index="${index}"`;
+  if (candidate.field === 'PAYMENT_START_EVENT') {
+    return `<select ${common}>${renderSelectOptions(PAYMENT_START_EVENT_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'PAYMENT_DAY_TYPE' || candidate.field === 'CLAIM_RESPONSE_DAY_TYPE') {
+    return `<select ${common}>${renderSelectOptions(TERM_DAY_TYPE_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'PAYMENT_SCHEDULE_TYPE') {
+    return `<select ${common}>${renderSelectOptions(PAYMENT_SCHEDULE_TYPE_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'PAYMENT_WEEK_DAYS') {
+    const selected = new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean));
+    return `<div class="contract_weekday_picker" data-candidate-index="${index}">
+      ${Object.entries(PAYMENT_WEEK_DAY_OPTIONS).map(([day, label]) => `
+        <label class="contract_weekday_option">
+          <input class="contract_weekday_checkbox" type="checkbox" value="${escapeAdmin(day)}" ${selected.has(day) ? 'checked' : ''}>
+          <span>${escapeAdmin(label)}</span>
+        </label>`).join('')}
+    </div>`;
+  }
+  if (candidate.field === 'PENALTY_TYPE') {
+    return `<select ${common}>${renderSelectOptions(PENALTY_TYPE_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'PENALTY_CAP_BASE') {
+    return `<select ${common}>${renderSelectOptions(PENALTY_CAP_BASE_OPTIONS, value)}</select>`;
+  }
+  if (candidate.field === 'JURISDICTION') {
+    return `<textarea ${common} rows="2" maxlength="1000" placeholder="Не найдено в договоре">${escapeAdmin(value)}</textarea>`;
+  }
+  const types = {
+    SIGNED_AT: 'date', PAYMENT_DAYS: 'number', PENALTY_RATE: 'number', PENALTY_CAP_PERCENT: 'number', CLAIM_RESPONSE_DAYS: 'number',
+  };
+  const type = types[candidate.field] || 'text';
+  const numberAttributes = type === 'number'
+    ? ` min="0" step="${['PENALTY_RATE', 'PENALTY_CAP_PERCENT'].includes(candidate.field) ? '0.0001' : '1'}"`
+    : '';
+  const required = candidate.field === 'CONTRACT_NUMBER' ? ' required maxlength="128"' : '';
+  return `<input ${common} type="${type}" value="${escapeAdmin(value)}"${numberAttributes}${required} placeholder="Не найдено в договоре">`;
+}
+
+function isLegalFallbackCandidate(candidate) {
+  if (candidate.confidence != null || candidate.manuallyEdited) return false;
+  if (candidate.field === 'PENALTY_TYPE' && candidate.value === 'ARTICLE_395') return true;
+  if (candidate.field === 'CLAIM_RESPONSE_DAYS' && String(candidate.value) === '30') return true;
+  if (candidate.field === 'CLAIM_RESPONSE_DAY_TYPE' && candidate.value === 'CALENDAR_DAYS') return true;
+  return false;
+}
+
+function legalFallbackLabel(candidate) {
+  if (candidate.field === 'PENALTY_TYPE') return 'Договорная неустойка не установлена — применяется ст. 395 ГК РФ';
+  return 'Договорный срок не установлен — применяется 30 календарных дней по ч. 5 ст. 4 АПК РФ';
+}
+
+function extractionReliability(candidate) {
+  if (candidate.manuallyEdited) return '<span class="contract_manual_badge">Изменено вручную</span>';
+  if (isLegalFallbackCandidate(candidate)) {
+    return `<span class="contract_fallback_badge">${escapeAdmin(legalFallbackLabel(candidate))}</span>`;
+  }
+  if (candidate.confidence == null && SPECIAL_CONTRACT_FIELDS.has(candidate.field)) {
+    return '<span class="contract_optional_badge">Особое условие не установлено</span>';
+  }
+  if (candidate.confidence == null) return '<span class="contract_missing_badge">Не найдено — требуется ручная проверка</span>';
+  const percent = Math.round(Number(candidate.confidence) * 100);
+  const level = percent >= 90 ? 'высокая' : percent >= 75 ? 'средняя' : 'низкая';
+  return `Надёжность автоматического извлечения: ${level}`;
+}
+
+function renderContractScalar(candidate, index) {
+  return `
+    <article class="contract_extraction_item" data-review-index="${index}" data-contract-field="${escapeAdmin(candidate.field)}">
+      <label class="contract_candidate_label">${escapeAdmin(EXTRACTION_FIELD_LABEL[candidate.field] || candidate.field)}${candidate.field === 'CONTRACT_NUMBER' ? ' *' : ''}</label>
+      ${renderContractCandidateInput(candidate, index)}
+      <small class="contract_candidate_reliability">${extractionReliability(candidate)}</small>
+      ${candidate.source
+        ? `<blockquote>${escapeAdmin(candidate.source)}${candidate.sourcePage ? ` · стр. ${candidate.sourcePage}` : ''}${candidate.clauseNumber ? ` · п. ${escapeAdmin(candidate.clauseNumber)}` : ''}</blockquote>`
+        : isLegalFallbackCandidate(candidate)
+          ? '<p class="contract_source_fallback">Это юридический fallback, а не извлечённый пункт договора. Ссылка на несуществующий пункт не создаётся.</p>'
+          : '<p class="contract_source_missing">Источник не найден. Система не создаёт ссылку на пункт автоматически.</p>'}
+    </article>`;
+}
+
+function renderContractClause(candidate, index) {
+  return `
+    <article class="contract_extraction_item contract_clause_item" data-review-index="${index}">
+      <div class="contract_clause_header">
+        <strong>Пункт договора</strong>
+        <button class="secondary_btn contract_clause_remove" type="button" data-index="${index}">Удалить</button>
+      </div>
+      <div class="contract_clause_grid">
+        <label>Номер пункта<input class="form_input contract_clause_number" value="${escapeAdmin(candidate.clauseNumber || '')}" maxlength="64" placeholder="Например, 4.2"></label>
+        <label>Категория<select class="form_input form_select contract_clause_type">${renderSelectOptions(CLAUSE_TYPE_OPTIONS, candidate.clauseType || '')}</select></label>
+      </div>
+      <label>Текст пункта<textarea class="form_input contract_candidate_value" rows="3" maxlength="4000">${escapeAdmin(candidate.value || '')}</textarea></label>
+      <small class="contract_candidate_reliability">${extractionReliability(candidate)}</small>
+      ${candidate.source
+        ? `<blockquote>${escapeAdmin(candidate.source)}${candidate.sourcePage ? ` · стр. ${candidate.sourcePage}` : ''}</blockquote>`
+        : '<p class="contract_source_missing">Добавлено вручную — автоматический источник отсутствует.</p>'}
+    </article>`;
+}
+
+function renderSpecialContractTerms(entries) {
+  if (!entries.length) return '';
+  const paymentEntries = entries.filter(({ candidate }) => PAYMENT_SCHEDULE_FIELDS.has(candidate.field));
+  const penaltyEntries = entries.filter(({ candidate }) => PENALTY_CAP_FIELDS.has(candidate.field));
+  const hasPayment = paymentEntries.some(({ candidate }) => Boolean(candidate.value));
+  const hasPenaltyCap = penaltyEntries.some(({ candidate }) => Boolean(candidate.value));
+  return `
+    <section class="contract_payment_schedule_section contract_special_terms_section">
+      <div class="contract_payment_schedule_header">
+        <div>
+          <h4>Особые условия договора</h4>
+          <p>Редкие условия показываются только когда они действительно найдены или добавлены вручную. Они влияют на расчёт, но не перегружают основную карточку.</p>
+        </div>
+      </div>
+      ${hasPayment || paymentEntries.some(({ candidate }) => candidate.manuallyEdited)
+        ? `<div class="contract_special_term_group"><strong>Платёжный календарь</strong><div class="contract_payment_schedule_grid">${paymentEntries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}</div></div>`
+        : ''}
+      ${hasPenaltyCap || penaltyEntries.some(({ candidate }) => candidate.manuallyEdited)
+        ? `<div class="contract_special_term_group"><strong>Ограничение договорной неустойки</strong><div class="contract_payment_schedule_grid">${penaltyEntries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}</div></div>`
+        : ''}
+    </section>`;
+}
+
+function normalizedCandidate(candidate) {
+  return {
+    field: candidate.field,
+    value: candidate.value ?? null,
+    source: candidate.source ?? null,
+    sourcePage: candidate.sourcePage ?? null,
+    confidence: candidate.confidence ?? null,
+    clauseNumber: candidate.clauseNumber ?? null,
+    clauseType: candidate.clauseType ?? null,
+    manuallyEdited: Boolean(candidate.manuallyEdited),
+  };
+}
+
+function renderContractReview(panel, contractId, extraction) {
+  const candidates = (extraction.candidates || []).map(normalizedCandidate);
+  for (const field of CONTRACT_REVIEW_SCALAR_FIELDS) {
+    if (!candidates.some((candidate) => candidate.field === field)) {
+      candidates.push(normalizedCandidate({ field }));
+    }
+  }
+  candidates.sort((left, right) => {
+    const leftOrder = left.field === 'EXACT_CLAUSE' ? 100 : CONTRACT_REVIEW_SCALAR_FIELDS.indexOf(left.field);
+    const rightOrder = right.field === 'EXACT_CLAUSE' ? 100 : CONTRACT_REVIEW_SCALAR_FIELDS.indexOf(right.field);
+    return leftOrder - rightOrder;
+  });
+  const draft = { ...extraction, candidates, showSpecialTerms: Boolean(extraction.showSpecialTerms) };
+  contractExtractionDrafts.set(contractId, draft);
+  const candidateEntries = candidates.map((candidate, index) => ({ candidate, index }));
+  const scalarEntries = candidateEntries.filter(({ candidate }) =>
+    candidate.field !== 'EXACT_CLAUSE'
+      && !SPECIAL_CONTRACT_FIELDS.has(candidate.field)
+      && !INTERNAL_CONTRACT_FIELDS.has(candidate.field)
+  );
+  const specialEntries = candidateEntries.filter(({ candidate }) => SPECIAL_CONTRACT_FIELDS.has(candidate.field));
+  const hasSpecialTerms = specialEntries.some(({ candidate }) => Boolean(candidate.value));
+  const clauseEntries = candidateEntries.filter(({ candidate }) => candidate.field === 'EXACT_CLAUSE');
+  panel.innerHTML = `
+    <div class="contract_extraction_title">Проверка условий договора</div>
+    <p class="contract_review_hint">Проверьте найденные значения. Юридические fallback-и отмечены отдельно и не выдаются за условия договора.</p>
+    <div class="contract_review_grid">
+      ${scalarEntries.map(({ candidate, index }) => renderContractScalar(candidate, index)).join('')}
+    </div>
+    ${(hasSpecialTerms || draft.showSpecialTerms)
+      ? renderSpecialContractTerms(specialEntries)
+      : '<button class="secondary_btn contract_special_terms_add" type="button">+ Добавить особые условия договора</button>'}
+    <section class="contract_clause_section">
+      <div class="contract_clause_section_header">
+        <div>
+          <h4>Найденные пункты-первоисточники</h4>
+          <p>Это не дополнительные настройки договора. Здесь сохраняются точные фрагменты, на которые система сможет ссылаться в претензии и использовать как договорный контекст. Удаляйте только явно нерелевантные пункты.</p>
+        </div>
+      </div>
+      <div class="contract_clause_list">
+        ${clauseEntries.length
+          ? clauseEntries.map(({ candidate, index }) => renderContractClause(candidate, index)).join('')
+          : '<p class="contract_clause_empty">Релевантные пункты автоматически не найдены. Их можно добавить вручную.</p>'}
+      </div>
+      <button class="secondary_btn contract_clause_add" type="button">+ Добавить пункт вручную</button>
+    </section>
+    <p class="form_error contract_review_error" role="alert"></p>
+    <div class="add_user_form_actions">
+      <button class="secondary_btn contract_review_close" type="button">Закрыть</button>
+      <button class="secondary_btn contract_review_save" type="button">Сохранить исправления</button>
+      <button class="primary_btn contract_review_confirm" type="button">Подтвердить договор</button>
+    </div>`;
+
+  panel.querySelector('.contract_review_close').addEventListener('click', () => { panel.hidden = true; });
+  panel.querySelector('.contract_special_terms_add')?.addEventListener('click', () => {
+    draft.showSpecialTerms = true;
+    for (const field of SPECIAL_CONTRACT_FIELDS) {
+      const candidate = draft.candidates.find((item) => item.field === field);
+      if (candidate) candidate.manuallyEdited = true;
+    }
+    renderContractReview(panel, contractId, draft);
+  });
+  panel.querySelector('.contract_clause_add').addEventListener('click', () => {
+    draft.candidates.push(normalizedCandidate({ field: 'EXACT_CLAUSE', manuallyEdited: true }));
+    renderContractReview(panel, contractId, draft);
+  });
+  panel.querySelectorAll('.contract_clause_remove').forEach((button) => {
+    button.addEventListener('click', () => {
+      draft.candidates.splice(Number(button.dataset.index), 1);
+      renderContractReview(panel, contractId, draft);
+    });
+  });
+  panel.querySelector('.contract_review_save').addEventListener('click', async (event) => {
+    try {
+      await saveContractReview(panel, contractId, event.currentTarget, true);
+    } catch (error) {
+      // The error is rendered next to the review actions.
+    }
+  });
+  panel.querySelector('.contract_review_confirm').addEventListener('click', async (event) => {
+    const numberInput = panel.querySelector('[data-contract-field="CONTRACT_NUMBER"] .contract_candidate_value');
+    if (!numberInput?.value.trim()) {
+      panel.querySelector('.contract_review_error').textContent = 'Укажите номер договора перед подтверждением.';
+      return;
+    }
+    event.currentTarget.disabled = true;
+    try {
+      await saveContractReview(panel, contractId, event.currentTarget, false);
+      await confirmContractExtraction(contractId);
+      showToast('Договор подтверждён, карточка заполнена', 'success');
+      await loadContracts();
+    } catch (error) {
+      panel.querySelector('.contract_review_error').textContent = error.message;
+      event.currentTarget.disabled = false;
+    }
+  });
+}
+
+function collectContractReview(panel, contractId) {
+  const draft = contractExtractionDrafts.get(contractId);
+  return draft.candidates.map((candidate, index) => {
+    const item = panel.querySelector(`[data-review-index="${index}"]`);
+    if (!item) return { ...candidate };
+    const value = candidate.field === 'PAYMENT_WEEK_DAYS'
+      ? (Array.from(item.querySelectorAll('.contract_weekday_checkbox:checked'))
+          .map((input) => input.value)
+          .join(',') || null)
+      : (item.querySelector('.contract_candidate_value')?.value.trim() || null);
+    const clauseNumberInput = item.querySelector('.contract_clause_number');
+    const clauseTypeInput = item.querySelector('.contract_clause_type');
+    const clauseNumber = clauseNumberInput ? (clauseNumberInput.value.trim() || null) : (candidate.clauseNumber || null);
+    const clauseType = clauseTypeInput ? (clauseTypeInput.value || null) : (candidate.clauseType || null);
+    const changed = value !== (candidate.value || null)
+      || clauseNumber !== (candidate.clauseNumber || null)
+      || clauseType !== (candidate.clauseType || null);
+    return {
+      ...candidate,
+      value,
+      clauseNumber,
+      clauseType,
+      manuallyEdited: candidate.manuallyEdited || changed,
+    };
+  }).filter((candidate) => candidate.field !== 'EXACT_CLAUSE' || candidate.value);
+}
+
+async function saveContractReview(panel, contractId, button, rerender) {
+  const errorElement = panel.querySelector('.contract_review_error');
+  button.disabled = true;
+  errorElement.textContent = '';
+  try {
+    const extraction = await submitContractExtraction(contractId, collectContractReview(panel, contractId));
+    showToast('Исправления сохранены', 'success');
+    if (rerender) renderContractReview(panel, contractId, extraction);
+    return extraction;
+  } catch (error) {
+    errorElement.textContent = error.message;
+    throw error;
+  } finally {
+    if (button.isConnected) button.disabled = false;
+  }
+}
+
+function bindContractExtractionActions() {
+  document.querySelectorAll('.contract_review_btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const contractId = button.dataset.contractId;
+      const panel = document.getElementById(`contract_extraction_${contractId}`);
+      panel.hidden = false;
+      panel.textContent = 'Загрузка найденных условий...';
+      try {
+        const extraction = await getContractExtraction(contractId);
+        renderContractReview(panel, contractId, extraction);
+      } catch (error) {
+        panel.textContent = `Ошибка: ${error.message}`;
+      }
+    });
+  });
+}
+
+let adminShipments = [];
+
+function shipmentMatchesSearch(shipment, search) {
+  return [shipment.orderNumber, shipment.clientName, shipment.contractNumber]
+    .some((value) => String(value || '').toLowerCase().includes(search));
+}
+
+function renderShipments() {
+  const list = document.getElementById('shipments_list');
+  const search = document.getElementById('shipment_search').value.trim().toLowerCase();
+  const status = document.getElementById('shipment_status_filter').value;
+  const shipments = adminShipments.filter((shipment) =>
+    (!search || shipmentMatchesSearch(shipment, search))
+    && (!status || shipment.status === status)
+  );
+
+  const emptyMessage = adminShipments.length
+    ? 'Рейсы по заданным условиям не найдены'
+    : 'Рейсов пока нет';
+  list.innerHTML = shipments.map((shipment) => `
+    <div class="admin_entity_row">
+      <div>${escapeAdmin(shipment.orderNumber)}</div>
+      <div>${escapeAdmin(shipment.clientName)}</div>
+      <div>${escapeAdmin(shipment.contractNumber)}</div>
+      <div>${formatMoney(shipment.serviceAmount)}</div>
+      <div>
+        <span class="status-pill ${
+          shipment.status === 'COMPLETED'
+            ? 'status-pill-active'
+            : shipment.status === 'CANCELLED'
+              ? 'status-pill-blocked'
+              : 'status-pill-neutral'
+        }">${escapeAdmin(SHIPMENT_STATUS_LABEL[shipment.status] || 'Неизвестен')}</span>
+      </div>
+    </div>`).join('') || `<div class="admin_entity_empty">${emptyMessage}</div>`;
 }
 
 async function loadShipments() {
@@ -138,23 +737,12 @@ async function loadShipments() {
   list.textContent = 'Загрузка...';
   try {
     const page = await getShipments();
-    list.innerHTML = (page.content || []).map((shipment) => `
-      <div class="admin_entity_row">
-        <div>${escapeAdmin(shipment.orderNumber)}</div>
-        <div>${escapeAdmin(shipment.clientName)}</div>
-        <div>${escapeAdmin(shipment.contractNumber)}</div>
-        <div>${formatMoney(shipment.serviceAmount)}</div>
-        <div>
-          <span class="status-pill ${
-            shipment.status === 'COMPLETED'
-              ? 'status-pill-active'
-              : shipment.status === 'CANCELLED'
-                ? 'status-pill-blocked'
-                : 'status-pill-neutral'
-          }">${escapeAdmin(shipment.status)}</span>
-        </div>
-      </div>`).join('') || '<div class="admin_entity_empty">Рейсов пока нет</div>';
-  } catch (error) { list.textContent = `Ошибка: ${error.message}`; }
+    adminShipments = page.content || [];
+    renderShipments();
+  } catch (error) {
+    adminShipments = [];
+    list.textContent = `Ошибка: ${error.message}`;
+  }
 }
 
 const partyForm = document.getElementById('party_form');
@@ -176,7 +764,9 @@ document.getElementById('add_party_btn').addEventListener('click', () => {
 
 document.getElementById('cancel_party_btn').addEventListener('click', resetPartyForm);
 
-document.getElementById('save_party_btn').addEventListener('click', async () => {
+document.getElementById('save_party_btn').addEventListener('click', async (event) => {
+  const saveButton = event.currentTarget;
+  if (saveButton.disabled) return;
   const payload = {
     type: document.getElementById('party_type').value,
     name: document.getElementById('party_name').value.trim(),
@@ -193,12 +783,17 @@ document.getElementById('save_party_btn').addEventListener('click', async () => 
     errorElement.textContent = 'Тип и наименование контрагента обязательны';
     return;
   }
+  saveButton.disabled = true;
+  saveButton.textContent = 'Создание...';
   try {
     await createParty(payload);
     resetPartyForm();
     await loadParties();
   } catch (error) {
     errorElement.textContent = error.message;
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = 'Создать';
   }
 });
 
@@ -240,19 +835,8 @@ async function loadContractClients() {
 
 function resetContractForm() {
   contractForm.classList.remove('add_user_form_visible');
-  document.getElementById('contract_number').value = '';
   document.getElementById('contract_client_id').value = '';
-  document.getElementById('contract_status').value = 'ACTIVE';
-  document.getElementById('contract_signed_at').value = '';
-  document.getElementById('contract_valid_from').value = '';
-  document.getElementById('contract_valid_to').value = '';
-  document.getElementById('contract_payment_days').value = '0';
-  document.getElementById('contract_payment_start_event').value = 'UNLOADING_DATE';
-  document.getElementById('contract_penalty_type').value = 'NONE';
-  document.getElementById('contract_penalty_rate').value = '0';
-  document.getElementById('contract_penalty_rate').disabled = true;
-  document.getElementById('contract_claim_response_days').value = '10';
-  document.getElementById('contract_jurisdiction').value = '';
+  document.getElementById('contract_file').value = '';
   document.getElementById('contract_form_error').textContent = '';
 }
 
@@ -261,7 +845,7 @@ document.getElementById('add_contract_btn').addEventListener('click', async () =
   document.getElementById('contract_form_error').textContent = '';
   try {
     await loadContractClients();
-    document.getElementById('contract_number').focus();
+    document.getElementById('contract_client_id').focus();
   } catch (error) {
     document.getElementById('contract_form_error').textContent = error.message;
   }
@@ -269,69 +853,32 @@ document.getElementById('add_contract_btn').addEventListener('click', async () =
 
 document.getElementById('cancel_contract_btn').addEventListener('click', resetContractForm);
 
-document.getElementById('contract_penalty_type').addEventListener('change', (event) => {
-  const rate = document.getElementById('contract_penalty_rate');
-  const disabled = event.target.value === 'NONE';
-  rate.disabled = disabled;
-  if (disabled) rate.value = '0';
-});
-
 document.getElementById('save_contract_btn').addEventListener('click', async () => {
   const errorElement = document.getElementById('contract_form_error');
   const saveButton = document.getElementById('save_contract_btn');
-  const number = document.getElementById('contract_number').value.trim();
   const clientId = document.getElementById('contract_client_id').value;
-  const paymentDaysRaw = document.getElementById('contract_payment_days').value;
-  const responseDaysRaw = document.getElementById('contract_claim_response_days').value;
-  const penaltyRateRaw = document.getElementById('contract_penalty_rate').value;
-  const validFrom = document.getElementById('contract_valid_from').value;
-  const validTo = document.getElementById('contract_valid_to').value;
+  const contractFile = document.getElementById('contract_file').files[0];
 
-  if (!number || !clientId || paymentDaysRaw === '' || responseDaysRaw === '') {
-    errorElement.textContent = 'Заполните обязательные поля: номер, клиент, срок оплаты и срок ответа.';
+  if (!clientId || !contractFile) {
+    errorElement.textContent = 'Выберите клиента и обязательный файл договора.';
     return;
   }
-  if (validFrom && validTo && validFrom > validTo) {
-    errorElement.textContent = 'Дата окончания договора не может быть раньше даты начала.';
-    return;
-  }
-
-  const paymentDays = Number(paymentDaysRaw);
-  const claimResponseDays = Number(responseDaysRaw);
-  const penaltyRate = Number(penaltyRateRaw || 0);
-  if (![paymentDays, claimResponseDays, penaltyRate].every(Number.isFinite)
-      || paymentDays < 0 || claimResponseDays < 0 || penaltyRate < 0) {
-    errorElement.textContent = 'Сроки и ставка неустойки должны быть неотрицательными числами.';
-    return;
-  }
-
-  const payload = {
-    number,
-    clientId,
-    status: document.getElementById('contract_status').value,
-    paymentDays,
-    paymentStartEvent: document.getElementById('contract_payment_start_event').value,
-    penaltyType: document.getElementById('contract_penalty_type').value,
-    penaltyRate,
-    claimResponseDays,
-  };
-  setOptional(payload, 'signedAt', document.getElementById('contract_signed_at').value);
-  setOptional(payload, 'validFrom', validFrom);
-  setOptional(payload, 'validTo', validTo);
-  setOptional(payload, 'jurisdiction', document.getElementById('contract_jurisdiction').value.trim());
 
   saveButton.disabled = true;
-  saveButton.textContent = 'Создание...';
+  saveButton.textContent = 'Загрузка договора...';
   errorElement.textContent = '';
   try {
-    await createContract(payload);
+    const uploaded = await uploadContractDocument(contractFile);
+    saveButton.textContent = 'Запуск распознавания...';
+    await createContract({ clientId, documentId: uploaded.id });
     resetContractForm();
     await loadContracts();
+    showToast('Договор загружен. Идёт распознавание условий.', 'info');
   } catch (error) {
-    errorElement.textContent = error.message || 'Не удалось создать договор';
+    errorElement.textContent = error.message || 'Не удалось загрузить договор';
   } finally {
     saveButton.disabled = false;
-    saveButton.textContent = 'Создать договор';
+    saveButton.textContent = 'Загрузить и распознать';
   }
 });
 
@@ -339,6 +886,29 @@ function updateShipmentClient() {
   const contractId = document.getElementById('shipment_contract_id').value;
   const contract = shipmentContracts.find((item) => item.id === contractId);
   document.getElementById('shipment_client_name').value = contract?.clientName || 'Выберите договор';
+  const anchorLabel = document.getElementById('shipment_payment_anchor_label');
+  const anchorHint = document.getElementById('shipment_payment_anchor_hint');
+  const labels = {
+    REGISTRY_INCLUDED: 'Дата включения рейса в реестр',
+    DOCUMENT_PACKAGE_RECEIVED: 'Дата получения полного комплекта документов',
+    LATEST_ACT_OR_DOCUMENT_PACKAGE: 'Дата получения полного комплекта документов',
+    ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE: 'Дата получения полного комплекта документов',
+  };
+  const event = contract?.paymentStartEvent;
+  if (anchorLabel) anchorLabel.textContent = labels[event] || 'Дата договорного события начала срока оплаты';
+  if (anchorHint) {
+    if (event === 'LATEST_ACT_OR_DOCUMENT_PACKAGE') {
+      anchorHint.textContent = 'Обязательна: backend сравнит эту дату с датой акта и возьмёт более позднюю.';
+    } else if (event === 'ACT_SIGNED_REQUIRES_DOCUMENT_PACKAGE') {
+      anchorHint.textContent = 'Обязательна как подтверждение договорного условия. Если документы получены позже расчётного срока от акта, автоматический расчёт будет заблокирован для ручной проверки.';
+    } else {
+      anchorHint.textContent = labels[event]
+        ? 'Обязательна для расчёта просрочки по выбранному договору.'
+        : 'Заполняется для нестандартного договорного события, если оно не совпадает с актом, выгрузкой, ТТН или счётом.';
+    }
+  }
+  const anchorInput = document.getElementById('shipment_payment_start_event_date');
+  if (anchorInput) anchorInput.required = Boolean(labels[event]);
 }
 
 async function loadShipmentContracts() {
@@ -368,15 +938,14 @@ function resetShipmentForm() {
   document.getElementById('shipment_order_number').value = '';
   document.getElementById('shipment_contract_id').value = '';
   document.getElementById('shipment_client_name').value = 'Выберите договор';
-  document.getElementById('shipment_status').value = 'CREATED';
   document.getElementById('shipment_route_from').value = '';
   document.getElementById('shipment_route_to').value = '';
   document.getElementById('shipment_loading_date').value = '';
   document.getElementById('shipment_unloading_date').value = '';
   document.getElementById('shipment_act_signed_at').value = '';
+  document.getElementById('shipment_payment_start_event_date').value = '';
   document.getElementById('shipment_service_amount').value = '';
   document.getElementById('shipment_currency').value = 'RUB';
-  document.getElementById('shipment_external_id').value = '';
   document.getElementById('shipment_form_error').textContent = '';
 }
 
@@ -404,9 +973,15 @@ document.getElementById('save_shipment_btn').addEventListener('click', async () 
   const serviceAmountRaw = document.getElementById('shipment_service_amount').value;
   const loadingDate = document.getElementById('shipment_loading_date').value;
   const unloadingDate = document.getElementById('shipment_unloading_date').value;
+  const paymentStartEventDateInput = document.getElementById('shipment_payment_start_event_date');
 
   if (!orderNumber || !contract || serviceAmountRaw === '') {
     errorElement.textContent = 'Заполните обязательные поля: номер рейса, договор и стоимость.';
+    return;
+  }
+  if (paymentStartEventDateInput.required && !paymentStartEventDateInput.value) {
+    errorElement.textContent = 'Заполните обязательное поле «Дата договорного события начала срока оплаты».';
+    paymentStartEventDateInput.focus();
     return;
   }
   if (loadingDate && unloadingDate && loadingDate > unloadingDate) {
@@ -426,14 +1001,13 @@ document.getElementById('save_shipment_btn').addEventListener('click', async () 
     contractId,
     serviceAmount,
     currency: document.getElementById('shipment_currency').value,
-    status: document.getElementById('shipment_status').value,
   };
   setOptional(payload, 'routeFrom', document.getElementById('shipment_route_from').value.trim());
   setOptional(payload, 'routeTo', document.getElementById('shipment_route_to').value.trim());
   setOptional(payload, 'loadingDate', loadingDate);
   setOptional(payload, 'unloadingDate', unloadingDate);
   setOptional(payload, 'actSignedAt', document.getElementById('shipment_act_signed_at').value);
-  setOptional(payload, 'externalId', document.getElementById('shipment_external_id').value.trim());
+  setOptional(payload, 'paymentStartEventDate', paymentStartEventDateInput.value);
 
   saveButton.disabled = true;
   saveButton.textContent = 'Создание...';
@@ -453,6 +1027,9 @@ document.getElementById('save_shipment_btn').addEventListener('click', async () 
 const tabButtons = document.querySelectorAll('.tab_btn');
 const tabPanels = document.querySelectorAll('.tab_panel');
 
+document.getElementById('shipment_search').addEventListener('input', renderShipments);
+document.getElementById('shipment_status_filter').addEventListener('change', renderShipments);
+
 tabButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const targetTab = button.dataset.tab;
@@ -471,42 +1048,50 @@ document.getElementById('add_user_btn').addEventListener('click', () => {
 
 document.getElementById('cancel_user_btn').addEventListener('click', () => {
   addUserForm.classList.remove('add_user_form_visible');
-  document.getElementById('field_fullname').value = '';
+  document.getElementById('field_first_name').value = '';
+  document.getElementById('field_last_name').value = '';
+  document.getElementById('field_middle_name').value = '';
   document.getElementById('field_email').value = '';
   document.getElementById('field_password').value = '';
   document.getElementById('field_role').value = '';
 });
 
 document.getElementById('save_user_btn').addEventListener('click', async () => {
-  const fullName = document.getElementById('field_fullname').value.trim();
+  const firstName = document.getElementById('field_first_name').value.trim();
+  const lastName = document.getElementById('field_last_name').value.trim();
+  const middleName = document.getElementById('field_middle_name').value.trim();
   const email = document.getElementById('field_email').value.trim();
   const password = document.getElementById('field_password').value;
   const role = document.getElementById('field_role').value;
   const user = getStoredUser();
 
-  if (!fullName || !email || !password || !role) {
-    alert('Заполните все поля');
+  if (!firstName || !lastName || !email || !password || !role) {
+    showToast('Заполните все поля', 'error');
     return;
   }
 
   try {
     await createUser({
       organizationId: user.organizationId,
-      fullName,
+      firstName,
+      lastName,
+      middleName: middleName || null,
       email,
       password,
       roles: [role],
     });
 
     addUserForm.classList.remove('add_user_form_visible');
-    document.getElementById('field_fullname').value = '';
+    document.getElementById('field_first_name').value = '';
+    document.getElementById('field_last_name').value = '';
+    document.getElementById('field_middle_name').value = '';
     document.getElementById('field_email').value = '';
     document.getElementById('field_password').value = '';
     document.getElementById('field_role').value = '';
 
     await loadUsers();
   } catch (err) {
-    alert(err.message);
+    showToast(err.message, 'error');
   }
 });
 

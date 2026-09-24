@@ -17,7 +17,9 @@ public class CorsConfig {
 
         configuration.setAllowedOriginPatterns(List.of(
                 "http://localhost:*",
-                "http://127.0.0.1:*"
+                "http://127.0.0.1:*",
+                "https://cargotechai.ru",
+                "https://www.cargotechai.ru"
         ));
 
         configuration.setAllowedMethods(List.of(

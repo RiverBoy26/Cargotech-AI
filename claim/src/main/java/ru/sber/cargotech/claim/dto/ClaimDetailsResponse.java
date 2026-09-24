@@ -2,6 +2,7 @@ package ru.sber.cargotech.claim.dto;
 
 import ru.sber.cargotech.claim.enums.ClaimStatus;
 import ru.sber.cargotech.claim.enums.ClaimType;
+import ru.sber.cargotech.claim.enums.DocumentValidationStatus;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -14,6 +15,14 @@ public record ClaimDetailsResponse(
     ClaimType claimType,
     ClaimStatus status,
     String reason,
+    String recipientName,
+    String recipientEmail,
+    String recipientAddress,
+    String bankDetails,
+    Integer responseDeadlineDays,
+    String signerFullName,
+    String signerPosition,
+    String signerAuthority,
     UUID shipmentId,
     String shipmentNumber,
     UUID contractId,
@@ -29,6 +38,16 @@ public record ClaimDetailsResponse(
     OffsetDateTime nonPaymentConfirmedAt,
     UUID nonPaymentConfirmedBy,
     String nonPaymentConfirmationComment,
+    OffsetDateTime nonPaymentConfirmationRequestedAt,
+    UUID nonPaymentConfirmationRequestedBy,
+    DocumentValidationStatus documentValidationStatus,
+    String documentValidationErrors,
+    boolean manualReviewRequired,
+    String manualReviewReason,
+    String usedSources,
+    OffsetDateTime validationOverriddenAt,
+    UUID validationOverriddenBy,
+    String validationOverrideReason,
     UUID assignedLawyerId,
     UUID finalVersionId,
     UUID lastPaymentCheckId,

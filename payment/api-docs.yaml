@@ -192,6 +192,26 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PaymentDetailsResponse"
+    delete:
+      tags:
+      - payment-controller
+      operationId: deletePayment
+      parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: reason
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 2000
+      responses:
+        "204":
+          description: Платёж удалён; связанные претензии пересчитаны
   /api/v1/payments/reconciliations/{runId}:
     get:
       tags:

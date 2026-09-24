@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Администратор экспедитора</title>
-    <link rel="stylesheet" href="../../styles/admin_dashboard.css">
+    <link rel="stylesheet" href="../../styles/admin_dashboard.css?v=20260815-claim-style-shipment-filters-1">
+    <link rel="stylesheet" href="../../styles/admin_contracts.css?v=20260813-contract-review-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anonymous+Pro:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
@@ -42,16 +43,24 @@
                 <div class="add_user_form_title">Новый пользователь</div>
                 <div class="add_user_form_fields">
                     <div class="form_field">
-                        <label class="form_label" for="field_fullname">ФИО *</label>
-                        <input class="form_input" id="field_fullname" type="text" required placeholder="Иванов Иван Иванович">
+                        <label class="form_label" for="field_first_name">Имя *</label>
+                        <input class="form_input" id="field_first_name" name="new_user_first_name" autocomplete="off" type="text" required maxlength="100" placeholder="Иван">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="field_last_name">Фамилия *</label>
+                        <input class="form_input" id="field_last_name" name="new_user_last_name" autocomplete="off" type="text" required maxlength="100" placeholder="Иванов">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" for="field_middle_name">Отчество</label>
+                        <input class="form_input" id="field_middle_name" name="new_user_middle_name" autocomplete="off" type="text" maxlength="100" placeholder="Иванович">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="field_email">Email *</label>
-                        <input class="form_input" id="field_email" type="email" required placeholder="ivanov@expeditor.ru">
+                        <input class="form_input" id="field_email" name="new_user_email" autocomplete="off" type="email" required placeholder="ivanov@expeditor.ru">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="field_password">Пароль *</label>
-                        <input class="form_input" id="field_password" type="password" required minlength="8" placeholder="мин. 8 символов">
+                        <input class="form_input" id="field_password" name="new_user_password" type="password" autocomplete="new-password" required minlength="8" placeholder="мин. 8 символов">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="field_role">Роль *</label>
@@ -100,35 +109,35 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="party_name">Наименование *</label>
-                        <input class="form_input" id="party_name" type="text" required maxlength="500" placeholder="ООО «Клиент»">
+                        <input class="form_input" id="party_name" name="party_name" autocomplete="off" type="text" required maxlength="500" placeholder="ООО «Клиент»">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="party_inn">ИНН</label>
-                        <input class="form_input" id="party_inn" type="text" maxlength="12" placeholder="7701234567">
+                        <input class="form_input" id="party_inn" name="party_inn" autocomplete="off" type="text" maxlength="12" placeholder="7701234567">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="party_kpp">КПП</label>
-                        <input class="form_input" id="party_kpp" type="text" maxlength="9" placeholder="770000001">
+                        <input class="form_input" id="party_kpp" name="party_kpp" autocomplete="off" type="text" maxlength="9" placeholder="770000001">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="party_ogrn">ОГРН</label>
-                        <input class="form_input" id="party_ogrn" type="text" maxlength="15" placeholder="1027700000000">
+                        <input class="form_input" id="party_ogrn" name="party_ogrn" autocomplete="off" type="text" maxlength="15" placeholder="1027700000000">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="party_email">Email</label>
-                        <input class="form_input" id="party_email" type="email" maxlength="320" placeholder="mail@example.org">
+                        <input class="form_input" id="party_email" name="party_email" autocomplete="off" type="email" maxlength="320" placeholder="mail@example.org">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="party_phone">Телефон</label>
-                        <input class="form_input" id="party_phone" type="text" maxlength="64" placeholder="+7 (999) 111-22-33">
+                        <input class="form_input" id="party_phone" name="party_phone" autocomplete="off" type="text" maxlength="64" placeholder="+7 (999) 111-22-33">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="party_legal_address">Юридический адрес</label>
-                        <input class="form_input" id="party_legal_address" type="text" placeholder="г. Новосибирск, ул. Тестовая, д. 1">
+                        <input class="form_input" id="party_legal_address" name="party_legal_address" autocomplete="off" type="text" placeholder="г. Новосибирск, ул. Тестовая, д. 1">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="party_postal_address">Почтовый адрес</label>
-                        <input class="form_input" id="party_postal_address" type="text" placeholder="г. Новосибирск, ул. Тестовая, д. 1">
+                        <input class="form_input" id="party_postal_address" name="party_postal_address" autocomplete="off" type="text" placeholder="г. Новосибирск, ул. Тестовая, д. 1">
                     </div>
                 </div>
                 <div class="add_user_form_actions">
@@ -156,12 +165,8 @@
             </div>
             <section class="add_user_form" id="contract_form" aria-labelledby="contract_form_title">
                 <div class="add_user_form_title" id="contract_form_title">Новый договор</div>
-                <div class="panel_subtitle">Экспедитор определяется автоматически по вашей организации.</div>
+                <div class="panel_subtitle">Выберите клиента и загрузите договор. Экспедитор определяется автоматически, остальные поля система предложит после распознавания.</div>
                 <div class="add_user_form_fields">
-                    <div class="form_field">
-                        <label class="form_label" for="contract_number">Номер договора *</label>
-                        <input class="form_input" id="contract_number" required maxlength="128" placeholder="ДЭ-2026/001">
-                    </div>
                     <div class="form_field">
                         <label class="form_label" for="contract_client_id">Клиент *</label>
                         <select class="form_input form_select" id="contract_client_id" required>
@@ -169,65 +174,15 @@
                         </select>
                     </div>
                     <div class="form_field">
-                        <label class="form_label" for="contract_status">Статус *</label>
-                        <select class="form_input form_select" id="contract_status">
-                            <option value="DRAFT">Черновик</option>
-                            <option value="ACTIVE" selected>Действует</option>
-                            <option value="EXPIRED">Истёк</option>
-                            <option value="TERMINATED">Расторгнут</option>
-                            <option value="ARCHIVED">Архивный</option>
-                        </select>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_signed_at">Дата подписания</label>
-                        <input class="form_input" id="contract_signed_at" type="date">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_valid_from">Действует с</label>
-                        <input class="form_input" id="contract_valid_from" type="date">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_valid_to">Действует до</label>
-                        <input class="form_input" id="contract_valid_to" type="date">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_payment_days">Срок оплаты, дней *</label>
-                        <input class="form_input" id="contract_payment_days" type="number" required min="0" step="1" value="0">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_payment_start_event">Отсчёт срока оплаты *</label>
-                        <select class="form_input form_select" id="contract_payment_start_event">
-                            <option value="UNLOADING_DATE" selected>Дата выгрузки</option>
-                            <option value="ACT_SIGNED">Дата подписания акта</option>
-                            <option value="TTN_SIGNED">Дата подписания ТТН</option>
-                            <option value="INVOICE_DATE">Дата счёта</option>
-                        </select>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_penalty_type">Неустойка *</label>
-                        <select class="form_input form_select" id="contract_penalty_type">
-                            <option value="NONE" selected>Не начисляется</option>
-                            <option value="CONTRACT_PENALTY">По договору</option>
-                            <option value="ARTICLE_395">По статье 395 ГК РФ</option>
-                        </select>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_penalty_rate">Ставка неустойки, %</label>
-                        <input class="form_input" id="contract_penalty_rate" type="number" min="0" step="0.0001" value="0" disabled>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_claim_response_days">Срок ответа, дней *</label>
-                        <input class="form_input" id="contract_claim_response_days" type="number" required min="0" step="1" value="10">
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="contract_jurisdiction">Подсудность</label>
-                        <input class="form_input" id="contract_jurisdiction" maxlength="255" placeholder="Арбитражный суд Новосибирской области">
+                        <label class="form_label" for="contract_file">Файл договора *</label>
+                        <input class="form_input" id="contract_file" name="contract_file" autocomplete="off" type="file" accept=".pdf,.docx,.txt" required>
+                        <span class="panel_subtitle">Поддерживаются PDF с текстовым слоем, DOCX и TXT. До подтверждения найденные значения не используются в расчётах.</span>
                     </div>
                 </div>
                 <div class="add_user_form_actions">
                     <p class="form_error" id="contract_form_error" role="alert"></p>
                     <button class="secondary_btn" id="cancel_contract_btn" type="button">Отмена</button>
-                    <button class="primary_btn" id="save_contract_btn" type="button">Создать договор</button>
+                    <button class="primary_btn" id="save_contract_btn" type="button">Загрузить и распознать</button>
                 </div>
             </section>
             <div class="admin_entity_table">
@@ -249,11 +204,11 @@
             </div>
             <section class="add_user_form" id="shipment_form" aria-labelledby="shipment_form_title">
                 <div class="add_user_form_title" id="shipment_form_title">Новый рейс</div>
-                <div class="panel_subtitle">Клиент и экспедитор подставляются автоматически из выбранного договора.</div>
+                <div class="panel_subtitle">Клиент и экспедитор подставляются автоматически из выбранного договора. Статус рейса определяется по датам погрузки и выгрузки.</div>
                 <div class="add_user_form_fields">
                     <div class="form_field">
                         <label class="form_label" for="shipment_order_number">Номер рейса *</label>
-                        <input class="form_input" id="shipment_order_number" required maxlength="128" placeholder="РЕЙС-2026/001">
+                        <input class="form_input" id="shipment_order_number" name="shipment_order_number" autocomplete="off" required maxlength="128" placeholder="РЕЙС-2026/001">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_contract_id">Договор *</label>
@@ -263,40 +218,36 @@
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_client_name">Клиент</label>
-                        <input class="form_input" id="shipment_client_name" value="Выберите договор" readonly>
-                    </div>
-                    <div class="form_field">
-                        <label class="form_label" for="shipment_status">Статус *</label>
-                        <select class="form_input form_select" id="shipment_status">
-                            <option value="CREATED" selected>Создан</option>
-                            <option value="IN_PROGRESS">В пути</option>
-                            <option value="COMPLETED">Завершён</option>
-                            <option value="CANCELLED">Отменён</option>
-                        </select>
+                        <input class="form_input" id="shipment_client_name" name="shipment_client_name" autocomplete="off" value="Выберите договор" readonly>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_route_from">Пункт отправления</label>
-                        <input class="form_input" id="shipment_route_from" maxlength="500" placeholder="Новосибирск">
+                        <input class="form_input" id="shipment_route_from" name="shipment_route_from" autocomplete="off" maxlength="500" placeholder="Новосибирск">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_route_to">Пункт назначения</label>
-                        <input class="form_input" id="shipment_route_to" maxlength="500" placeholder="Москва">
+                        <input class="form_input" id="shipment_route_to" name="shipment_route_to" autocomplete="off" maxlength="500" placeholder="Москва">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_loading_date">Дата погрузки</label>
-                        <input class="form_input" id="shipment_loading_date" type="date">
+                        <input class="form_input" id="shipment_loading_date" name="shipment_loading_date" autocomplete="off" type="date">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_unloading_date">Дата выгрузки</label>
-                        <input class="form_input" id="shipment_unloading_date" type="date">
+                        <input class="form_input" id="shipment_unloading_date" name="shipment_unloading_date" autocomplete="off" type="date">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_act_signed_at">Дата подписания акта</label>
-                        <input class="form_input" id="shipment_act_signed_at" type="date">
+                        <input class="form_input" id="shipment_act_signed_at" name="shipment_act_signed_at" autocomplete="off" type="date">
+                    </div>
+                    <div class="form_field">
+                        <label class="form_label" id="shipment_payment_anchor_label" for="shipment_payment_start_event_date">Дата договорного события начала срока оплаты</label>
+                        <input class="form_input" id="shipment_payment_start_event_date" name="shipment_payment_start_event_date" autocomplete="off" type="date">
+                        <small class="panel_subtitle" id="shipment_payment_anchor_hint">Заполняется для нестандартного договорного события, если оно не совпадает с актом, выгрузкой, ТТН или счётом.</small>
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_service_amount">Стоимость перевозки *</label>
-                        <input class="form_input" id="shipment_service_amount" type="number" required min="0" step="0.01" placeholder="0,00">
+                        <input class="form_input" id="shipment_service_amount" name="shipment_service_amount" autocomplete="off" type="number" required min="0" step="0.01" placeholder="0,00">
                     </div>
                     <div class="form_field">
                         <label class="form_label" for="shipment_currency">Валюта *</label>
@@ -306,10 +257,6 @@
                             <option value="EUR">EUR — евро</option>
                         </select>
                     </div>
-                    <div class="form_field">
-                        <label class="form_label" for="shipment_external_id">Внешний идентификатор</label>
-                        <input class="form_input" id="shipment_external_id" maxlength="255" placeholder="ID из учётной системы">
-                    </div>
                 </div>
                 <div class="add_user_form_actions">
                     <p class="form_error" id="shipment_form_error" role="alert"></p>
@@ -317,6 +264,22 @@
                     <button class="primary_btn" id="save_shipment_btn" type="button">Создать рейс</button>
                 </div>
             </section>
+            <div class="toolbar shipment_filters" role="search" aria-label="Поиск и фильтрация рейсов">
+                <div class="search_box">
+                    <span class="search-box__icon">
+                        <img src="../../assets/Search.svg" alt="">
+                    </span>
+                    <input class="search-box__input" id="shipment_search" type="search"
+                           autocomplete="off" placeholder="Поиск по рейсу, клиенту или договору"
+                           aria-label="Поиск рейсов">
+                </div>
+                <select class="status_filter" id="shipment_status_filter" aria-label="Фильтр рейсов по статусу">
+                    <option value="">Все статусы</option>
+                    <option value="CREATED">Создан</option>
+                    <option value="IN_PROGRESS">В пути</option>
+                    <option value="COMPLETED">Завершён</option>
+                </select>
+            </div>
             <div class="admin_entity_table">
                 <div class="admin_entity_table_head">
                     <div class="admin_entity_table_head_t">Рейс</div>
@@ -340,9 +303,25 @@
             </div>
             <div class="modal_body">
                 <div class="modal_field_grid">
-                    <div class="modal_field">
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Имя</div>
+                        <div class="modal_field_value" id="modal_user_firstname_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_firstname_input" name="modal_user_firstname" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Фамилия</div>
+                        <div class="modal_field_value" id="modal_user_lastname_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_lastname_input" name="modal_user_lastname" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
+                        <div class="modal_field_label">Отчество</div>
+                        <div class="modal_field_value" id="modal_user_middlename_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_middlename_input" name="modal_user_middlename" autocomplete="off" type="text" maxlength="100">
+                    </div>
+                    <div class="modal_field modal_field_wide">
                         <div class="modal_field_label">Email</div>
-                        <div class="modal_field_value" id="modal_user_email">—</div>
+                        <div class="modal_field_value" id="modal_user_email_view">—</div>
+                        <input class="form_input modal_field_input" id="modal_user_email_input" name="modal_user_email" autocomplete="off" type="email">
                     </div>
                     <div class="modal_field">
                         <div class="modal_field_label">Роль</div>
@@ -357,16 +336,21 @@
                         <div class="modal_field_value" id="modal_user_expeditor">—</div>
                     </div>
                 </div>
+                <p class="form_message form_error" id="modal_edit_message" role="alert"></p>
                 <div class="modal_loading" id="modal_loading">Загрузка...</div>
                 <div class="modal_error" id="modal_error"></div>
             </div>
             <div class="modal_footer">
+                <button class="secondary_btn" id="modal_block_btn"></button>
+                <button class="secondary_btn" id="modal_edit_btn">Редактировать</button>
+                <button class="primary_btn" id="modal_save_btn" style="display:none;">Сохранить</button>
+                <button class="secondary_btn" id="modal_cancel_edit_btn" style="display:none;">Отмена</button>
                 <button class="secondary_btn" id="modal_close_footer_btn">Закрыть</button>
             </div>
         </div>
     </div>
 
-    <script src="../../scripts/api.js"></script>
-    <script src="../../scripts/admin_script.js"></script>
+    <script src="../../scripts/api.js?v=20260813-contract-extraction-1"></script>
+    <script src="../../scripts/admin_script.js?v=20260815-required-payment-event-date-1"></script>
 </body>
 </html>

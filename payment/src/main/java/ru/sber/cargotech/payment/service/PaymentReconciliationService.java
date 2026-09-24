@@ -38,6 +38,7 @@ public class PaymentReconciliationService {
     private final PaymentReconciliationRunRepository runRepository;
     private final PaymentServiceImpl paymentService;
     private final PaymentOutboxWriter outboxWriter;
+    private final ClaimPaymentSynchronizationService claimSynchronizationService;
 
     @Transactional
     public ReconciliationResponse reconcile(CurrentPaymentUser user) {
@@ -164,7 +165,7 @@ public class PaymentReconciliationService {
             return candidateForClaim(claimsByPurpose.getFirst());
         }
 
-        List<PaymentTargetCandidate> exactClaims =
+        List<PaymentTargetCandidate> candidates =
                 paymentService.findOpenClaimsByPayerInn(
                                 organizationId,
                                 payment.getPayerInn()
@@ -172,23 +173,22 @@ public class PaymentReconciliationService {
                         .stream()
                         .map(this::candidateForClaim)
                         .flatMap(Optional::stream)
-                        .filter(candidate -> candidate.remainingAmount()
-                                .compareTo(payment.getAmount().abs()) == 0)
                         .toList();
 
-        if (exactClaims.size() == 1) {
-            return Optional.of(exactClaims.getFirst());
-        }
-
-        return Optional.empty();
+        return ReconciliationCandidateSelector.select(
+                candidates,
+                payment.getAmount()
+        );
     }
 
     private Optional<PaymentTargetCandidate> candidateForClaim(
             ClaimPaymentData claim
     ) {
-        BigDecimal remaining = claim.serviceAmount()
-                .subtract(paymentService.paidAmount(claim))
-                .max(BigDecimal.ZERO);
+        BigDecimal paidAmount = paymentService.paidAmount(claim);
+        BigDecimal remaining = ClaimOutstandingAmountCalculator.calculate(
+                claim,
+                paidAmount
+        );
 
         if (remaining.signum() == 0) {
             return Optional.empty();
@@ -198,7 +198,7 @@ public class PaymentReconciliationService {
                 PaymentTargetType.CLAIM,
                 claim.id(),
                 claim.claimNumber(),
-                claim.serviceAmount(),
+                paidAmount.add(remaining),
                 remaining
         ));
     }
@@ -235,6 +235,12 @@ public class PaymentReconciliationService {
         matchRepository.save(match);
 
         paymentService.refreshStatus(payment);
+
+        if (candidate.targetType() == PaymentTargetType.CLAIM) {
+            claimSynchronizationService.synchronizeAfterCommit(
+                candidate.targetId()
+            );
+        }
 
         return true;
     }

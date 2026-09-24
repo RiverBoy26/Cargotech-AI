@@ -74,6 +74,19 @@ public class QdrantRestClient {
                 .body(Object.class);
     }
 
+    public Object deletePoints(Map<String, Object> exactFilters) {
+        Map<String, Object> filter = buildFilter(exactFilters);
+        if (filter.isEmpty()) {
+            throw new IllegalArgumentException("Qdrant point deletion requires exact filters");
+        }
+        return restClient.post()
+                .uri(properties.getUrl() + "/collections/" + properties.getCollectionName() + "/points/delete?wait=true")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("filter", filter))
+                .retrieve()
+                .body(Object.class);
+    }
+
     public Object queryPoints(
             List<Double> queryVector,
             Map<String, Object> exactFilters,
@@ -180,7 +193,11 @@ public class QdrantRestClient {
                 .filter(entry -> entry.getValue() != null)
                 .map(entry -> {
                     Map<String, Object> match = new LinkedHashMap<>();
-                    match.put("value", entry.getValue());
+                    if (entry.getValue() instanceof Iterable<?> values) {
+                        match.put("any", values);
+                    } else {
+                        match.put("value", entry.getValue());
+                    }
 
                     Map<String, Object> condition = new LinkedHashMap<>();
                     condition.put("key", entry.getKey());

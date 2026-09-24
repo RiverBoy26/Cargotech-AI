@@ -3,6 +3,7 @@ package ru.sber.cargotech.payment.dto;
 import ru.sber.cargotech.payment.enums.PaymentCheckStatus;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public record PaymentStateResponse(
@@ -11,6 +12,7 @@ public record PaymentStateResponse(
         BigDecimal serviceAmount,
         BigDecimal paidAmount,
         BigDecimal remainingAmount,
-        PaymentCheckStatus paymentStatus
+        PaymentCheckStatus paymentStatus,
+        List<PaymentAllocationResponse> allocations
 ) {
 }

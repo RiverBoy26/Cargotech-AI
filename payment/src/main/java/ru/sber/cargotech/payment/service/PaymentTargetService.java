@@ -63,11 +63,21 @@ public class PaymentTargetService {
                         ))
                 );
 
-        return Optional.of(
-                claim.serviceAmount()
-                        .subtract(paidAmount)
-                        .max(BigDecimal.ZERO)
-        );
+        return Optional.of(ClaimOutstandingAmountCalculator.calculate(
+                new ru.sber.cargotech.payment.repository.ClaimPaymentData(
+                        claim.claimId(),
+                        claim.shipmentId(),
+                        claim.claimNumber(),
+                        claim.debtorInn(),
+                        claim.shipmentOrderNumber(),
+                        claim.serviceAmount(),
+                        claim.calculatedPaidAmount(),
+                        claim.remainingPrincipalAmount(),
+                        claim.remainingPenaltyAmount(),
+                        claim.status()
+                ),
+                paidAmount
+        ));
     }
 
     private BigDecimal safe(BigDecimal value) {
